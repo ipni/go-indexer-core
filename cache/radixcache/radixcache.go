@@ -1,16 +1,15 @@
-package primary
+package radixcache
 
 import (
 	"sync"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/gammazero/radixtree"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-// syncCache is a rotatable cache. Multiples instances may be used to decrease
-// concurrent access collision.
-type syncCache struct {
+// radixCache is a rotatable cache with value deduplication.
+type radixCache struct {
 	// CID -> IndexEntry
 	current  *radixtree.Bytes
 	previous *radixtree.Bytes
@@ -19,8 +18,9 @@ type syncCache struct {
 	curEnts  *radixtree.Bytes
 	prevEnts *radixtree.Bytes
 
-	mutex     sync.Mutex
-	rotations uint64
+	mutex      sync.Mutex
+	rotations  uint64
+	rotateSize int
 }
 
 type CacheStats struct {
@@ -31,11 +31,12 @@ type CacheStats struct {
 	Rotations      uint64
 }
 
-// newSyncCache created a new syncCache instance
-func newSyncCache() *syncCache {
-	return &syncCache{
-		current: radixtree.New(),
-		curEnts: radixtree.New(),
+// newRadixCache created a new radixCache instance
+func newRadixCache(rotateSize int) *radixCache {
+	return &radixCache{
+		current:    radixtree.New(),
+		curEnts:    radixtree.New(),
+		rotateSize: rotateSize,
 	}
 }
 
@@ -48,15 +49,15 @@ func newSyncCache() *syncCache {
 //
 // The number of unique and interred IndexEntry objects will be the same unless
 // items have been removed from cache.
-func (c *syncCache) stats() CacheStats {
-	unique := make(map[*store.IndexEntry]struct{})
+func (c *radixCache) stats() CacheStats {
+	unique := make(map[*entry.Value]struct{})
 	var cidCount, valCount, interned uint64
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	walkFunc := func(k string, v interface{}) bool {
-		values := v.([]*store.IndexEntry)
+		values := v.([]*entry.Value)
 		valCount += uint64(len(values))
 		for _, val := range values {
 			unique[val] = struct{}{}
@@ -85,13 +86,13 @@ func (c *syncCache) stats() CacheStats {
 	}
 }
 
-func (c *syncCache) get(k string) ([]*store.IndexEntry, bool) {
+func (c *radixCache) get(k string) ([]*entry.Value, bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	return c.getNoLock(k)
 }
 
-func (c *syncCache) getNoLock(k string) ([]*store.IndexEntry, bool) {
+func (c *radixCache) getNoLock(k string) ([]*entry.Value, bool) {
 	// Search current cache
 	v, found := c.current.Get(k)
 	if !found {
@@ -108,7 +109,7 @@ func (c *syncCache) getNoLock(k string) ([]*store.IndexEntry, bool) {
 		// Pull the interned entries for these values forward from the previous
 		// cache to keep using the same pointers as the va used in the cache
 		// values that get pulled forward.
-		values := v.([]*store.IndexEntry)
+		values := v.([]*entry.Value)
 		for i, val := range values {
 			values[i] = c.internEntry(val)
 		}
@@ -117,86 +118,87 @@ func (c *syncCache) getNoLock(k string) ([]*store.IndexEntry, bool) {
 		c.current.Put(k, values)
 		c.previous.Delete(k)
 	}
-	return v.([]*store.IndexEntry), true
+	return v.([]*entry.Value), true
 }
 
 // put stores an entry in the cache if the entry is not already stored.
 // Returns true if a new entry was added to the cache.
-func (c *syncCache) put(k string, entry store.IndexEntry, rotateSize int) bool {
+func (c *radixCache) put(k string, value entry.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	// Get from current or previous cache
-	old, found := c.getNoLock(k)
+	existing, found := c.getNoLock(k)
+
 	// If found values(s) then check the value to put is already there.
-	if found && duplicateEntry(&entry, old) {
+	if found && entry.ValueInSlice(&value, existing) {
 		return false
 	}
 
-	if c.current.Len() >= rotateSize {
+	if c.current.Len() >= c.rotateSize {
 		c.rotate()
 	}
 
-	c.current.Put(k, append(old, c.internEntry(&entry)))
+	c.current.Put(k, append(existing, c.internEntry(&value)))
 	return true
 }
 
-func (c *syncCache) putInterned(k string, ent *store.IndexEntry, rotateSize int) bool {
+func (c *radixCache) putInterned(k string, value *entry.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	old, found := c.getNoLock(k)
-	if found && duplicateEntry(ent, old) {
+	existing, found := c.getNoLock(k)
+	if found && entry.ValueInSlice(value, existing) {
 		return false
 	}
 
-	if c.current.Len() >= rotateSize {
+	if c.current.Len() >= c.rotateSize {
 		c.rotate()
 	}
 
-	c.current.Put(k, append(old, ent))
+	c.current.Put(k, append(existing, value))
 	return true
 }
 
-func (c *syncCache) putMany(keys []string, entry store.IndexEntry, rotateSize int) int {
+func (c *radixCache) putMany(keys []string, value entry.Value) int {
 	var count int
-	var ent *store.IndexEntry
+	var interned *entry.Value
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	for _, k := range keys {
-		old, found := c.getNoLock(k)
-		if found && duplicateEntry(&entry, old) {
+		existing, found := c.getNoLock(k)
+		if found && entry.ValueInSlice(&value, existing) {
 			continue
 		}
 
-		if c.current.Len() > rotateSize {
+		if c.current.Len() > c.rotateSize {
 			c.rotate()
 		}
 
-		if ent == nil {
-			ent = c.internEntry(&entry)
+		if interned == nil {
+			interned = c.internEntry(&value)
 		}
-		c.current.Put(k, append(old, ent))
+		c.current.Put(k, append(existing, interned))
 		count++
 	}
 
 	return count
 }
 
-func (c *syncCache) remove(k string, entry *store.IndexEntry) bool {
+func (c *radixCache) remove(k string, value *entry.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	removed := removeEntry(c.current, k, entry)
-	if c.previous != nil && removeEntry(c.previous, k, entry) {
+	removed := removeEntry(c.current, k, value)
+	if c.previous != nil && removeEntry(c.previous, k, value) {
 		removed = true
 	}
 	return removed
 }
 
-func (c *syncCache) removeProvider(providerID peer.ID) int {
+func (c *radixCache) removeProvider(providerID peer.ID) int {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -211,14 +213,14 @@ func (c *syncCache) removeProvider(providerID peer.ID) int {
 	return count
 }
 
-func (c *syncCache) rotate() {
+func (c *radixCache) rotate() {
 	c.previous, c.current = c.current, radixtree.New()
 	c.prevEnts, c.curEnts = c.curEnts, radixtree.New()
 	c.rotations++
 }
 
-func (c *syncCache) internEntry(entry *store.IndexEntry) *store.IndexEntry {
-	k := string(entry.ProviderID) + string(entry.Metadata)
+func (c *radixCache) internEntry(value *entry.Value) *entry.Value {
+	k := string(value.ProviderID) + string(value.Metadata)
 	v, found := c.curEnts.Get(k)
 	if !found {
 		if c.prevEnts != nil {
@@ -227,27 +229,27 @@ func (c *syncCache) internEntry(entry *store.IndexEntry) *store.IndexEntry {
 				// Pull interned entry forward from previous cache
 				c.curEnts.Put(k, v)
 				c.prevEnts.Delete(k)
-				return v.(*store.IndexEntry)
+				return v.(*entry.Value)
 			}
 		}
-		// Intern new entry
-		c.curEnts.Put(k, entry)
-		return entry
+		// Intern new value
+		c.curEnts.Put(k, value)
+		return value
 	}
-	// Found existing interned entry
-	return v.(*store.IndexEntry)
+	// Found existing interned value
+	return v.(*entry.Value)
 }
 
-func removeEntry(tree *radixtree.Bytes, k string, entry *store.IndexEntry) bool {
+func removeEntry(tree *radixtree.Bytes, k string, value *entry.Value) bool {
 	// Get from current cache
 	v, found := tree.Get(k)
 	if !found {
 		return false
 	}
 
-	values := v.([]*store.IndexEntry)
+	values := v.([]*entry.Value)
 	for i, v := range values {
-		if v == entry || v.Equal(*entry) {
+		if v == value || v.Equal(*value) {
 			if len(values) == 1 {
 				tree.Delete(k)
 			} else {
@@ -266,7 +268,7 @@ func removeProviderEntries(tree *radixtree.Bytes, providerID peer.ID) int {
 	var deletes []string
 
 	tree.Walk("", func(k string, v interface{}) bool {
-		values := v.([]*store.IndexEntry)
+		values := v.([]*entry.Value)
 		for i := range values {
 			if providerID == values[i].ProviderID {
 				count++
@@ -298,16 +300,4 @@ func removeProviderInterns(tree *radixtree.Bytes, providerID peer.ID) {
 	for _, k := range deletes {
 		tree.Delete(k)
 	}
-}
-
-// Checks if the entry already exists in the index. An entry
-// for the same provider but with different metadata is not considered
-// a duplicate entry.
-func duplicateEntry(newEnt *store.IndexEntry, oldEnts []*store.IndexEntry) bool {
-	for _, oldEnt := range oldEnts {
-		if newEnt == oldEnt || newEnt.Equal(*oldEnt) {
-			return true
-		}
-	}
-	return false
 }

@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/go-indexer-core/store/persistent"
-	"github.com/filecoin-project/go-indexer-core/store/persistent/pogreb"
+	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 )
 
-func initPogreb() (store.PersistentStorage, error) {
+func initPogreb() (store.Interface, error) {
 	tmpDir, err := ioutil.TempDir("", "sth")
 	if err != nil {
 		return nil, err
@@ -25,7 +24,7 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.E2ETest(t, s)
+	store.E2ETest(t, s)
 }
 
 func TestSize(t *testing.T) {
@@ -35,7 +34,7 @@ func TestSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.SizeTest(t, s)
+	store.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
@@ -45,7 +44,7 @@ func TestRemoveMany(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.RemoveManyTest(t, s)
+	store.RemoveManyTest(t, s)
 }
 
 func skipIf32bit(t *testing.T) {

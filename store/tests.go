@@ -1,14 +1,14 @@
-package persistent
+package store
 
 import (
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/storetheindex/utils"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-func E2ETest(t *testing.T, s store.PersistentStorage) {
+func E2ETest(t *testing.T, s Interface) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -20,8 +20,8 @@ func E2ETest(t *testing.T, s store.PersistentStorage) {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, protocolID, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -130,7 +130,7 @@ func E2ETest(t *testing.T, s store.PersistentStorage) {
 
 }
 
-func SizeTest(t *testing.T, s store.PersistentStorage) {
+func SizeTest(t *testing.T, s Interface) {
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -142,7 +142,7 @@ func SizeTest(t *testing.T, s store.PersistentStorage) {
 		t.Fatal(err)
 	}
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
 		_, err = s.Put(c, entry)
 		if err != nil {
@@ -159,7 +159,7 @@ func SizeTest(t *testing.T, s store.PersistentStorage) {
 	}
 }
 
-func RemoveManyTest(t *testing.T, s store.PersistentStorage) {
+func RemoveManyTest(t *testing.T, s Interface) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -171,7 +171,7 @@ func RemoveManyTest(t *testing.T, s store.PersistentStorage) {
 		t.Fatal(err)
 	}
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 	batch := cids[1:]
 
 	// Put a batch of CIDs

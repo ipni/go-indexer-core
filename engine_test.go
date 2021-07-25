@@ -1,36 +1,36 @@
-package core
+package indexer
 
 import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/filecoin-project/go-indexer-core/cache"
+	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/go-indexer-core/store/persistent/storethehash"
-	"github.com/filecoin-project/go-indexer-core/store/primary"
+	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/storetheindex/utils"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 const protocolID = 0
 
-func initStorage(t *testing.T, withPrimary bool, withPersist bool) *nodeStorage {
+func initStorage(t *testing.T, withPrimary bool, withPersist bool) *Engine {
 	tmpDir, err := ioutil.TempDir("", "sth")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var prim store.Storage
-	var persistent store.PersistentStorage
+	var prim cache.Interface
+	var persistent store.Interface
 
-	if withPersist {
-		persistent, err = storethehash.New(tmpDir)
-		if err != nil {
-			t.Fatal(err)
-		}
+	persistent, err = storethehash.New(tmpDir)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if withPrimary {
-		prim = primary.New(100000)
+		prim = radixcache.New(100000)
 	}
-	return NewStorage(prim, persistent)
+	return NewEngine(prim, persistent)
 }
 
 func TestPassthrough(t *testing.T) {
@@ -45,8 +45,8 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, protocolID, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
 	single := cids[2]
 
 	// First put should go to persistent
@@ -54,8 +54,8 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	_, persf, _ := s.persistent.Get(single)
-	_, primf, _ := s.primary.Get(single)
+	_, persf, _ := s.valueStore.Get(single)
+	_, primf, _ := s.resultCache.Get(single)
 	if !persf || primf {
 		t.Fatal("single put went to persistent and cache")
 	}
@@ -65,7 +65,7 @@ func TestPassthrough(t *testing.T) {
 	if !found || !v[0].Equal(entry1) {
 		t.Fatal("value not found in combined storage")
 	}
-	_, primf, _ = s.primary.Get(single)
+	_, primf, _ = s.resultCache.Get(single)
 	if !primf {
 		t.Fatal("cid not moved to cache after miss get")
 	}
@@ -75,8 +75,8 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ := s.persistent.Get(single)
-	primv, _, _ := s.primary.Get(single)
+	persv, _, _ := s.valueStore.Get(single)
+	primv, _, _ := s.resultCache.Get(single)
 	if len(primv) != 2 || len(persv) != 2 {
 		t.Fatal("value not updated in cache and persistent")
 	}
@@ -86,8 +86,8 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
+	persv, _, _ = s.valueStore.Get(single)
+	primv, _, _ = s.resultCache.Get(single)
 	if len(primv) != 1 || len(persv) != 1 {
 		t.Fatal("entry not removed in both storages")
 	}
@@ -98,14 +98,14 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
+	persv, _, _ = s.valueStore.Get(single)
+	primv, _, _ = s.resultCache.Get(single)
 	if len(primv) != 2 || len(persv) != 2 {
 		t.Fatal("value not updated in cache and persistent after PutMany")
 	}
 	// This CID should only be found in persistent
-	_, persf, _ = s.persistent.Get(cids[4])
-	_, primf, _ = s.primary.Get(cids[4])
+	_, persf, _ = s.valueStore.Get(cids[4])
+	_, primf, _ = s.resultCache.Get(cids[4])
 	if !persf || primf {
 		t.Fatal("single put went to persistent and cache")
 	}
@@ -115,13 +115,13 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
+	persv, _, _ = s.valueStore.Get(single)
+	primv, _, _ = s.resultCache.Get(single)
 	if len(primv) != 1 || len(persv) != 1 {
 		t.Fatal("value not removed in cache and persistent after RemoveMany")
 	}
-	_, persf, _ = s.persistent.Get(cids[4])
-	_, primf, _ = s.primary.Get(cids[4])
+	_, persf, _ = s.valueStore.Get(cids[4])
+	_, primf, _ = s.resultCache.Get(cids[4])
 	if persf || primf {
 		t.Fatal("remove many didn't remove from both storages")
 	}
@@ -143,7 +143,7 @@ func TestBoth(t *testing.T) {
 	e2e(t, s)
 }
 
-func e2e(t *testing.T, s *nodeStorage) {
+func e2e(t *testing.T, s *Engine) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -155,8 +155,8 @@ func e2e(t *testing.T, s *nodeStorage) {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, protocolID, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -278,7 +278,7 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
 		_, err = s.Put(c, entry)
 		if err != nil {

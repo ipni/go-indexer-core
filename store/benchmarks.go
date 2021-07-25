@@ -1,4 +1,4 @@
-package persistent
+package store
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/storetheindex/importer"
 	"github.com/filecoin-project/storetheindex/utils"
 	"github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 
 // prepare reads a cidlist and imports it to persistent storage getting
 // it ready for benchmarking.
-func prepare(s store.Storage, size string, t *testing.T) {
+func prepare(s Interface, size string, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
 
@@ -41,7 +41,7 @@ func prepare(s store.Storage, size string, t *testing.T) {
 	go imp.Read(context.Background(), out, errOut)
 
 	for c := range out {
-		entry := store.MakeIndexEntry(p, protocolID, c.Bytes())
+		entry := entry.MakeValue(p, protocolID, c.Bytes())
 		_, err = s.Put(c, entry)
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +56,7 @@ func prepare(s store.Storage, size string, t *testing.T) {
 
 // readAll reads all of the cids from a file and tries to get it from
 // the persistent storage.
-func readAll(s store.Storage, size string, m *metrics, t *testing.T) {
+func readAll(s Interface, size string, m *metrics, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
 
@@ -86,7 +86,7 @@ func readAll(s store.Storage, size string, m *metrics, t *testing.T) {
 }
 
 // Benchmark the average time per get by all CIDs and the total storage used.
-func BenchReadAll(s store.PersistentStorage, size string, t *testing.T) {
+func BenchReadAll(s Interface, size string, t *testing.T) {
 	m := initMetrics()
 	prepare(s, size, t)
 	readAll(s, size, m, t)
@@ -99,14 +99,14 @@ func BenchReadAll(s store.PersistentStorage, size string, t *testing.T) {
 }
 
 // Benchmark single thread get operation
-func BenchCidGet(s store.PersistentStorage, b *testing.B) {
+func BenchCidGet(s Interface, b *testing.B) {
 	cids, err := utils.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = utils.RandomCids(4096)
 	s.PutMany(cids, entry)
@@ -138,14 +138,14 @@ func BenchCidGet(s store.PersistentStorage, b *testing.B) {
 	}
 }
 
-func BenchParallelCidGet(s store.PersistentStorage, b *testing.B) {
+func BenchParallelCidGet(s Interface, b *testing.B) {
 	cids, err := utils.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = utils.RandomCids(4096)
 	s.PutMany(cids, entry)
@@ -206,7 +206,7 @@ func initMetrics() *metrics {
 	}
 }
 
-func report(s store.PersistentStorage, m *metrics, storage bool, t *testing.T) {
+func report(s Interface, m *metrics, storage bool, t *testing.T) {
 	memSize, _ := s.Size()
 	avgT := m.getTime.avg() / 1000
 	t.Log("Avg time per get (ms):", avgT)

@@ -1,4 +1,4 @@
-package primary
+package radixcache
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/storetheindex/utils"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -21,8 +21,8 @@ func TestPutGetRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, proto, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, proto, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -153,8 +153,8 @@ func TestRotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry1 := store.MakeIndexEntry(p, proto, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, proto, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
 
 	s := New(maxSize * 2)
 	cids, err = utils.RandomCids(maxSize + 5)
@@ -226,7 +226,7 @@ func TestMemoryUse(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 	var prevAlloc, prevCids uint64
 
 	for count := 1; count <= 1024; count *= 2 {
@@ -266,7 +266,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
 	t.Run(fmt.Sprintf("Put %d Single CIDs", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
@@ -300,7 +300,7 @@ func BenchmarkPut(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
 	cids, _ = utils.RandomCids(10240)
 
@@ -350,7 +350,7 @@ func BenchmarkGet(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
 	s := New(8192)
 	cids, _ = utils.RandomCids(4096)
