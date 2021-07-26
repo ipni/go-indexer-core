@@ -43,16 +43,6 @@ func (ie Value) Equal(other Value) bool {
 	return ie.ProviderID == other.ProviderID && bytes.Equal(ie.Metadata, other.Metadata)
 }
 
-// ValueInSlice checks if the value already exists in slice of values
-func ValueInSlice(value *Value, values []*Value) bool {
-	for _, v := range values {
-		if value == v || value.Equal(*v) {
-			return true
-		}
-	}
-	return false
-}
-
 func encodeMetadata(protocol uint64, data []byte) []byte {
 	varintSize := varint.UvarintSize(protocol)
 	buf := make([]byte, varintSize+len(data))

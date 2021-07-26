@@ -131,7 +131,7 @@ func (c *radixCache) put(k string, value entry.Value) bool {
 	existing, found := c.getNoLock(k)
 
 	// If found values(s) then check the value to put is already there.
-	if found && entry.ValueInSlice(&value, existing) {
+	if found && valueInSlice(&value, existing) {
 		return false
 	}
 
@@ -148,7 +148,7 @@ func (c *radixCache) putInterned(k string, value *entry.Value) bool {
 	defer c.mutex.Unlock()
 
 	existing, found := c.getNoLock(k)
-	if found && entry.ValueInSlice(value, existing) {
+	if found && valueInSlice(value, existing) {
 		return false
 	}
 
@@ -169,7 +169,7 @@ func (c *radixCache) putMany(keys []string, value entry.Value) int {
 
 	for _, k := range keys {
 		existing, found := c.getNoLock(k)
-		if found && entry.ValueInSlice(&value, existing) {
+		if found && valueInSlice(&value, existing) {
 			continue
 		}
 
@@ -300,4 +300,14 @@ func removeProviderInterns(tree *radixtree.Bytes, providerID peer.ID) {
 	for _, k := range deletes {
 		tree.Delete(k)
 	}
+}
+
+// valueInSlice checks if the value already exists in slice of values
+func valueInSlice(value *entry.Value, values []*entry.Value) bool {
+	for _, v := range values {
+		if value == v || value.Equal(*v) {
+			return true
+		}
+	}
+	return false
 }
