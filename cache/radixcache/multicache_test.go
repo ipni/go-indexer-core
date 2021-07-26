@@ -1,4 +1,4 @@
-package primary
+package radixcache
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -16,13 +16,13 @@ var proto uint64
 
 func TestPutGetRemove(t *testing.T) {
 	s := New(1000000)
-	cids, err := utils.RandomCids(15)
+	cids, err := test.RandomCids(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, proto, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, proto, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -149,15 +149,15 @@ func TestPutGetRemove(t *testing.T) {
 func TestRotate(t *testing.T) {
 	const maxSize = 10
 
-	cids, err := utils.RandomCids(2)
+	cids, err := test.RandomCids(2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry1 := store.MakeIndexEntry(p, proto, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, proto, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
 
 	s := New(maxSize * 2)
-	cids, err = utils.RandomCids(maxSize + 5)
+	cids, err = test.RandomCids(maxSize + 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestRotate(t *testing.T) {
 		t.Error("Error finding a cid from new cache")
 	}
 
-	cids2, err := utils.RandomCids(maxSize)
+	cids2, err := test.RandomCids(maxSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,18 +222,18 @@ func TestRotate(t *testing.T) {
 func TestMemoryUse(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	cids, err := utils.RandomCids(1)
+	cids, err := test.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 	var prevAlloc, prevCids uint64
 
 	for count := 1; count <= 1024; count *= 2 {
 		t.Run(fmt.Sprintf("MemoryUse %d CIDs", count*1024), func(t *testing.T) {
 			s := New(1202 * count)
 			for i := 0; i < count; i++ {
-				cids, _ = utils.RandomCids(1024)
+				cids, _ = test.RandomCids(1024)
 				err = s.PutMany(cids, entry)
 				if err != nil {
 					t.Fatal(err)
@@ -262,16 +262,16 @@ func TestMemoryUse(t *testing.T) {
 func TestMemSingleVsMany(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	cids, err := utils.RandomCids(1)
+	cids, err := test.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
 	t.Run(fmt.Sprintf("Put %d Single CIDs", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
-			cids, _ = utils.RandomCids(1024)
+			cids, _ = test.RandomCids(1024)
 			for j := range cids {
 				s.PutCheck(cids[j], entry)
 			}
@@ -285,7 +285,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	t.Run(fmt.Sprintf("Put %d CIDs in groups of 1024", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
-			cids, _ = utils.RandomCids(1024)
+			cids, _ = test.RandomCids(1024)
 			s.PutManyCount(cids, entry)
 		}
 		runtime.GC()
@@ -296,13 +296,13 @@ func TestMemSingleVsMany(t *testing.T) {
 }
 
 func BenchmarkPut(b *testing.B) {
-	cids, err := utils.RandomCids(1)
+	cids, err := test.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
-	cids, _ = utils.RandomCids(10240)
+	cids, _ = test.RandomCids(10240)
 
 	b.Run("Put single", func(b *testing.B) {
 		s := New(8192)
@@ -346,14 +346,14 @@ func BenchmarkPut(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	cids, err := utils.RandomCids(1)
+	cids, err := test.RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
-	entry := store.MakeIndexEntry(p, proto, cids[0].Bytes())
+	entry := entry.MakeValue(p, proto, cids[0].Bytes())
 
 	s := New(8192)
-	cids, _ = utils.RandomCids(4096)
+	cids, _ = test.RandomCids(4096)
 	s.PutManyCount(cids, entry)
 
 	b.Run("Get single", func(b *testing.B) {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
 
@@ -13,7 +14,7 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-var _ store.PersistentStorage = &sthStorage{}
+var _ store.Interface = &sthStorage{}
 
 // TODO: Benchmark and fine-tune for better performance.
 const DefaultIndexSizeBits = uint8(24)
@@ -46,11 +47,11 @@ func New(dir string) (*sthStorage, error) {
 	return &sthStorage{dir: dir, store: s}, nil
 }
 
-func (s *sthStorage) Get(c cid.Cid) ([]store.IndexEntry, bool, error) {
+func (s *sthStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
 	return s.get(c.Bytes())
 }
 
-func (s *sthStorage) get(k []byte) ([]store.IndexEntry, bool, error) {
+func (s *sthStorage) get(k []byte) ([]entry.Value, bool, error) {
 	value, found, err := s.store.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -59,7 +60,7 @@ func (s *sthStorage) get(k []byte) ([]store.IndexEntry, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := store.Unmarshal(value)
+	out, err := entry.Unmarshal(value)
 	if err != nil {
 		return nil, false, err
 	}
@@ -67,11 +68,11 @@ func (s *sthStorage) get(k []byte) ([]store.IndexEntry, bool, error) {
 
 }
 
-func (s *sthStorage) Put(c cid.Cid, entry store.IndexEntry) (bool, error) {
+func (s *sthStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 	return s.put(c.Bytes(), entry)
 }
 
-func (s *sthStorage) put(k []byte, in store.IndexEntry) (bool, error) {
+func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
 	// NOTE: The implementation of Put in storethehash already
 	// performs a first lookup to check the type of update that
 	// needs to be done over the key. We can probably save this
@@ -88,7 +89,7 @@ func (s *sthStorage) put(k []byte, in store.IndexEntry) (bool, error) {
 	}
 
 	li := append(old, in)
-	b, err := store.Marshal(li)
+	b, err := entry.Marshal(li)
 	if err != nil {
 		return false, err
 	}
@@ -100,7 +101,7 @@ func (s *sthStorage) put(k []byte, in store.IndexEntry) (bool, error) {
 	return true, nil
 }
 
-func (s *sthStorage) PutMany(cs []cid.Cid, entry store.IndexEntry) error {
+func (s *sthStorage) PutMany(cs []cid.Cid, entry entry.Value) error {
 	for _, c := range cs {
 		_, err := s.put(c.Bytes(), entry)
 		if err != nil {
@@ -139,11 +140,11 @@ func (s *sthStorage) Size() (int64, error) {
 	return size, nil
 
 }
-func (s *sthStorage) Remove(c cid.Cid, entry store.IndexEntry) (bool, error) {
+func (s *sthStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 	return s.remove(c, entry)
 }
 
-func (s *sthStorage) remove(c cid.Cid, entry store.IndexEntry) (bool, error) {
+func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	k := c.Bytes()
 	old, found, err := s.get(k)
 	if err != nil {
@@ -157,7 +158,7 @@ func (s *sthStorage) remove(c cid.Cid, entry store.IndexEntry) (bool, error) {
 	return false, nil
 }
 
-func (s *sthStorage) RemoveMany(cids []cid.Cid, entry store.IndexEntry) error {
+func (s *sthStorage) RemoveMany(cids []cid.Cid, entry entry.Value) error {
 	for i := range cids {
 		_, err := s.remove(cids[i], entry)
 		if err != nil {
@@ -181,7 +182,7 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 // DuplicateEntry checks if the entry already exists in the index. An entry
 // for the same provider but different metadata is not considered
 // a duplicate entry.
-func duplicateEntry(in store.IndexEntry, old []store.IndexEntry) bool {
+func duplicateEntry(in entry.Value, old []entry.Value) bool {
 	for i := range old {
 		if in.Equal(old[i]) {
 			return true
@@ -190,18 +191,18 @@ func duplicateEntry(in store.IndexEntry, old []store.IndexEntry) bool {
 	return false
 }
 
-func (s *sthStorage) removeEntry(k []byte, entry store.IndexEntry, stored []store.IndexEntry) (bool, error) {
+func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value) (bool, error) {
 	for i := range stored {
-		if entry.Equal(stored[i]) {
-			// It is the only value, remove the entry
+		if value.Equal(stored[i]) {
+			// It is the only value, remove the value
 			if len(stored) == 1 {
 				return s.store.Remove(k)
 			}
 
-			// else remove from entry and put updated structure
+			// else remove from value and put updated structure
 			stored[i] = stored[len(stored)-1]
-			stored[len(stored)-1] = store.IndexEntry{}
-			b, err := store.Marshal(stored[:len(stored)-1])
+			stored[len(stored)-1] = entry.Value{}
+			b, err := entry.Marshal(stored[:len(stored)-1])
 			if err != nil {
 				return false, err
 			}

@@ -1,63 +1,66 @@
-package core
+package indexer
 
 import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/filecoin-project/go-indexer-core/cache"
+	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/go-indexer-core/store/persistent/storethehash"
-	"github.com/filecoin-project/go-indexer-core/store/primary"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store/storethehash"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 const protocolID = 0
 
-func initStorage(t *testing.T, withPrimary bool, withPersist bool) *nodeStorage {
+func initStorage(t *testing.T, withCache bool) *Engine {
 	tmpDir, err := ioutil.TempDir("", "sth")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var prim store.Storage
-	var persistent store.PersistentStorage
+	var resultCache cache.Interface
+	var valueStore store.Interface
 
-	if withPersist {
-		persistent, err = storethehash.New(tmpDir)
-		if err != nil {
-			t.Fatal(err)
-		}
+	valueStore, err = storethehash.New(tmpDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if withPrimary {
-		prim = primary.New(100000)
+	if withCache {
+		resultCache = radixcache.New(100000)
 	}
-	return NewStorage(prim, persistent)
+	return NewEngine(resultCache, valueStore)
 }
 
 func TestPassthrough(t *testing.T) {
-	s := initStorage(t, true, true)
+	s := initStorage(t, true)
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(5)
+	cids, err := test.RandomCids(5)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, protocolID, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
 	single := cids[2]
 
-	// First put should go to persistent
+	// First put should go to value store
 	_, err = s.Put(single, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	_, persf, _ := s.persistent.Get(single)
-	_, primf, _ := s.primary.Get(single)
-	if !persf || primf {
-		t.Fatal("single put went to persistent and cache")
+	_, found, _ := s.valueStore.Get(single)
+	if !found {
+		t.Fatal("single put did not go to value store")
+	}
+	_, found, _ = s.resultCache.Get(single)
+	if found {
+		t.Fatal("single put went to result cache")
 	}
 
 	// Getting the value should put it in cache
@@ -65,8 +68,8 @@ func TestPassthrough(t *testing.T) {
 	if !found || !v[0].Equal(entry1) {
 		t.Fatal("value not found in combined storage")
 	}
-	_, primf, _ = s.primary.Get(single)
-	if !primf {
+	_, found, _ = s.resultCache.Get(single)
+	if !found {
 		t.Fatal("cid not moved to cache after miss get")
 	}
 
@@ -75,10 +78,13 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ := s.persistent.Get(single)
-	primv, _, _ := s.primary.Get(single)
-	if len(primv) != 2 || len(persv) != 2 {
-		t.Fatal("value not updated in cache and persistent")
+	values, _, _ := s.valueStore.Get(single)
+	if len(values) != 2 {
+		t.Fatal("values not updated in value store")
+	}
+	values, _, _ = s.resultCache.Get(single)
+	if len(values) != 2 {
+		t.Fatal("values not updated in resutl cache")
 	}
 
 	// Remove should apply to both storages
@@ -86,28 +92,38 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
-	if len(primv) != 1 || len(persv) != 1 {
-		t.Fatal("entry not removed in both storages")
+	values, _, _ = s.valueStore.Get(single)
+	if len(values) != 1 {
+		t.Fatal("value not removed from value store")
+	}
+	values, _, _ = s.resultCache.Get(single)
+	if len(values) != 1 {
+		t.Fatal("value not removed from result cache")
 	}
 
 	// Putting many should only update in cache the ones
-	// already stored, adding all to persistent storage.
+	// already stored, adding all to value store.
 	err = s.PutMany(cids[2:], entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
-	if len(primv) != 2 || len(persv) != 2 {
-		t.Fatal("value not updated in cache and persistent after PutMany")
+	values, _, _ = s.valueStore.Get(single)
+	if len(values) != 2 {
+		t.Fatal("value not updated in value store after PutMany")
 	}
-	// This CID should only be found in persistent
-	_, persf, _ = s.persistent.Get(cids[4])
-	_, primf, _ = s.primary.Get(cids[4])
-	if !persf || primf {
-		t.Fatal("single put went to persistent and cache")
+	values, _, _ = s.resultCache.Get(single)
+	if len(values) != 2 {
+		t.Fatal("value not updated in result cache after PutMany")
+	}
+
+	// This CID should only be found in value store
+	_, found, _ = s.valueStore.Get(cids[4])
+	if !found {
+		t.Fatal("single put did not go to value store")
+	}
+	_, found, _ = s.resultCache.Get(cids[4])
+	if found {
+		t.Fatal("single put went to result cache")
 	}
 
 	// RemoveMany should remove the corresponding from both storages.
@@ -115,48 +131,49 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	persv, _, _ = s.persistent.Get(single)
-	primv, _, _ = s.primary.Get(single)
-	if len(primv) != 1 || len(persv) != 1 {
-		t.Fatal("value not removed in cache and persistent after RemoveMany")
+	values, _, _ = s.valueStore.Get(single)
+	if len(values) != 1 {
+		t.Fatal("values not removed from value store")
 	}
-	_, persf, _ = s.persistent.Get(cids[4])
-	_, primf, _ = s.primary.Get(cids[4])
-	if persf || primf {
-		t.Fatal("remove many didn't remove from both storages")
+	values, _, _ = s.resultCache.Get(single)
+	if len(values) != 1 {
+		t.Fatal("value not removed from result cache after RemoveMany")
 	}
 
+	_, found, _ = s.valueStore.Get(cids[4])
+	if found {
+		t.Fatal("remove many did not remove values from value store")
+	}
+	_, found, _ = s.resultCache.Get(cids[4])
+	if found {
+		t.Fatal("remove many did not remove value from result cache")
+	}
 }
 
-func TestOnlyPrimary(t *testing.T) {
-	s := initStorage(t, true, false)
-	e2e(t, s)
-}
-
-func TestOnlyPersistent(t *testing.T) {
-	s := initStorage(t, false, true)
+func TestOnlyValueStore(t *testing.T) {
+	s := initStorage(t, false)
 	e2e(t, s)
 }
 
 func TestBoth(t *testing.T) {
-	s := initStorage(t, true, true)
+	s := initStorage(t, true)
 	e2e(t, s)
 }
 
-func e2e(t *testing.T, s *nodeStorage) {
+func e2e(t *testing.T, s *Engine) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(15)
+	cids, err := test.RandomCids(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry1 := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
-	entry2 := store.MakeIndexEntry(p, protocolID, cids[1].Bytes())
+	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -266,19 +283,19 @@ func e2e(t *testing.T, s *nodeStorage) {
 }
 
 func SizeTest(t *testing.T) {
-	s := initStorage(t, true, true)
+	s := initStorage(t, true)
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(151)
+	cids, err := test.RandomCids(151)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry := store.MakeIndexEntry(p, protocolID, cids[0].Bytes())
+	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
 		_, err = s.Put(c, entry)
 		if err != nil {
@@ -292,10 +309,5 @@ func SizeTest(t *testing.T) {
 	}
 	if size == int64(0) {
 		t.Error("failed to compute storage size")
-	}
-	s = initStorage(t, true, false)
-	_, err = s.Size()
-	if err == nil {
-		t.Fatal("should return an error when no persistence configured")
 	}
 }

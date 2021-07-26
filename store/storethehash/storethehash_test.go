@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/go-indexer-core/store/persistent"
-	"github.com/filecoin-project/go-indexer-core/store/persistent/storethehash"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store/storethehash"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-func initSth() (store.PersistentStorage, error) {
+func initSth() (store.Interface, error) {
 	tmpDir, err := ioutil.TempDir("", "sth")
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.E2ETest(t, s)
+	test.E2ETest(t, s)
 }
 
 func TestSize(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.SizeTest(t, s)
+	test.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
@@ -42,7 +42,7 @@ func TestRemoveMany(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistent.RemoveManyTest(t, s)
+	test.RemoveManyTest(t, s)
 }
 
 func TestPeriodicFlush(t *testing.T) {
@@ -65,12 +65,12 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Put some data in the first storage.
-	cids, err := utils.RandomCids(151)
+	cids, err := test.RandomCids(151)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry := store.MakeIndexEntry(p, 0, cids[0].Bytes())
+	entry := entry.MakeValue(p, 0, cids[0].Bytes())
 	for _, c := range cids[1:] {
 		_, err = s.Put(c, entry)
 		if err != nil {
@@ -81,7 +81,7 @@ func TestPeriodicFlush(t *testing.T) {
 	// Sleep for 2 sync Intervals to ensure that data is flushed
 	time.Sleep(2 * storethehash.DefaultSyncInterval)
 
-	// Regenerate new storage from primary
+	// Regenerate new storage
 	s2, err := storethehash.New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
