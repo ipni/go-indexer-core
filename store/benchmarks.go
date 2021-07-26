@@ -109,7 +109,10 @@ func BenchCidGet(s Interface, b *testing.B) {
 	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = utils.RandomCids(4096)
-	s.PutMany(cids, entry)
+	err = s.PutMany(cids, entry)
+	if err != nil {
+		panic(err)
+	}
 
 	// Bench average time for a single get
 	b.Run("Get single", func(b *testing.B) {
@@ -148,7 +151,10 @@ func BenchParallelCidGet(s Interface, b *testing.B) {
 	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = utils.RandomCids(4096)
-	s.PutMany(cids, entry)
+	err = s.PutMany(cids, entry)
+	if err != nil {
+		panic(err)
+	}
 	rand.Seed(time.Now().UnixNano())
 
 	// Benchmark the average request time for different number of go routines.
