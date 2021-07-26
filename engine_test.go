@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -40,7 +40,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(5)
+	cids, err := test.RandomCids(5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func e2e(t *testing.T, s *Engine) {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(15)
+	cids, err := test.RandomCids(15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(151)
+	cids, err := test.RandomCids(151)
 	if err != nil {
 		t.Fatal(err)
 	}

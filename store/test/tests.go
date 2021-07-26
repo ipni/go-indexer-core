@@ -1,21 +1,21 @@
-package store
+package test
 
 import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/entry"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-func E2ETest(t *testing.T, s Interface) {
+func E2ETest(t *testing.T, s store.Interface) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(15)
+	cids, err := RandomCids(15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,14 +130,14 @@ func E2ETest(t *testing.T, s Interface) {
 
 }
 
-func SizeTest(t *testing.T, s Interface) {
+func SizeTest(t *testing.T, s store.Interface) {
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(151)
+	cids, err := RandomCids(151)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,14 +159,14 @@ func SizeTest(t *testing.T, s Interface) {
 	}
 }
 
-func RemoveManyTest(t *testing.T, s Interface) {
+func RemoveManyTest(t *testing.T, s store.Interface) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cids, err := utils.RandomCids(15)
+	cids, err := RandomCids(15)
 	if err != nil {
 		t.Fatal(err)
 	}

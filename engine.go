@@ -17,7 +17,7 @@ type Engine struct {
 	valueStore  store.Interface
 }
 
-// NewEngine creates a new Engine from with the given cache and store
+// NewEngine creates a new Engine with the given result cache and value store
 func NewEngine(resultCache cache.Interface, valueStore store.Interface) *Engine {
 	if valueStore == nil {
 		panic("valueStore is required")
@@ -66,7 +66,7 @@ func (e *Engine) Get(c cid.Cid) ([]entry.Value, bool, error) {
 }
 
 // Put stores a value for a CID if the value is not already stored.  New values
-// are added to those that are already stored.
+// are added to those that are already stored for the CID.
 func (e *Engine) Put(c cid.Cid, value entry.Value) (bool, error) {
 	// If there is a result cache, check first if cid already in cache
 	if e.resultCache != nil {
@@ -111,7 +111,7 @@ func (e *Engine) PutMany(cids []cid.Cid, value entry.Value) error {
 	return nil
 }
 
-// Remove removes the entry.Value for the specified CID
+// Remove removes a value for the specified CID
 func (e *Engine) Remove(c cid.Cid, value entry.Value) (bool, error) {
 	ok, err := e.valueStore.Remove(c, value)
 	if err != nil {
@@ -130,7 +130,7 @@ func (e *Engine) Remove(c cid.Cid, value entry.Value) (bool, error) {
 	return true, nil
 }
 
-// RemoveMany removes the entry.Value from multiple CIDs
+// RemoveMany removes the specified value from multiple CIDs
 func (e *Engine) RemoveMany(cids []cid.Cid, value entry.Value) error {
 	// Remove first from valueStore
 	err := e.valueStore.RemoveMany(cids, value)
@@ -145,7 +145,7 @@ func (e *Engine) RemoveMany(cids []cid.Cid, value entry.Value) error {
 	return e.resultCache.RemoveMany(cids, value)
 }
 
-// RemoveProvider removes all entries for specified provider.  This is used
+// RemoveProvider removes all values for specified provider.  This is used
 // when a provider is no longer indexed by the indexer.
 func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	// Remove first from valueStore
@@ -161,10 +161,10 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	return e.resultCache.RemoveProvider(providerID)
 }
 
-// Size returns the total storage capacity being used
+// Size returns the total storage capacity, in bytes, used to by the value
+// store.  This does not include any space used by the result cache, as it only
+// contains a limited quantity of results for previous queries, so is not
+// representative of the total amount of data stored by the indexer.
 func (e *Engine) Size() (int64, error) {
-	// NOTE: Do not return a size for the resultCache since this is only a
-	// limited amount of memory and is not representative of the total amount
-	// of data stored by the indexer.
 	return e.valueStore.Size()
 }

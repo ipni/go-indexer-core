@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -26,7 +26,7 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.E2ETest(t, s)
+	test.E2ETest(t, s)
 }
 
 func TestSize(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.SizeTest(t, s)
+	test.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
@@ -42,7 +42,7 @@ func TestRemoveMany(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.RemoveManyTest(t, s)
+	test.RemoveManyTest(t, s)
 }
 
 func TestPeriodicFlush(t *testing.T) {
@@ -65,7 +65,7 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Put some data in the first storage.
-	cids, err := utils.RandomCids(151)
+	cids, err := test.RandomCids(151)
 	if err != nil {
 		t.Fatal(err)
 	}

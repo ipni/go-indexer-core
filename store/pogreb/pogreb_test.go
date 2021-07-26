@@ -7,6 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/pogreb"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
 func initPogreb() (store.Interface, error) {
@@ -24,7 +25,7 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.E2ETest(t, s)
+	test.E2ETest(t, s)
 }
 
 func TestSize(t *testing.T) {
@@ -34,7 +35,7 @@ func TestSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.SizeTest(t, s)
+	test.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRemoveMany(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.RemoveManyTest(t, s)
+	test.RemoveManyTest(t, s)
 }
 
 func skipIf32bit(t *testing.T) {

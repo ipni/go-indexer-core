@@ -1,7 +1,6 @@
-package store
+package test
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -10,14 +9,13 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core/entry"
-	"github.com/filecoin-project/storetheindex/importer"
-	"github.com/filecoin-project/storetheindex/utils"
+	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 const (
-	testDataDir = "../../test_data/"
+	testDataDir = "../test/test_data/"
 	testDataExt = ".data"
 	// protocol ID for IndexEntry metadata
 	protocolID = 0
@@ -25,20 +23,18 @@ const (
 
 // prepare reads a cid list and imports it into the value store getting it
 // ready for benchmarking.
-func prepare(s Interface, size string, t *testing.T) {
+func prepare(s store.Interface, size string, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
-
-	file, err := os.OpenFile(testDataDir+size+testDataExt, os.O_RDONLY, 0644)
+	file, err := os.OpenFile(fmt.Sprint(testDataDir, size, testDataExt), os.O_RDONLY, 0644)
 	if err != nil {
-		t.Fatalf("couldn't find the right input file for %v, try synthetizing from CLI: %v", size, err)
+		t.Fatalf("could not open input file: %v", err)
 	}
 	defer file.Close()
 
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	imp := importer.NewCidListImporter(file)
 
-	go imp.Read(context.Background(), out, errOut)
+	go ReadCids(file, out, errOut)
 
 	for c := range out {
 		entry := entry.MakeValue(p, protocolID, c.Bytes())
@@ -56,19 +52,17 @@ func prepare(s Interface, size string, t *testing.T) {
 
 // readAll reads all of the cids from a file and tries to get it from
 // the value store.
-func readAll(s Interface, size string, m *metrics, t *testing.T) {
+func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
 
-	file, err := os.OpenFile(testDataDir+size+testDataExt, os.O_RDONLY, 0644)
+	file, err := os.OpenFile(fmt.Sprint(testDataDir, size, testDataExt), os.O_RDONLY, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
 
-	imp := importer.NewCidListImporter(file)
-
-	go imp.Read(context.Background(), out, errOut)
+	go ReadCids(file, out, errOut)
 	for c := range out {
 		now := time.Now()
 		_, found, err := s.Get(c)
@@ -86,7 +80,7 @@ func readAll(s Interface, size string, m *metrics, t *testing.T) {
 }
 
 // Benchmark the average time per get by all CIDs and the total storage used.
-func BenchReadAll(s Interface, size string, t *testing.T) {
+func BenchReadAll(s store.Interface, size string, t *testing.T) {
 	m := initMetrics()
 	prepare(s, size, t)
 	readAll(s, size, m, t)
@@ -99,8 +93,8 @@ func BenchReadAll(s Interface, size string, t *testing.T) {
 }
 
 // Benchmark single thread get operation
-func BenchCidGet(s Interface, b *testing.B) {
-	cids, err := utils.RandomCids(1)
+func BenchCidGet(s store.Interface, b *testing.B) {
+	cids, err := RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
@@ -108,7 +102,7 @@ func BenchCidGet(s Interface, b *testing.B) {
 
 	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
-	cids, _ = utils.RandomCids(4096)
+	cids, _ = RandomCids(4096)
 	err = s.PutMany(cids, entry)
 	if err != nil {
 		panic(err)
@@ -141,8 +135,8 @@ func BenchCidGet(s Interface, b *testing.B) {
 	}
 }
 
-func BenchParallelCidGet(s Interface, b *testing.B) {
-	cids, err := utils.RandomCids(1)
+func BenchParallelCidGet(s store.Interface, b *testing.B) {
+	cids, err := RandomCids(1)
 	if err != nil {
 		panic(err)
 	}
@@ -150,7 +144,7 @@ func BenchParallelCidGet(s Interface, b *testing.B) {
 
 	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 
-	cids, _ = utils.RandomCids(4096)
+	cids, _ = RandomCids(4096)
 	err = s.PutMany(cids, entry)
 	if err != nil {
 		panic(err)
@@ -212,7 +206,7 @@ func initMetrics() *metrics {
 	}
 }
 
-func report(s Interface, m *metrics, storage bool, t *testing.T) {
+func report(s store.Interface, m *metrics, storage bool, t *testing.T) {
 	memSize, _ := s.Size()
 	avgT := m.getTime.avg() / 1000
 	t.Log("Avg time per get (ms):", avgT)

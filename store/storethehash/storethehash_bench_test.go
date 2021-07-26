@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
 func initBenchStore() store.Interface {
@@ -15,25 +16,25 @@ func initBenchStore() store.Interface {
 }
 
 func BenchmarkGet(b *testing.B) {
-	store.BenchCidGet(initBenchStore(), b)
+	test.BenchCidGet(initBenchStore(), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
-	store.BenchParallelCidGet(initBenchStore(), b)
+	test.BenchParallelCidGet(initBenchStore(), b)
 }
 
 // To run this storage benchmarks run:
 // TEST_STORAGE=true go test -v -timeout=30m
 func TestBenchSingle10MB(t *testing.T) {
-	store.SkipStorage(t)
-	store.BenchReadAll(initBenchStore(), "10MB", t)
+	test.SkipStorage(t)
+	test.BenchReadAll(initBenchStore(), "10MB", t)
 }
 
 func TestBenchSingle100MB(t *testing.T) {
-	store.SkipStorage(t)
-	store.BenchReadAll(initBenchStore(), "100MB", t)
+	test.SkipStorage(t)
+	test.BenchReadAll(initBenchStore(), "100MB", t)
 }
 
 func TestBenchSingle1GB(t *testing.T) {
-	store.SkipStorage(t)
-	store.BenchReadAll(initBenchStore(), "1GB", t)
+	test.SkipStorage(t)
+	test.BenchReadAll(initBenchStore(), "1GB", t)
 }
