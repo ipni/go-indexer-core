@@ -23,8 +23,8 @@ const (
 	protocolID = 0
 )
 
-// prepare reads a cidlist and imports it to persistent storage getting
-// it ready for benchmarking.
+// prepare reads a cid list and imports it into the value store getting it
+// ready for benchmarking.
 func prepare(s Interface, size string, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
@@ -55,7 +55,7 @@ func prepare(s Interface, size string, t *testing.T) {
 }
 
 // readAll reads all of the cids from a file and tries to get it from
-// the persistent storage.
+// the value store.
 func readAll(s Interface, size string, m *metrics, t *testing.T) {
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)

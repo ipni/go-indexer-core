@@ -29,7 +29,7 @@ func E2ETest(t *testing.T, s Interface) {
 	remove := cids[4]
 
 	// Put a single CID
-	t.Logf("Put/Get a single CID in primary storage")
+	t.Logf("Put/Get a single CID")
 	_, err = s.Put(single, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
@@ -47,7 +47,7 @@ func E2ETest(t *testing.T, s Interface) {
 	}
 
 	// Put a batch of CIDs
-	t.Logf("Put/Get a batch of CIDs in primary storage")
+	t.Logf("Put/Get a batch of CIDs")
 	err = s.PutMany(batch, entry1)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)
@@ -175,7 +175,7 @@ func RemoveManyTest(t *testing.T, s Interface) {
 	batch := cids[1:]
 
 	// Put a batch of CIDs
-	t.Logf("Put/Get a batch of CIDs in primary storage")
+	t.Logf("Put/Get a batch of CIDs")
 	err = s.PutMany(batch, entry)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)

@@ -11,13 +11,13 @@ import (
 
 var log = logging.Logger("indexer-core")
 
-// Engine combines a cache and a persistent storage
+// Engine combines a result cache and a value store
 type Engine struct {
 	resultCache cache.Interface
 	valueStore  store.Interface
 }
 
-// NewStorage creates new Engine from a primary and persistent storages
+// NewEngine creates a new Engine from with the given cache and store
 func NewEngine(resultCache cache.Interface, valueStore store.Interface) *Engine {
 	if valueStore == nil {
 		panic("valueStore is required")
@@ -47,7 +47,7 @@ func (e *Engine) Get(c cid.Cid) ([]entry.Value, bool, error) {
 			// so we don't need to loop through entry.Value slice to move from
 			// one storage to another?
 			if found {
-				// Move from persistent to cache
+				// Move from value store to result cache
 				for i := range v {
 					_, err := e.resultCache.Put(c, v[i])
 					if err != nil {
