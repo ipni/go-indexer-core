@@ -1,4 +1,4 @@
-package pogreb_test
+package pogreb
 
 import (
 	"runtime"

@@ -1,4 +1,4 @@
-package storethehash_test
+package storethehash
 
 import (
 	"testing"

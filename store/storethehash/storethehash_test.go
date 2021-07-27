@@ -1,4 +1,4 @@
-package storethehash_test
+package storethehash
 
 import (
 	"io/ioutil"
@@ -8,7 +8,6 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -18,7 +17,7 @@ func initSth() (store.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	return storethehash.New(tmpDir)
+	return New(tmpDir)
 }
 
 func TestE2E(t *testing.T) {
@@ -55,7 +54,7 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err := storethehash.New(tmpDir)
+	s, err := New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,10 +78,10 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Sleep for 2 sync Intervals to ensure that data is flushed
-	time.Sleep(2 * storethehash.DefaultSyncInterval)
+	time.Sleep(2 * DefaultSyncInterval)
 
 	// Regenerate new storage
-	s2, err := storethehash.New(tmpDir)
+	s2, err := New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,4 +98,93 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
+}
+
+func TestRefC(t *testing.T) {
+	sint, err := initSth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := sint.(*sthStorage)
+
+	// Create new valid peer.ID
+	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cids, err := test.RandomCids(15)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry1 := entry.MakeValue(p, 0, cids[0].Bytes())
+	kEnt1, err := store.EntryKey(entry1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := cids[2]
+	second := cids[3]
+
+	// Put a single CID
+	t.Logf("Put/Get first ref")
+	_, err = s.Put(first, entry1)
+	if err != nil {
+		t.Fatal("Error putting single cid: ", err)
+	}
+	checkRefC(t, s, kEnt1, 1)
+
+	t.Logf("Put/Get second ref")
+	_, err = s.Put(second, entry1)
+	if err != nil {
+		t.Fatal("Error putting single cid: ", err)
+	}
+	checkRefC(t, s, kEnt1, 2)
+
+	t.Logf("Put/Get same value again")
+	_, err = s.Put(second, entry1)
+	if err != nil {
+		t.Fatal("Error putting single cid: ", err)
+	}
+	checkRefC(t, s, kEnt1, 2)
+
+	t.Logf("Remove second")
+	_, err = s.Remove(second, entry1)
+	if err != nil {
+		t.Fatal("Error putting single cid: ", err)
+	}
+	checkRefC(t, s, kEnt1, 1)
+
+	t.Logf("Remove first")
+	_, err = s.Remove(first, entry1)
+	if err != nil {
+		t.Fatal("Error putting single cid: ", err)
+	}
+	ent, found, err := s.getEntry(kEnt1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("Entry should have been removed with RefC==0", ent)
+	}
+}
+
+func checkRefC(t *testing.T, s *sthStorage, k []byte, refC uint64) {
+	ent, found, err := s.getEntry(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Errorf("Error finding single cid")
+	}
+	if ent.RefC != refC {
+		t.Fatal("RefCount should have not changed:", ent.RefC)
+	}
+}
+
+func skipIf32bit(t *testing.T) {
+	if runtime.GOARCH == "386" {
+		t.Skip("Pogreb cannot use GOARCH=386")
+	}
 }

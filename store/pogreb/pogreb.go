@@ -7,7 +7,10 @@
 package pogreb
 
 import (
+	"bytes"
+	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -24,8 +27,9 @@ var _ store.Interface = &pStorage{}
 const DefaultSyncInterval = time.Second
 
 type pStorage struct {
-	dir   string
-	store *pogreb.DB
+	dir      string
+	store    *pogreb.DB
+	entStore *pogreb.DB
 }
 
 func New(dir string) (*pStorage, error) {
@@ -35,15 +39,53 @@ func New(dir string) (*pStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &pStorage{dir: dir, store: s}, nil
+	// Adding a store exclusively for entries.
+	entryDir := path.Join(dir, "entries")
+	es, err := pogreb.Open(entryDir, &opts)
+	if err != nil {
+		return nil, err
+	}
+	return &pStorage{dir: dir, store: s, entStore: es}, nil
 }
 
 func (s *pStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
-	return s.get(c.Bytes())
+	out := []entry.Value{}
+	ks, found, err := s.get(c.Bytes())
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, found, nil
+	}
+	// If keys found, get entries from entryStore
+	for i := range ks {
+		e, found, err := s.getEntry(ks[i])
+		if err != nil {
+			return nil, false, err
+		}
+		if !found {
+			return nil, false, errors.New("one of the entries couldn't be found in entryStore")
+		}
+		out = append(out, e.Value)
+	}
+
+	return out, true, nil
 }
 
-func (s *pStorage) get(k []byte) ([]entry.Value, bool, error) {
+func (s *pStorage) get(k []byte) (store.CidEntry, bool, error) {
 	value, err := s.store.Get(k)
+	if err != nil {
+		return nil, false, err
+	}
+	if value == nil {
+		return [][]byte{}, false, nil
+	}
+
+	return store.SplitKs(value), true, nil
+}
+
+func (s *pStorage) getEntry(k []byte) (*store.Entry, bool, error) {
+	value, err := s.entStore.Get(k)
 	if err != nil {
 		return nil, false, err
 	}
@@ -51,12 +93,11 @@ func (s *pStorage) get(k []byte) ([]entry.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := entry.Unmarshal(value)
+	out, err := store.Unmarshal(value)
 	if err != nil {
 		return nil, false, err
 	}
 	return out, true, nil
-
 }
 
 func (s *pStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
@@ -64,23 +105,64 @@ func (s *pStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
+	entK, err := store.EntryKey(in)
+	if err != nil {
+		return false, err
+	}
 	old, found, err := s.get(k)
 	if err != nil {
 		return false, err
 	}
 	// If found it means there is already a value there.
 	// Check if we are trying to put a duplicate entry
-	if found && duplicateEntry(in, old) {
+	if found && store.DuplicateEntry(entK, old) {
 		return false, nil
 	}
 
-	li := append(old, in)
-	b, err := entry.Marshal(li)
+	// If no duplicate put the entry.
+	ok, err := s.putEntry(entK, in)
 	if err != nil {
 		return false, err
 	}
+	// Ok needs to be true, RefC needs to be increased successfully
+	if !ok {
+		return false, errors.New("failed to put entry in entryStore")
+	}
+	li := append(old, entK)
 
-	err = s.store.Put(k, b)
+	err = s.store.Put(k, store.JoinKs(li))
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *pStorage) putEntry(k []byte, in entry.Value) (bool, error) {
+	old, found, err := s.getEntry(k)
+	if err != nil {
+		return false, err
+	}
+	// Found in store. Increase RefC and update in store
+	if found {
+		old.RefC++
+		b, err := store.Marshal(old)
+		if err != nil {
+			return false, err
+		}
+		s.entStore.Put(k, b)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	// If not found the entry is new and needs to be fully put.
+	e := &store.Entry{Value: in, RefC: 1}
+	b, err := store.Marshal(e)
+	if err != nil {
+		return false, err
+	}
+	err = s.entStore.Put(k, b)
 	if err != nil {
 		return false, err
 	}
@@ -100,6 +182,11 @@ func (s *pStorage) PutMany(cs []cid.Cid, entry entry.Value) error {
 }
 
 func (s *pStorage) Flush() error {
+	// Flush entryStore
+	if err := s.entStore.Sync(); err != nil {
+		return err
+	}
+	// Then flush the main store
 	return s.store.Sync()
 }
 
@@ -109,6 +196,7 @@ func (s *pStorage) Close() error {
 
 func (s *pStorage) Size() (int64, error) {
 	var size int64
+	// NOTE: Consider using WalkDir for efficiency?
 	err := filepath.Walk(s.dir, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -161,37 +249,58 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 	panic("not implemented")
 }
 
-// DuplicateEntry checks if the entry already exists in the index. An entry
-// for the same provider but different metadata is not considered
-// a duplicate entry,
-func duplicateEntry(in entry.Value, old []entry.Value) bool {
-	for i := range old {
-		if in.Equal(old[i]) {
-			return true
-		}
+func (s *pStorage) decreaseRefC(k []byte) (bool, error) {
+	old, found, err := s.getEntry(k)
+	if err != nil {
+		return false, err
 	}
-	return false
+	if !found {
+		return false, errors.New("cannot decrease RefC from non-existing entry")
+	}
+
+	// Decrease RefC
+	old.RefC--
+	// If RefC == 0 remove the full entry
+	if old.RefC == 0 {
+		return true, s.entStore.Delete(k)
+	}
+	// If not we put entry with the updated refCount
+	b, err := store.Marshal(old)
+	if err != nil {
+		return false, err
+	}
+	s.entStore.Put(k, b)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-func (s *pStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value) (bool, error) {
+func (s *pStorage) removeEntry(k []byte, value entry.Value, stored store.CidEntry) (bool, error) {
+	entK, err := store.EntryKey(value)
+	if err != nil {
+		return false, err
+	}
 	for i := range stored {
-		if value.Equal(stored[i]) {
+		if bytes.Equal(entK, stored[i]) {
 			// It is the only value, remove the value
 			if len(stored) == 1 {
-				return true, s.store.Delete(k)
+				err := s.store.Delete(k)
+				if err != nil {
+					return false, err
+				}
+			} else {
+				// else remove the key and put updated structure
+				stored[i] = stored[len(stored)-1]
+				stored[len(stored)-1] = []byte{}
+				b := store.JoinKs(stored[:len(stored)-1])
+				if err := s.store.Put(k, b); err != nil {
+					return false, err
+				}
 			}
 
-			// else remove from value and put updated structure
-			stored[i] = stored[len(stored)-1]
-			stored[len(stored)-1] = entry.Value{}
-			b, err := entry.Marshal(stored[:len(stored)-1])
-			if err != nil {
-				return false, err
-			}
-			if err := s.store.Put(k, b); err != nil {
-				return false, err
-			}
-			return true, nil
+			// With the key removed, decrease RefCount from entry
+			return s.decreaseRefC(entK)
 		}
 	}
 	return false, nil
