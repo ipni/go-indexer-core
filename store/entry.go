@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 
 	"github.com/filecoin-project/go-indexer-core/entry"
-	"github.com/multiformats/go-multihash"
 	mh "github.com/multiformats/go-multihash"
 )
 
 const (
-	hashAlg  = multihash.SHA2_256
+	hashAlg  = mh.SHA2_256
 	hashLen  = 32
 	mhashLen = 32 + 2
 )
