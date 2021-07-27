@@ -1,8 +1,6 @@
 package test
 
 import (
-	"bufio"
-	"io"
 	"math/rand"
 	"time"
 
@@ -32,30 +30,4 @@ func RandomCids(n int) ([]cid.Cid, error) {
 		res[i] = c
 	}
 	return res, nil
-}
-
-// ReadCids reads cids from an io.Reader and outputs them on a channel.
-// Malformed cids are ignored.
-func ReadCids(in io.Reader, out chan cid.Cid, done chan error) {
-	defer close(out)
-	defer close(done)
-
-	r := bufio.NewReader(in)
-	var line []byte
-	var err error
-	for {
-		line, err = r.ReadBytes('\n')
-		if err != nil {
-			if err != io.EOF {
-				done <- err
-			}
-			return
-		}
-		c, err := cid.Decode(string(line))
-		if err != nil {
-			// Disregarding malformed CIDs for now
-			continue
-		}
-		out <- c
-	}
 }
