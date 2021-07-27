@@ -29,15 +29,11 @@ func ReadCids(ctx context.Context, in io.Reader, out chan cid.Cid, done chan err
 			// Ignore malformed CIDs
 			continue
 		}
-		if ctx != nil {
-			select {
-			case out <- c:
-			case <-ctx.Done():
-				done <- ctx.Err()
-				return
-			}
-		} else {
-			out <- c
+		select {
+		case out <- c:
+		case <-ctx.Done():
+			done <- ctx.Err()
+			return
 		}
 	}
 }

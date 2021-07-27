@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -39,7 +40,7 @@ func prepare(s store.Interface, size string, t *testing.T) {
 
 	out := make(chan cid.Cid)
 	errOut := make(chan error, 1)
-	go entry.ReadCids(nil, file, out, errOut)
+	go entry.ReadCids(context.Background(), file, out, errOut)
 
 	for c := range out {
 		entry := entry.MakeValue(p, protocolID, c.Bytes())
@@ -67,7 +68,7 @@ func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
 	}
 	defer file.Close()
 
-	go entry.ReadCids(nil, file, out, errOut)
+	go entry.ReadCids(context.Background(), file, out, errOut)
 
 	for c := range out {
 		now := time.Now()
