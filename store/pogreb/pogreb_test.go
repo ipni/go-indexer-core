@@ -124,6 +124,7 @@ func TestRefC(t *testing.T) {
 }
 
 func TestParallelRefC(t *testing.T) {
+	skipIf32bit(t)
 	sint, err := initPogreb()
 	if err != nil {
 		t.Fatal(err)

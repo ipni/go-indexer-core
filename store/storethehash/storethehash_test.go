@@ -179,6 +179,9 @@ func TestRefC(t *testing.T) {
 }
 
 func TestParallelRefC(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
 	sint, err := initSth()
 	if err != nil {
 		t.Fatal(err)
