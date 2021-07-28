@@ -15,23 +15,19 @@ const (
 )
 
 // Entry representation for the entry store.
-type Entry struct {
+type WrappedValue struct {
 	Value entry.Value
 	RefC  uint64
 }
 
-// CidEntry represent the list of pointers to entries
-// from the entryStore
-type CidEntry [][]byte
-
 // Marshal StoreEntry for storage and compute the key
-func Marshal(li *Entry) ([]byte, error) {
+func Marshal(li *WrappedValue) ([]byte, error) {
 	return json.Marshal(li)
 }
 
 // Unmarshal StoreEntry from storage
-func Unmarshal(b []byte) (*Entry, error) {
-	li := &Entry{}
+func Unmarshal(b []byte) (*WrappedValue, error) {
+	li := &WrappedValue{}
 	err := json.Unmarshal(b, li)
 	return li, err
 }
@@ -69,7 +65,7 @@ func EntryKey(in entry.Value) ([]byte, error) {
 }
 
 // DuplicateEntry checks if the key for the entry is already there.
-func DuplicateEntry(k []byte, old CidEntry) bool {
+func DuplicateEntry(k []byte, old [][]byte) bool {
 	for i := range old {
 		if bytes.Equal(old[i], k) {
 			return true

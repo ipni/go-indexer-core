@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core/entry"
@@ -27,6 +28,7 @@ type sthStorage struct {
 	dir      string
 	store    *sth.Store
 	entStore *sth.Store
+	lk       sync.Mutex
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -63,7 +65,11 @@ func New(dir string) (*sthStorage, error) {
 	// Start both storages
 	s.Start()
 	es.Start()
-	return &sthStorage{dir: dir, store: s, entStore: es}, nil
+	return &sthStorage{
+		dir:      dir,
+		store:    s,
+		entStore: es,
+	}, nil
 }
 
 func (s *sthStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
@@ -90,7 +96,7 @@ func (s *sthStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
 	return out, true, nil
 }
 
-func (s *sthStorage) get(k []byte) (store.CidEntry, bool, error) {
+func (s *sthStorage) get(k []byte) ([][]byte, bool, error) {
 	value, found, err := s.store.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -102,7 +108,7 @@ func (s *sthStorage) get(k []byte) (store.CidEntry, bool, error) {
 	return store.SplitKs(value), true, nil
 }
 
-func (s *sthStorage) getEntry(k []byte) (*store.Entry, bool, error) {
+func (s *sthStorage) getEntry(k []byte) (*store.WrappedValue, bool, error) {
 	value, found, err := s.entStore.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -123,6 +129,8 @@ func (s *sthStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
+	s.lk.Lock()
+	defer s.lk.Unlock()
 	entK, err := store.EntryKey(in)
 	if err != nil {
 		return false, err
@@ -175,7 +183,7 @@ func (s *sthStorage) putEntry(k []byte, in entry.Value) (bool, error) {
 	}
 
 	// If not found the entry is new and needs to be fully put.
-	e := &store.Entry{Value: in, RefC: 1}
+	e := &store.WrappedValue{Value: in, RefC: 1}
 	b, err := store.Marshal(e)
 	if err != nil {
 		return false, err
@@ -234,6 +242,8 @@ func (s *sthStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
+	s.lk.Lock()
+	defer s.lk.Unlock()
 	k := c.Bytes()
 	old, found, err := s.get(k)
 	if err != nil {
@@ -295,7 +305,7 @@ func (s *sthStorage) decreaseRefC(k []byte) (bool, error) {
 	return true, nil
 }
 
-func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored store.CidEntry) (bool, error) {
+func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored [][]byte) (bool, error) {
 	entK, err := store.EntryKey(value)
 	if err != nil {
 		return false, err

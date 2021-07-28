@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/akrylysov/pogreb"
@@ -24,12 +25,15 @@ import (
 
 var _ store.Interface = &pStorage{}
 
-const DefaultSyncInterval = time.Second
+const (
+	DefaultSyncInterval = time.Second
+)
 
 type pStorage struct {
 	dir      string
 	store    *pogreb.DB
 	entStore *pogreb.DB
+	lk       sync.RWMutex
 }
 
 func New(dir string) (*pStorage, error) {
@@ -45,7 +49,11 @@ func New(dir string) (*pStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &pStorage{dir: dir, store: s, entStore: es}, nil
+	return &pStorage{
+		dir:      dir,
+		store:    s,
+		entStore: es,
+	}, nil
 }
 
 func (s *pStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
@@ -72,7 +80,7 @@ func (s *pStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
 	return out, true, nil
 }
 
-func (s *pStorage) get(k []byte) (store.CidEntry, bool, error) {
+func (s *pStorage) get(k []byte) ([][]byte, bool, error) {
 	value, err := s.store.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -84,7 +92,7 @@ func (s *pStorage) get(k []byte) (store.CidEntry, bool, error) {
 	return store.SplitKs(value), true, nil
 }
 
-func (s *pStorage) getEntry(k []byte) (*store.Entry, bool, error) {
+func (s *pStorage) getEntry(k []byte) (*store.WrappedValue, bool, error) {
 	value, err := s.entStore.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -105,6 +113,8 @@ func (s *pStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
+	s.lk.Lock()
+	defer s.lk.Unlock()
 	entK, err := store.EntryKey(in)
 	if err != nil {
 		return false, err
@@ -157,7 +167,7 @@ func (s *pStorage) putEntry(k []byte, in entry.Value) (bool, error) {
 	}
 
 	// If not found the entry is new and needs to be fully put.
-	e := &store.Entry{Value: in, RefC: 1}
+	e := &store.WrappedValue{Value: in, RefC: 1}
 	b, err := store.Marshal(e)
 	if err != nil {
 		return false, err
@@ -215,6 +225,8 @@ func (s *pStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *pStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
+	s.lk.Lock()
+	defer s.lk.Unlock()
 	k := c.Bytes()
 	old, found, err := s.get(k)
 	if err != nil {
@@ -276,7 +288,7 @@ func (s *pStorage) decreaseRefC(k []byte) (bool, error) {
 	return true, nil
 }
 
-func (s *pStorage) removeEntry(k []byte, value entry.Value, stored store.CidEntry) (bool, error) {
+func (s *pStorage) removeEntry(k []byte, value entry.Value, stored [][]byte) (bool, error) {
 	entK, err := store.EntryKey(value)
 	if err != nil {
 		return false, err
