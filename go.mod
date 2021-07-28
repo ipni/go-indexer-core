@@ -3,6 +3,7 @@ module github.com/filecoin-project/go-indexer-core
 go 1.15
 
 require (
+	github.com/adlrocha/mapmutex v0.0.0-20200716162114-c133e97096b7
 	github.com/akrylysov/pogreb v0.10.1
 	github.com/gammazero/radixtree v0.2.3
 	github.com/ipfs/go-cid v0.0.7

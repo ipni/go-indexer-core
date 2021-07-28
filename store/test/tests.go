@@ -1,6 +1,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/entry"
@@ -199,4 +200,71 @@ func RemoveManyTest(t *testing.T, s store.Interface) {
 		t.Errorf("wrong number of cids removed")
 	}
 
+}
+
+func ParallelUpdateTest(t *testing.T, s store.Interface) {
+	cids, err := RandomCids(15)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create new valid peer.ID
+	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	single := cids[14]
+
+	var wg sync.WaitGroup
+
+	// Test parallel writes over same CID
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, i int) {
+			t.Logf("Put/Get different cid")
+			entry := entry.MakeValue(p, 0, cids[i].Bytes())
+			_, err := s.Put(single, entry)
+			if err != nil {
+				t.Error("Error putting single cid: ", err)
+			}
+			wg.Done()
+		}(&wg, i)
+	}
+	wg.Wait()
+	x, found, err := s.Get(single)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Errorf("Error finding single cid")
+	}
+	if len(x) != 5 {
+		t.Error("Entry has not been updated by routines correctly", len(x))
+	}
+
+	// Test remove for all except one
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, i int) {
+			t.Logf("Remove cid")
+			entry := entry.MakeValue(p, 0, cids[i].Bytes())
+			_, err := s.Remove(single, entry)
+			if err != nil {
+				t.Error("Error removing single cid: ", err)
+			}
+			wg.Done()
+		}(&wg, i)
+	}
+	wg.Wait()
+	x, found, err = s.Get(single)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Errorf("Error finding single cid")
+	}
+	if len(x) != 1 {
+		t.Error("Entry has not been removed by routines correctly", len(x))
+	}
 }

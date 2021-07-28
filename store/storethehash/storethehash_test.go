@@ -45,6 +45,14 @@ func TestRemoveMany(t *testing.T) {
 	test.RemoveManyTest(t, s)
 }
 
+func TestParallel(t *testing.T) {
+	s, err := initSth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.ParallelUpdateTest(t, s)
+}
+
 func TestPeriodicFlush(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()

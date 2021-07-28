@@ -28,6 +28,16 @@ func TestE2E(t *testing.T) {
 	test.E2ETest(t, s)
 }
 
+func TestParallel(t *testing.T) {
+	skipIf32bit(t)
+
+	s, err := initPogreb()
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.ParallelUpdateTest(t, s)
+}
+
 func TestSize(t *testing.T) {
 	skipIf32bit(t)
 

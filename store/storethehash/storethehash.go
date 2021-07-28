@@ -1,6 +1,7 @@
 package storethehash
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
 
+	mapmutex "github.com/adlrocha/mapmutex"
 	"github.com/ipfs/go-cid"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -24,6 +26,7 @@ const DefaultSyncInterval = time.Second
 type sthStorage struct {
 	dir   string
 	store *sth.Store
+	mlk   *mapmutex.Mutex
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -44,7 +47,11 @@ func New(dir string) (*sthStorage, error) {
 		return nil, err
 	}
 	s.Start()
-	return &sthStorage{dir: dir, store: s}, nil
+	return &sthStorage{
+		dir:   dir,
+		store: s,
+		mlk:   mapmutex.NewMapMutex(),
+	}, nil
 }
 
 func (s *sthStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
@@ -73,6 +80,12 @@ func (s *sthStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
+	// Acquire lock
+	err := s.lock(k)
+	if err != nil {
+		return false, err
+	}
+	defer s.unlock(k)
 	// NOTE: The implementation of Put in storethehash already
 	// performs a first lookup to check the type of update that
 	// needs to be done over the key. We can probably save this
@@ -146,6 +159,13 @@ func (s *sthStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 
 func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	k := c.Bytes()
+	// Acquire lock
+	err := s.lock(k)
+	if err != nil {
+		return false, err
+	}
+	defer s.unlock(k)
+
 	old, found, err := s.get(k)
 	if err != nil {
 		return false, err
@@ -219,4 +239,15 @@ func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored []entry.Val
 // pending data
 func (s *sthStorage) Close() error {
 	return s.store.Close()
+}
+
+func (s *sthStorage) lock(k []byte) error {
+	if !s.mlk.TryLock(string(k)) {
+		return errors.New("couldn't get the lock after maxRetries")
+	}
+	return nil
+}
+
+func (s *sthStorage) unlock(k []byte) {
+	s.mlk.Unlock(string(k))
 }
