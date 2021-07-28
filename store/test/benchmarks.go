@@ -24,16 +24,21 @@ const (
 // prepare reads a cid list and imports it into the value store getting it
 // ready for benchmarking.
 func prepare(s store.Interface, size string, t *testing.T) {
-	out := make(chan cid.Cid)
-	errOut := make(chan error, 1)
-	file, err := os.OpenFile(fmt.Sprint(testDataDir, size, testDataExt), os.O_RDONLY, 0644)
+	testFile := fmt.Sprint(testDataDir, size, testDataExt)
+	file, err := os.OpenFile(testFile, os.O_RDONLY, 0644)
 	if err != nil {
+		// If the file does not exist then skip and do not fail test
+		if os.IsNotExist(err) {
+			t.Skipf("Test file %q not found, needs to be generated)", testFile)
+		}
 		t.Fatalf("could not open input file: %v", err)
 	}
 	defer file.Close()
 
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
+	out := make(chan cid.Cid)
+	errOut := make(chan error, 1)
 	go ReadCids(file, out, errOut)
 
 	for c := range out {
@@ -53,16 +58,16 @@ func prepare(s store.Interface, size string, t *testing.T) {
 // readAll reads all of the cids from a file and tries to get it from
 // the value store.
 func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
-	out := make(chan cid.Cid)
-	errOut := make(chan error, 1)
-
 	file, err := os.OpenFile(fmt.Sprint(testDataDir, size, testDataExt), os.O_RDONLY, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
 
+	out := make(chan cid.Cid)
+	errOut := make(chan error, 1)
 	go ReadCids(file, out, errOut)
+
 	for c := range out {
 		now := time.Now()
 		_, found, err := s.Get(c)
