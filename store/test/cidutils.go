@@ -41,10 +41,8 @@ func ReadCids(in io.Reader, out chan cid.Cid, done chan error) {
 	defer close(done)
 
 	r := bufio.NewReader(in)
-	var line []byte
-	var err error
 	for {
-		line, err = r.ReadBytes('\n')
+		line, err := r.ReadBytes('\n')
 		if err != nil {
 			if err != io.EOF {
 				done <- err
