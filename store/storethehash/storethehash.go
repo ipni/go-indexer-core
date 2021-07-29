@@ -1,7 +1,6 @@
 package storethehash
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -10,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
 
-	mapmutex "github.com/adlrocha/mapmutex"
+	"github.com/im7mortal/kmutex"
 	"github.com/ipfs/go-cid"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -26,7 +25,7 @@ const DefaultSyncInterval = time.Second
 type sthStorage struct {
 	dir   string
 	store *sth.Store
-	mlk   *mapmutex.Mutex
+	mlk   *kmutex.Kmutex
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -50,7 +49,7 @@ func New(dir string) (*sthStorage, error) {
 	return &sthStorage{
 		dir:   dir,
 		store: s,
-		mlk:   mapmutex.NewMapMutex(),
+		mlk:   kmutex.New(),
 	}, nil
 }
 
@@ -81,10 +80,7 @@ func (s *sthStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 
 func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
 	// Acquire lock
-	err := s.lock(k)
-	if err != nil {
-		return false, err
-	}
+	s.lock(k)
 	defer s.unlock(k)
 	// NOTE: The implementation of Put in storethehash already
 	// performs a first lookup to check the type of update that
@@ -160,10 +156,7 @@ func (s *sthStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	k := c.Bytes()
 	// Acquire lock
-	err := s.lock(k)
-	if err != nil {
-		return false, err
-	}
+	s.lock(k)
 	defer s.unlock(k)
 
 	old, found, err := s.get(k)
@@ -241,11 +234,8 @@ func (s *sthStorage) Close() error {
 	return s.store.Close()
 }
 
-func (s *sthStorage) lock(k []byte) error {
-	if !s.mlk.TryLock(string(k)) {
-		return errors.New("couldn't get the lock after maxRetries")
-	}
-	return nil
+func (s *sthStorage) lock(k []byte) {
+	s.mlk.Lock(string(k))
 }
 
 func (s *sthStorage) unlock(k []byte) {
