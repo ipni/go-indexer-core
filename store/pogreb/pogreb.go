@@ -14,6 +14,7 @@ import (
 	"github.com/akrylysov/pogreb"
 	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/im7mortal/kmutex"
 
 	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -26,6 +27,7 @@ const DefaultSyncInterval = time.Second
 type pStorage struct {
 	dir   string
 	store *pogreb.DB
+	mlk   *kmutex.Kmutex
 }
 
 func New(dir string) (*pStorage, error) {
@@ -35,7 +37,11 @@ func New(dir string) (*pStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &pStorage{dir: dir, store: s}, nil
+	return &pStorage{
+		dir:   dir,
+		store: s,
+		mlk:   kmutex.New(),
+	}, nil
 }
 
 func (s *pStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
@@ -64,6 +70,9 @@ func (s *pStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
 }
 
 func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
+	// Acquire lock
+	s.lock(k)
+	defer s.unlock(k)
 	old, found, err := s.get(k)
 	if err != nil {
 		return false, err
@@ -128,6 +137,9 @@ func (s *pStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
 
 func (s *pStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	k := c.Bytes()
+	// Acquire lock
+	s.lock(k)
+	defer s.unlock(k)
 	old, found, err := s.get(k)
 	if err != nil {
 		return false, err
@@ -195,4 +207,12 @@ func (s *pStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value
 		}
 	}
 	return false, nil
+}
+
+func (s *pStorage) lock(k []byte) {
+	s.mlk.Lock(string(k))
+}
+
+func (s *pStorage) unlock(k []byte) {
+	s.mlk.Unlock(string(k))
 }
