@@ -3,14 +3,14 @@ package radixcache
 import (
 	"sync"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/gammazero/radixtree"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 // radixCache is a rotatable cache with value deduplication.
 type radixCache struct {
-	// CID -> IndexEntry
+	// CID -> indexer.Value
 	current  *radixtree.Bytes
 	previous *radixtree.Bytes
 
@@ -42,22 +42,22 @@ func newRadixCache(rotateSize int) *radixCache {
 
 // stats returns the following:
 //   - Number of CIDs stored in cache
-//   - Number of IntexEentry values for all CIDs
-//   - Number of unique IndexEntry values
-//   - Number of interned IndexEntry values
+//   - Number of values for all CIDs
+//   - Number of unique values
+//   - Number of interned values
 //   - Number of cache rotations
 //
-// The number of unique and interred IndexEntry objects will be the same unless
+// The number of unique and interred indexer.Value objects will be the same unless
 // items have been removed from cache.
 func (c *radixCache) stats() CacheStats {
-	unique := make(map[*entry.Value]struct{})
+	unique := make(map[*indexer.Value]struct{})
 	var cidCount, valCount, interned uint64
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	walkFunc := func(k string, v interface{}) bool {
-		values := v.([]*entry.Value)
+		values := v.([]*indexer.Value)
 		valCount += uint64(len(values))
 		for _, val := range values {
 			unique[val] = struct{}{}
@@ -86,13 +86,13 @@ func (c *radixCache) stats() CacheStats {
 	}
 }
 
-func (c *radixCache) get(k string) ([]*entry.Value, bool) {
+func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	return c.getNoLock(k)
 }
 
-func (c *radixCache) getNoLock(k string) ([]*entry.Value, bool) {
+func (c *radixCache) getNoLock(k string) ([]*indexer.Value, bool) {
 	// Search current cache
 	v, found := c.current.Get(k)
 	if !found {
@@ -106,24 +106,24 @@ func (c *radixCache) getNoLock(k string) ([]*entry.Value, bool) {
 			return nil, false
 		}
 
-		// Pull the interned entries for these values forward from the previous
+		// Pull the interned values for these values forward from the previous
 		// cache to keep using the same pointers as the va used in the cache
 		// values that get pulled forward.
-		values := v.([]*entry.Value)
+		values := v.([]*indexer.Value)
 		for i, val := range values {
-			values[i] = c.internEntry(val)
+			values[i] = c.internValue(val)
 		}
 
 		// Move the value found in the previous tree into the current one.
 		c.current.Put(k, values)
 		c.previous.Delete(k)
 	}
-	return v.([]*entry.Value), true
+	return v.([]*indexer.Value), true
 }
 
-// put stores an entry in the cache if the entry is not already stored.
-// Returns true if a new entry was added to the cache.
-func (c *radixCache) put(k string, value entry.Value) bool {
+// put stores a value in the cache if the value is not already stored.
+// Returns true if a new value was added to the cache.
+func (c *radixCache) put(k string, value indexer.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -139,11 +139,11 @@ func (c *radixCache) put(k string, value entry.Value) bool {
 		c.rotate()
 	}
 
-	c.current.Put(k, append(existing, c.internEntry(&value)))
+	c.current.Put(k, append(existing, c.internValue(&value)))
 	return true
 }
 
-func (c *radixCache) putInterned(k string, value *entry.Value) bool {
+func (c *radixCache) putInterned(k string, value *indexer.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -160,9 +160,9 @@ func (c *radixCache) putInterned(k string, value *entry.Value) bool {
 	return true
 }
 
-func (c *radixCache) putMany(keys []string, value entry.Value) int {
+func (c *radixCache) putMany(keys []string, value indexer.Value) int {
 	var count int
-	var interned *entry.Value
+	var interned *indexer.Value
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -178,7 +178,7 @@ func (c *radixCache) putMany(keys []string, value entry.Value) int {
 		}
 
 		if interned == nil {
-			interned = c.internEntry(&value)
+			interned = c.internValue(&value)
 		}
 		c.current.Put(k, append(existing, interned))
 		count++
@@ -187,12 +187,12 @@ func (c *radixCache) putMany(keys []string, value entry.Value) int {
 	return count
 }
 
-func (c *radixCache) remove(k string, value *entry.Value) bool {
+func (c *radixCache) remove(k string, value *indexer.Value) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	removed := removeEntry(c.current, k, value)
-	if c.previous != nil && removeEntry(c.previous, k, value) {
+	removed := removeValue(c.current, k, value)
+	if c.previous != nil && removeValue(c.previous, k, value) {
 		removed = true
 	}
 	return removed
@@ -202,10 +202,10 @@ func (c *radixCache) removeProvider(providerID peer.ID) int {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	count := removeProviderEntries(c.current, providerID)
+	count := removeProviderValues(c.current, providerID)
 	removeProviderInterns(c.curEnts, providerID)
 	if c.previous != nil {
-		count += removeProviderEntries(c.previous, providerID)
+		count += removeProviderValues(c.previous, providerID)
 		if c.prevEnts != nil {
 			removeProviderInterns(c.prevEnts, providerID)
 		}
@@ -219,17 +219,17 @@ func (c *radixCache) rotate() {
 	c.rotations++
 }
 
-func (c *radixCache) internEntry(value *entry.Value) *entry.Value {
+func (c *radixCache) internValue(value *indexer.Value) *indexer.Value {
 	k := string(value.ProviderID) + string(value.Metadata)
 	v, found := c.curEnts.Get(k)
 	if !found {
 		if c.prevEnts != nil {
 			v, found = c.prevEnts.Get(k)
 			if found {
-				// Pull interned entry forward from previous cache
+				// Pull interned value forward from previous cache
 				c.curEnts.Put(k, v)
 				c.prevEnts.Delete(k)
-				return v.(*entry.Value)
+				return v.(*indexer.Value)
 			}
 		}
 		// Intern new value
@@ -237,17 +237,17 @@ func (c *radixCache) internEntry(value *entry.Value) *entry.Value {
 		return value
 	}
 	// Found existing interned value
-	return v.(*entry.Value)
+	return v.(*indexer.Value)
 }
 
-func removeEntry(tree *radixtree.Bytes, k string, value *entry.Value) bool {
+func removeValue(tree *radixtree.Bytes, k string, value *indexer.Value) bool {
 	// Get from current cache
 	v, found := tree.Get(k)
 	if !found {
 		return false
 	}
 
-	values := v.([]*entry.Value)
+	values := v.([]*indexer.Value)
 	for i, v := range values {
 		if v == value || v.Equal(*value) {
 			if len(values) == 1 {
@@ -263,12 +263,12 @@ func removeEntry(tree *radixtree.Bytes, k string, value *entry.Value) bool {
 	return false
 }
 
-func removeProviderEntries(tree *radixtree.Bytes, providerID peer.ID) int {
+func removeProviderValues(tree *radixtree.Bytes, providerID peer.ID) int {
 	var count int
 	var deletes []string
 
 	tree.Walk("", func(k string, v interface{}) bool {
-		values := v.([]*entry.Value)
+		values := v.([]*indexer.Value)
 		for i := range values {
 			if providerID == values[i].ProviderID {
 				count++
@@ -303,7 +303,7 @@ func removeProviderInterns(tree *radixtree.Bytes, providerID peer.ID) {
 }
 
 // valueInSlice checks if the value already exists in slice of values
-func valueInSlice(value *entry.Value, values []*entry.Value) bool {
+func valueInSlice(value *indexer.Value, values []*indexer.Value) bool {
 	for _, v := range values {
 		if value == v || value.Equal(*v) {
 			return true
