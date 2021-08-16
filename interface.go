@@ -27,9 +27,10 @@ type Interface interface {
 	// when a provider is no longer indexed by the indexer.
 	RemoveProvider(providerID peer.ID) error
 
-	// Size returns the total storage capacity, in bytes, used to by the value
-	// store.  This does not include any space used by the result cache, as it
-	// only contains a limited quantity of results for previous queries, so is
-	// not representative of the total amount of data stored by the indexer.
+	// Size returns the total bytes of storage used to store the indexed
+	// content in persistent storage.  This does not include memory used by any
+	// in-memory cache that the indexer implementation may have, as that would
+	// only contain a limited quantity of data and not represent the total
+	// amount of data stored by the indexer.
 	Size() (int64, error)
 }

@@ -166,10 +166,8 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	return e.resultCache.RemoveProvider(providerID)
 }
 
-// Size returns the total storage capacity, in bytes, used to by the value
-// store.  This does not include any space used by the result cache, as it only
-// contains a limited quantity of results for previous queries, so is not
-// representative of the total amount of data stored by the indexer.
+// Size returns the total bytes of storage used by the value store to store the
+// indexed content.  This does not include memory used by the result cache.
 func (e *Engine) Size() (int64, error) {
 	return e.valueStore.Size()
 }
