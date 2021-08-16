@@ -1,4 +1,4 @@
-package entry
+package indexer
 
 import (
 	"bytes"

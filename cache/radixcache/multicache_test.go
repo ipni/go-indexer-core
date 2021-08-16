@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -21,8 +21,8 @@ func TestPutGetRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
-	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, proto, cids[0].Bytes())
+	value2 := indexer.MakeValue(p, proto, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -30,7 +30,7 @@ func TestPutGetRemove(t *testing.T) {
 
 	// Put a single CID
 	t.Log("Put/Get a single CID in primary storage")
-	if !s.PutCheck(single, entry1) {
+	if !s.PutCheck(single, value1) {
 		t.Fatal("Did not put new single cid")
 	}
 	ents, found, err := s.Get(single)
@@ -40,21 +40,21 @@ func TestPutGetRemove(t *testing.T) {
 	if !found {
 		t.Error("Error finding single cid")
 	}
-	if !ents[0].Equal(entry1) {
+	if !ents[0].Equal(value1) {
 		t.Error("Got wrong value for single cid")
 	}
 
-	t.Log("Put existing CID IndexEntry entry")
-	if s.PutCheck(single, entry1) {
-		t.Fatal("should not have put new entry")
+	t.Log("Put existing CID value")
+	if s.PutCheck(single, value1) {
+		t.Fatal("should not have put new value")
 	}
 
 	t.Log("Put existing CID and provider with new metadata")
-	if !s.PutCheck(single, entry2) {
-		t.Fatal("should have put new entry")
+	if !s.PutCheck(single, value2) {
+		t.Fatal("should have put new value")
 	}
 
-	t.Log("Check for all entries for single CID")
+	t.Log("Check for all valuess for single CID")
 	ents, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
@@ -65,17 +65,17 @@ func TestPutGetRemove(t *testing.T) {
 	if len(ents) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
-	if !ents[1].Equal(entry2) {
+	if !ents[1].Equal(value2) {
 		t.Error("Got wrong value for single cid")
 	}
 
 	// Put a batch of CIDs
 	t.Log("Put/Get a batch of CIDs in primary storage")
-	count := s.PutManyCount(batch, entry1)
+	count := s.PutManyCount(batch, value1)
 	if count == 0 {
 		t.Fatal("Did not put batch of cids")
 	}
-	t.Logf("Stored %d new entries out of %d total", count, len(batch))
+	t.Logf("Stored %d new values out of %d total", count, len(batch))
 
 	ents, found, err = s.Get(cids[5])
 	if err != nil {
@@ -84,7 +84,7 @@ func TestPutGetRemove(t *testing.T) {
 	if !found {
 		t.Error("did not find a cid from the batch")
 	}
-	if !ents[0].Equal(entry1) {
+	if !ents[0].Equal(value1) {
 		t.Error("Got wrong value for single cid")
 	}
 
@@ -98,12 +98,12 @@ func TestPutGetRemove(t *testing.T) {
 		t.Error("Error, the key for the cid shouldn't be set")
 	}
 
-	t.Log("Remove entry for CID")
-	if !s.RemoveCheck(single, entry2) {
-		t.Fatal("should have removed entry")
+	t.Log("Remove valuey for CID")
+	if !s.RemoveCheck(single, value2) {
+		t.Fatal("should have removed value")
 	}
 
-	t.Log("Check for all entries for single CID")
+	t.Log("Check for all values for single CID")
 	ents, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
@@ -114,31 +114,31 @@ func TestPutGetRemove(t *testing.T) {
 	if len(ents) != 1 {
 		t.Fatal("Update over existing key not correct")
 	}
-	if !ents[0].Equal(entry1) {
+	if !ents[0].Equal(value1) {
 		t.Error("Got wrong value for single cid")
 	}
 
-	t.Log("Remove only entry for CID")
-	if !s.RemoveCheck(single, entry1) {
-		t.Fatal("should have removed entry")
+	t.Log("Remove only value for CID")
+	if !s.RemoveCheck(single, value1) {
+		t.Fatal("should have removed value")
 	}
 	_, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found {
-		t.Fatal("Should not have found CID with no entries")
+		t.Fatal("Should not have found CID with no values")
 	}
-	t.Log("Remove entry for non-existent CID")
-	if s.RemoveCheck(single, entry1) {
-		t.Fatal("should not have removed non-existent entry")
+	t.Log("Remove value for non-existent CID")
+	if s.RemoveCheck(single, value1) {
+		t.Fatal("should not have removed non-existent value")
 	}
 
 	stats := s.Stats()
 	t.Log("Remove provider")
 	removed := s.RemoveProviderCount(p)
 	if removed < stats.Cids {
-		t.Fatalf("should have removed at least %d entries, only removed %d", stats.Cids, removed)
+		t.Fatalf("should have removed at least %d values, only removed %d", stats.Cids, removed)
 	}
 	stats = s.Stats()
 	if stats.Cids != 0 {
@@ -153,8 +153,8 @@ func TestRotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry1 := entry.MakeValue(p, proto, cids[0].Bytes())
-	entry2 := entry.MakeValue(p, proto, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, proto, cids[0].Bytes())
+	value2 := indexer.MakeValue(p, proto, cids[1].Bytes())
 
 	s := New(maxSize * 2)
 	cids, err = test.RandomCids(maxSize + 5)
@@ -162,7 +162,7 @@ func TestRotate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if s.PutManyCount(cids, entry1) == 0 {
+	if s.PutManyCount(cids, value1) == 0 {
 		t.Fatal("did not put batch of cids")
 	}
 
@@ -187,7 +187,7 @@ func TestRotate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if s.PutManyCount(cids2, entry2) == 0 {
+	if s.PutManyCount(cids2, value2) == 0 {
 		t.Fatal("did not put batch of cids")
 	}
 
@@ -226,7 +226,7 @@ func TestMemoryUse(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	entry := entry.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, cids[0].Bytes())
 	var prevAlloc, prevCids uint64
 
 	for count := 1; count <= 1024; count *= 2 {
@@ -234,7 +234,7 @@ func TestMemoryUse(t *testing.T) {
 			s := New(1202 * count)
 			for i := 0; i < count; i++ {
 				cids, _ = test.RandomCids(1024)
-				err = s.PutMany(cids, entry)
+				err = s.PutMany(cids, value)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -266,14 +266,14 @@ func TestMemSingleVsMany(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	entry := entry.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, cids[0].Bytes())
 
 	t.Run(fmt.Sprintf("Put %d Single CIDs", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
 			cids, _ = test.RandomCids(1024)
 			for j := range cids {
-				s.PutCheck(cids[j], entry)
+				s.PutCheck(cids[j], value)
 			}
 		}
 		runtime.GC()
@@ -286,7 +286,7 @@ func TestMemSingleVsMany(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
 			cids, _ = test.RandomCids(1024)
-			s.PutManyCount(cids, entry)
+			s.PutManyCount(cids, value)
 		}
 		runtime.GC()
 		m := runtime.MemStats{}
@@ -300,7 +300,7 @@ func BenchmarkPut(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	entry := entry.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, cids[0].Bytes())
 
 	cids, _ = test.RandomCids(10240)
 
@@ -309,7 +309,7 @@ func BenchmarkPut(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err = s.Put(cids[i%len(cids)], entry)
+			_, err = s.Put(cids[i%len(cids)], value)
 			if err != nil {
 				panic(err)
 			}
@@ -323,7 +323,7 @@ func BenchmarkPut(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < testCount; j++ {
-					_, err = s.Put(cids[j], entry)
+					_, err = s.Put(cids[j], value)
 					if err != nil {
 						panic(err)
 					}
@@ -336,7 +336,7 @@ func BenchmarkPut(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				err = s.PutMany(cids[:testCount], entry)
+				err = s.PutMany(cids[:testCount], value)
 				if err != nil {
 					panic(err)
 				}
@@ -350,11 +350,11 @@ func BenchmarkGet(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	entry := entry.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, cids[0].Bytes())
 
 	s := New(8192)
 	cids, _ = test.RandomCids(4096)
-	s.PutManyCount(cids, entry)
+	s.PutManyCount(cids, value)
 
 	b.Run("Get single", func(b *testing.B) {
 		b.ReportAllocs()

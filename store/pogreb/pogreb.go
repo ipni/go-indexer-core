@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/akrylysov/pogreb"
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/im7mortal/kmutex"
 
@@ -44,11 +44,11 @@ func New(dir string) (*pStorage, error) {
 	}, nil
 }
 
-func (s *pStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
+func (s *pStorage) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	return s.get(c.Bytes())
 }
 
-func (s *pStorage) get(k []byte) ([]entry.Value, bool, error) {
+func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	value, err := s.store.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -57,7 +57,7 @@ func (s *pStorage) get(k []byte) ([]entry.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := entry.Unmarshal(value)
+	out, err := indexer.Unmarshal(value)
 	if err != nil {
 		return nil, false, err
 	}
@@ -65,11 +65,11 @@ func (s *pStorage) get(k []byte) ([]entry.Value, bool, error) {
 
 }
 
-func (s *pStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
-	return s.put(c.Bytes(), entry)
+func (s *pStorage) Put(c cid.Cid, value indexer.Value) (bool, error) {
+	return s.put(c.Bytes(), value)
 }
 
-func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
+func (s *pStorage) put(k []byte, in indexer.Value) (bool, error) {
 	// Acquire lock
 	s.lock(k)
 	defer s.unlock(k)
@@ -78,13 +78,13 @@ func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
 		return false, err
 	}
 	// If found it means there is already a value there.
-	// Check if we are trying to put a duplicate entry
-	if found && duplicateEntry(in, old) {
+	// Check if we are trying to put a duplicate value
+	if found && duplicateValue(in, old) {
 		return false, nil
 	}
 
 	li := append(old, in)
-	b, err := entry.Marshal(li)
+	b, err := indexer.Marshal(li)
 	if err != nil {
 		return false, err
 	}
@@ -96,9 +96,9 @@ func (s *pStorage) put(k []byte, in entry.Value) (bool, error) {
 	return true, nil
 }
 
-func (s *pStorage) PutMany(cs []cid.Cid, entry entry.Value) error {
+func (s *pStorage) PutMany(cs []cid.Cid, value indexer.Value) error {
 	for _, c := range cs {
-		_, err := s.put(c.Bytes(), entry)
+		_, err := s.put(c.Bytes(), value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
 			// CID shouldn't stop from putting the rest.
@@ -131,11 +131,11 @@ func (s *pStorage) Size() (int64, error) {
 
 }
 
-func (s *pStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
-	return s.remove(c, entry)
+func (s *pStorage) Remove(c cid.Cid, value indexer.Value) (bool, error) {
+	return s.remove(c, value)
 }
 
-func (s *pStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
+func (s *pStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	k := c.Bytes()
 	// Acquire lock
 	s.lock(k)
@@ -147,14 +147,14 @@ func (s *pStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	// If found it means there is a value for the cid
 	// check if there is something to remove.
 	if found {
-		return s.removeEntry(k, entry, old)
+		return s.removeValue(k, value, old)
 	}
 	return false, nil
 }
 
-func (s *pStorage) RemoveMany(cids []cid.Cid, entry entry.Value) error {
+func (s *pStorage) RemoveMany(cids []cid.Cid, value indexer.Value) error {
 	for i := range cids {
-		_, err := s.remove(cids[i], entry)
+		_, err := s.remove(cids[i], value)
 		if err != nil {
 			return err
 		}
@@ -173,19 +173,20 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 	panic("not implemented")
 }
 
-// DuplicateEntry checks if the entry already exists in the index. An entry
-// for the same provider but different metadata is not considered
-// a duplicate entry,
-func duplicateEntry(in entry.Value, old []entry.Value) bool {
-	for i := range old {
-		if in.Equal(old[i]) {
+// DuplicateValue checks if the value already exists in the index entry. A
+// value for the same provider but different metadata is not considered a
+// duplicate value.
+func duplicateValue(in indexer.Value, entry []indexer.Value) bool {
+	// Iterate values in the index entry to look for a duplicate
+	for i := range entry {
+		if in.Equal(entry[i]) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *pStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value) (bool, error) {
+func (s *pStorage) removeValue(k []byte, value indexer.Value, stored []indexer.Value) (bool, error) {
 	for i := range stored {
 		if value.Equal(stored[i]) {
 			// It is the only value, remove the value
@@ -195,8 +196,8 @@ func (s *pStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value
 
 			// else remove from value and put updated structure
 			stored[i] = stored[len(stored)-1]
-			stored[len(stored)-1] = entry.Value{}
-			b, err := entry.Marshal(stored[:len(stored)-1])
+			stored[len(stored)-1] = indexer.Value{}
+			b, err := indexer.Marshal(stored[:len(stored)-1])
 			if err != nil {
 				return false, err
 			}

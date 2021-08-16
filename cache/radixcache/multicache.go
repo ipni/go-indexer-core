@@ -1,8 +1,8 @@
 package radixcache
 
 import (
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -37,7 +37,7 @@ func New(size int) *multiCache {
 	}
 }
 
-func (s *multiCache) Get(c cid.Cid) ([]entry.Value, bool, error) {
+func (s *multiCache) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	// Keys indexed as multihash
 	k := cidToKey(c)
 	cache := s.getCache(k)
@@ -47,46 +47,46 @@ func (s *multiCache) Get(c cid.Cid) ([]entry.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	ret := make([]entry.Value, len(ents))
+	ret := make([]indexer.Value, len(ents))
 	for i, v := range ents {
 		ret[i] = *v
 	}
 	return ret, true, nil
 }
 
-func (s *multiCache) Put(c cid.Cid, value entry.Value) (bool, error) {
+func (s *multiCache) Put(c cid.Cid, value indexer.Value) (bool, error) {
 	return s.PutCheck(c, value), nil
 }
 
-// PutCheck stores an entry.Value for a CID if the value is not already
-// stored.  New entries are added to the entries that are already there.
+// PutCheck stores an indexer.Value for a CID if the value is not already
+// stored.  New values are added to the values that are already there.
 // Returns true if a new value was added to the cache.
 //
-// Only rotate one cache at a time. This may leave older entries in other
+// Only rotate one cache at a time. This may leave older values in other
 // caches, but if CIDs are dirstributed evenly over the cache set then over
 // time all members should be rotated the same amount on average.  This is done
 // so that it is not necessary to lock all caches in order to perform a
 // rotation.  This also means that items age out more incrementally.
-func (s *multiCache) PutCheck(c cid.Cid, value entry.Value) bool {
+func (s *multiCache) PutCheck(c cid.Cid, value indexer.Value) bool {
 	k := cidToKey(c)
 
 	cache := s.getCache(k)
 	return cache.put(k, value)
 }
 
-func (s *multiCache) PutMany(cids []cid.Cid, value entry.Value) error {
+func (s *multiCache) PutMany(cids []cid.Cid, value indexer.Value) error {
 	s.PutManyCount(cids, value)
 	return nil
 }
 
-// PutManyCount stores an entry.Value for multiple CIDs.  Returns the
-// number of new entries stored.  A new entry is counted whenever a value
+// PutManyCount stores an indexer.Value for multiple CIDs.  Returns the
+// number of new values stored.  A new value is counted whenever a value
 // is added to the list of values for a CID, whether or not that CID was
 // already in the cache.
 //
 // This is more efficient than using Put to store individual values, becase
-// PutMany allows the same entry.Value to be reused across all sub-caches.
-func (s *multiCache) PutManyCount(cids []cid.Cid, value entry.Value) uint64 {
+// PutMany allows the same indexer.Value to be reused across all sub-caches.
+func (s *multiCache) PutManyCount(cids []cid.Cid, value indexer.Value) uint64 {
 	if len(s.cacheSet) == 1 {
 		keys := make([]string, len(cids))
 		for i := range cids {
@@ -95,8 +95,8 @@ func (s *multiCache) PutManyCount(cids []cid.Cid, value entry.Value) uint64 {
 		return uint64(s.cacheSet[0].putMany(keys, value))
 	}
 	var stored uint64
-	var reuseEnt *entry.Value
-	interns := make(map[*radixCache]*entry.Value, len(s.cacheSet))
+	var reuseEnt *indexer.Value
+	interns := make(map[*radixCache]*indexer.Value, len(s.cacheSet))
 
 	for i := range cids {
 		k := cidToKey(cids[i])
@@ -109,10 +109,10 @@ func (s *multiCache) PutManyCount(cids []cid.Cid, value entry.Value) uint64 {
 			// interned elsewhere.
 			cache.mutex.Lock()
 			if reuseEnt == nil {
-				ent = cache.internEntry(&value)
+				ent = cache.internValue(&value)
 				reuseEnt = ent
 			} else {
-				ent = cache.internEntry(reuseEnt)
+				ent = cache.internValue(reuseEnt)
 			}
 			cache.mutex.Unlock()
 			interns[cache] = ent
@@ -125,27 +125,27 @@ func (s *multiCache) PutManyCount(cids []cid.Cid, value entry.Value) uint64 {
 	return stored
 }
 
-func (s *multiCache) Remove(c cid.Cid, value entry.Value) (bool, error) {
+func (s *multiCache) Remove(c cid.Cid, value indexer.Value) (bool, error) {
 	return s.RemoveCheck(c, value), nil
 }
 
-// RemoveCheck removes an entry.Value for a CID.  Returns true if an
-// entry was removed from cache.
-func (s *multiCache) RemoveCheck(c cid.Cid, value entry.Value) bool {
+// RemoveCheck removes an indexer.Value for a CID.  Returns true if a value was
+// removed from cache.
+func (s *multiCache) RemoveCheck(c cid.Cid, value indexer.Value) bool {
 	k := cidToKey(c)
 
 	cache := s.getCache(k)
 	return cache.remove(k, &value)
 }
 
-func (s *multiCache) RemoveMany(cids []cid.Cid, value entry.Value) error {
+func (s *multiCache) RemoveMany(cids []cid.Cid, value indexer.Value) error {
 	s.RemoveManyCount(cids, value)
 	return nil
 }
 
-// RemoveManyCount removes an entry.Value from multiple CIDs.  Returns
+// RemoveManyCount removes an indexer.Value from multiple CIDs.  Returns
 // the number of values removed.
-func (s *multiCache) RemoveManyCount(cids []cid.Cid, value entry.Value) uint64 {
+func (s *multiCache) RemoveManyCount(cids []cid.Cid, value indexer.Value) uint64 {
 	var removed uint64
 
 	for i := range cids {
@@ -165,7 +165,7 @@ func (s *multiCache) RemoveProvider(providerID peer.ID) error {
 }
 
 // RemoveProvider removes all enrties for specified provider.  Returns the
-// total number of entries removed from the cache.
+// total number of values removed from the cache.
 func (s *multiCache) RemoveProviderCount(providerID peer.ID) uint64 {
 	countChan := make(chan uint64)
 	for _, cache := range s.cacheSet {

@@ -3,7 +3,6 @@ package engine
 import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -33,8 +32,8 @@ func New(resultCache cache.Interface, valueStore store.Interface) *Engine {
 	}
 }
 
-// Get retrieves a slice of entry.Value for a CID
-func (e *Engine) Get(c cid.Cid) ([]entry.Value, bool, error) {
+// Get retrieves a slice of index.Value for a CID
+func (e *Engine) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	if e.resultCache != nil {
 		// Check if CID in resultCache
 		v, found, err := e.resultCache.Get(c)
@@ -48,8 +47,8 @@ func (e *Engine) Get(c cid.Cid) ([]entry.Value, bool, error) {
 				return nil, false, err
 			}
 			// TODO: What about adding a resultCache interface that includes
-			// putEntries(cid, []entry.Value) function
-			// so we don't need to loop through entry.Value slice to move from
+			// putValues(cid, []indexer.Value) function
+			// so we don't need to loop through indexer.Value slice to move from
 			// one storage to another?
 			if found {
 				// Move from value store to result cache
@@ -72,7 +71,7 @@ func (e *Engine) Get(c cid.Cid) ([]entry.Value, bool, error) {
 
 // Put stores a value for a CID if the value is not already stored.  New values
 // are added to those that are already stored for the CID.
-func (e *Engine) Put(c cid.Cid, value entry.Value) (bool, error) {
+func (e *Engine) Put(c cid.Cid, value indexer.Value) (bool, error) {
 	// If there is a result cache, check first if cid already in cache
 	if e.resultCache != nil {
 		v, found, err := e.resultCache.Get(c)
@@ -101,8 +100,8 @@ func (e *Engine) Put(c cid.Cid, value entry.Value) (bool, error) {
 	return e.valueStore.Put(c, value)
 }
 
-// PutMany stores one entry.Value for multiple CIDs
-func (e *Engine) PutMany(cids []cid.Cid, value entry.Value) error {
+// PutMany stores one indexer.Value for multiple CIDs
+func (e *Engine) PutMany(cids []cid.Cid, value indexer.Value) error {
 	if e.resultCache == nil {
 		return e.valueStore.PutMany(cids, value)
 	}
@@ -117,7 +116,7 @@ func (e *Engine) PutMany(cids []cid.Cid, value entry.Value) error {
 }
 
 // Remove removes a value for the specified CID
-func (e *Engine) Remove(c cid.Cid, value entry.Value) (bool, error) {
+func (e *Engine) Remove(c cid.Cid, value indexer.Value) (bool, error) {
 	ok, err := e.valueStore.Remove(c, value)
 	if err != nil {
 		return false, err
@@ -136,7 +135,7 @@ func (e *Engine) Remove(c cid.Cid, value entry.Value) (bool, error) {
 }
 
 // RemoveMany removes the specified value from multiple CIDs
-func (e *Engine) RemoveMany(cids []cid.Cid, value entry.Value) error {
+func (e *Engine) RemoveMany(cids []cid.Cid, value indexer.Value) error {
 	// Remove first from valueStore
 	err := e.valueStore.RemoveMany(cids, value)
 	if err != nil {

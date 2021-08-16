@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -21,8 +21,8 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
-	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
+	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -31,7 +31,7 @@ func E2ETest(t *testing.T, s store.Interface) {
 
 	// Put a single CID
 	t.Logf("Put/Get a single CID")
-	_, err = s.Put(single, entry1)
+	_, err = s.Put(single, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -43,13 +43,13 @@ func E2ETest(t *testing.T, s store.Interface) {
 	if !found {
 		t.Errorf("Error finding single cid")
 	}
-	if !i[0].Equal(entry1) {
+	if !i[0].Equal(value1) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
 	// Put a batch of CIDs
 	t.Logf("Put/Get a batch of CIDs")
-	err = s.PutMany(batch, entry1)
+	err = s.PutMany(batch, value1)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)
 	}
@@ -61,13 +61,13 @@ func E2ETest(t *testing.T, s store.Interface) {
 	if !found {
 		t.Errorf("Error finding a cid from the batch")
 	}
-	if !i[0].Equal(entry1) {
+	if !i[0].Equal(value1) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
-	_, err = s.Put(single, entry2)
+	_, err = s.Put(single, value2)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -84,7 +84,7 @@ func E2ETest(t *testing.T, s store.Interface) {
 	if len(i) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
-	if !i[1].Equal(entry2) {
+	if !i[1].Equal(value2) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
@@ -100,7 +100,7 @@ func E2ETest(t *testing.T, s store.Interface) {
 
 	// Remove a key
 	t.Logf("Remove key")
-	_, err = s.Remove(remove, entry1)
+	_, err = s.Remove(remove, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -113,8 +113,8 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Errorf("cid should have been removed")
 	}
 
-	// Remove an entry from the key
-	_, err = s.Remove(single, entry1)
+	// Remove a value from the key
+	_, err = s.Remove(single, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -123,10 +123,10 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("cid should still have one entry")
+		t.Errorf("cid should still have one value")
 	}
 	if len(i) != 1 {
-		t.Errorf("wrong number of entries after remove")
+		t.Errorf("wrong number of values after remove")
 	}
 
 }
@@ -143,9 +143,9 @@ func SizeTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
-		_, err = s.Put(c, entry)
+		_, err = s.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,19 +172,19 @@ func RemoveManyTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
 	batch := cids[1:]
 
 	// Put a batch of CIDs
 	t.Logf("Put/Get a batch of CIDs")
-	err = s.PutMany(batch, entry)
+	err = s.PutMany(batch, value)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)
 	}
 
 	// Put a single CID
 	t.Logf("Remove key")
-	err = s.RemoveMany(cids[2:], entry)
+	err = s.RemoveMany(cids[2:], value)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -223,8 +223,8 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
 			t.Logf("Put/Get different cid")
-			entry := entry.MakeValue(p, 0, cids[i].Bytes())
-			_, err := s.Put(single, entry)
+			value := indexer.MakeValue(p, 0, cids[i].Bytes())
+			_, err := s.Put(single, value)
 			if err != nil {
 				t.Error("Error putting single cid: ", err)
 			}
@@ -240,7 +240,7 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		t.Errorf("Error finding single cid")
 	}
 	if len(x) != 5 {
-		t.Error("Entry has not been updated by routines correctly", len(x))
+		t.Error("Value has not been updated by routines correctly", len(x))
 	}
 
 	// Test remove for all except one
@@ -248,8 +248,8 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
 			t.Logf("Remove cid")
-			entry := entry.MakeValue(p, 0, cids[i].Bytes())
-			_, err := s.Remove(single, entry)
+			value := indexer.MakeValue(p, 0, cids[i].Bytes())
+			_, err := s.Remove(single, value)
 			if err != nil {
 				t.Error("Error removing single cid: ", err)
 			}
@@ -265,6 +265,6 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		t.Errorf("Error finding single cid")
 	}
 	if len(x) != 1 {
-		t.Error("Entry has not been removed by routines correctly", len(x))
+		t.Error("Value has not been removed by routines correctly", len(x))
 	}
 }

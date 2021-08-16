@@ -4,9 +4,9 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
-	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
@@ -45,12 +45,12 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
-	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
+	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
 	single := cids[2]
 
 	// First put should go to value store
-	_, err = eng.Put(single, entry1)
+	_, err = eng.Put(single, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -65,7 +65,7 @@ func TestPassthrough(t *testing.T) {
 
 	// Getting the value should put it in cache
 	v, found, _ := eng.Get(single)
-	if !found || !v[0].Equal(entry1) {
+	if !found || !v[0].Equal(value1) {
 		t.Fatal("value not found in combined storage")
 	}
 	_, found, _ = eng.resultCache.Get(single)
@@ -74,7 +74,7 @@ func TestPassthrough(t *testing.T) {
 	}
 
 	// Updating an existing CID should also update cache
-	_, err = eng.Put(single, entry2)
+	_, err = eng.Put(single, value2)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -88,7 +88,7 @@ func TestPassthrough(t *testing.T) {
 	}
 
 	// Remove should apply to both storages
-	_, err = eng.Remove(single, entry1)
+	_, err = eng.Remove(single, value1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestPassthrough(t *testing.T) {
 
 	// Putting many should only update in cache the ones
 	// already stored, adding all to value store.
-	err = eng.PutMany(cids[2:], entry1)
+	err = eng.PutMany(cids[2:], value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -127,7 +127,7 @@ func TestPassthrough(t *testing.T) {
 	}
 
 	// RemoveMany should remove the corresponding from both storages
-	err = eng.RemoveMany(cids[2:], entry1)
+	err = eng.RemoveMany(cids[2:], value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -170,8 +170,8 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	entry1 := entry.MakeValue(p, protocolID, cids[0].Bytes())
-	entry2 := entry.MakeValue(p, protocolID, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
+	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
 
 	single := cids[2]
 	noadd := cids[3]
@@ -180,7 +180,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Put a single CID
 	t.Logf("Put/Get a single CID in storage")
-	_, err = eng.Put(single, entry1)
+	_, err = eng.Put(single, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -192,13 +192,13 @@ func e2e(t *testing.T, eng *Engine) {
 	if !found {
 		t.Errorf("Error finding single cid")
 	}
-	if !i[0].Equal(entry1) {
+	if !i[0].Equal(value1) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
 	// Put a batch of CIDs
 	t.Logf("Put/Get a batch of CIDs in storage")
-	err = eng.PutMany(batch, entry1)
+	err = eng.PutMany(batch, value1)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)
 	}
@@ -210,13 +210,13 @@ func e2e(t *testing.T, eng *Engine) {
 	if !found {
 		t.Errorf("Error finding a cid from the batch")
 	}
-	if !i[0].Equal(entry1) {
+	if !i[0].Equal(value1) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
-	_, err = eng.Put(single, entry2)
+	_, err = eng.Put(single, value2)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -233,7 +233,7 @@ func e2e(t *testing.T, eng *Engine) {
 	if len(i) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
-	if !i[1].Equal(entry2) {
+	if !i[1].Equal(value2) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
@@ -249,7 +249,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Remove a key
 	t.Logf("Remove key")
-	_, err = eng.Remove(remove, entry1)
+	_, err = eng.Remove(remove, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -262,8 +262,8 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Errorf("cid should have been removed")
 	}
 
-	// Remove an entry from the key
-	_, err = eng.Remove(single, entry1)
+	// Remove a value from the key
+	_, err = eng.Remove(single, value1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
@@ -272,10 +272,10 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("cid should still have one entry")
+		t.Errorf("cid should still have one value")
 	}
 	if len(i) != 1 {
-		t.Errorf("wrong number of entries after remove")
+		t.Errorf("wrong number of values after remove")
 	}
 
 }
@@ -293,9 +293,9 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
-		_, err = eng.Put(c, entry)
+		_, err = eng.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
 		}

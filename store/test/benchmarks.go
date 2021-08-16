@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -17,7 +17,7 @@ import (
 const (
 	testDataDir = "../test/test_data/"
 	testDataExt = ".data"
-	// protocol ID for IndexEntry metadata
+	// protocol ID for index.Value metadata
 	protocolID = 0
 )
 
@@ -42,8 +42,8 @@ func prepare(s store.Interface, size string, t *testing.T) {
 	go ReadCids(file, out, errOut)
 
 	for c := range out {
-		entry := entry.MakeValue(p, protocolID, c.Bytes())
-		_, err = s.Put(c, entry)
+		value := indexer.MakeValue(p, protocolID, c.Bytes())
+		_, err = s.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,10 +105,10 @@ func BenchCidGet(s store.Interface, b *testing.B) {
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = RandomCids(4096)
-	err = s.PutMany(cids, entry)
+	err = s.PutMany(cids, value)
 	if err != nil {
 		panic(err)
 	}
@@ -147,10 +147,10 @@ func BenchParallelCidGet(s store.Interface, b *testing.B) {
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
 
 	cids, _ = RandomCids(4096)
-	err = s.PutMany(cids, entry)
+	err = s.PutMany(cids, value)
 	if err != nil {
 		panic(err)
 	}

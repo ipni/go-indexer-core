@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
 
@@ -53,11 +53,11 @@ func New(dir string) (*sthStorage, error) {
 	}, nil
 }
 
-func (s *sthStorage) Get(c cid.Cid) ([]entry.Value, bool, error) {
+func (s *sthStorage) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	return s.get(c.Bytes())
 }
 
-func (s *sthStorage) get(k []byte) ([]entry.Value, bool, error) {
+func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	value, found, err := s.store.Get(k)
 	if err != nil {
 		return nil, false, err
@@ -66,7 +66,7 @@ func (s *sthStorage) get(k []byte) ([]entry.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := entry.Unmarshal(value)
+	out, err := indexer.Unmarshal(value)
 	if err != nil {
 		return nil, false, err
 	}
@@ -74,31 +74,31 @@ func (s *sthStorage) get(k []byte) ([]entry.Value, bool, error) {
 
 }
 
-func (s *sthStorage) Put(c cid.Cid, entry entry.Value) (bool, error) {
-	return s.put(c.Bytes(), entry)
+func (s *sthStorage) Put(c cid.Cid, value indexer.Value) (bool, error) {
+	return s.put(c.Bytes(), value)
 }
 
-func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
+func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
 	// Acquire lock
 	s.lock(k)
 	defer s.unlock(k)
 	// NOTE: The implementation of Put in storethehash already
 	// performs a first lookup to check the type of update that
 	// needs to be done over the key. We can probably save this
-	// additional get access by implementing the duplicateEntry comparison
+	// additional get access by implementing the duplicateValue comparison
 	// low-level
 	old, found, err := s.get(k)
 	if err != nil {
 		return false, err
 	}
 	// If found it means there is already a value there.
-	// Check if we are trying to put a duplicate entry
-	if found && duplicateEntry(in, old) {
+	// Check if we are trying to put a duplicate value
+	if found && duplicateValue(in, old) {
 		return false, nil
 	}
 
 	li := append(old, in)
-	b, err := entry.Marshal(li)
+	b, err := indexer.Marshal(li)
 	if err != nil {
 		return false, err
 	}
@@ -110,9 +110,9 @@ func (s *sthStorage) put(k []byte, in entry.Value) (bool, error) {
 	return true, nil
 }
 
-func (s *sthStorage) PutMany(cs []cid.Cid, entry entry.Value) error {
+func (s *sthStorage) PutMany(cs []cid.Cid, value indexer.Value) error {
 	for _, c := range cs {
-		_, err := s.put(c.Bytes(), entry)
+		_, err := s.put(c.Bytes(), value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
 			// CID shouldn't stop from putting the rest.
@@ -149,11 +149,11 @@ func (s *sthStorage) Size() (int64, error) {
 	return size, nil
 
 }
-func (s *sthStorage) Remove(c cid.Cid, entry entry.Value) (bool, error) {
-	return s.remove(c, entry)
+func (s *sthStorage) Remove(c cid.Cid, value indexer.Value) (bool, error) {
+	return s.remove(c, value)
 }
 
-func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
+func (s *sthStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	k := c.Bytes()
 	// Acquire lock
 	s.lock(k)
@@ -166,14 +166,14 @@ func (s *sthStorage) remove(c cid.Cid, entry entry.Value) (bool, error) {
 	// If found it means there is a value for the cid
 	// check if there is something to remove.
 	if found {
-		return s.removeEntry(k, entry, old)
+		return s.removeValue(k, value, old)
 	}
 	return false, nil
 }
 
-func (s *sthStorage) RemoveMany(cids []cid.Cid, entry entry.Value) error {
+func (s *sthStorage) RemoveMany(cids []cid.Cid, value indexer.Value) error {
 	for i := range cids {
-		_, err := s.remove(cids[i], entry)
+		_, err := s.remove(cids[i], value)
 		if err != nil {
 			return err
 		}
@@ -187,24 +187,25 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 	// NOTE: There is no straightforward way of implementing this
 	// batch remove. We can either regenerate the index from
 	// the original data, or iterate through the whole the whole primary storage
-	// inspecting all entries for the provider in cids.
+	// inspecting all values for the provider in cids.
 	// Deferring to the future
 	panic("not implemented")
 }
 
-// DuplicateEntry checks if the entry already exists in the index. An entry
-// for the same provider but different metadata is not considered
-// a duplicate entry.
-func duplicateEntry(in entry.Value, old []entry.Value) bool {
-	for i := range old {
-		if in.Equal(old[i]) {
+// duplicateValue checks if the value already exists in the index entry. An
+// value for the same provider but different metadata is not considered a
+// duplicate value.
+func duplicateValue(in indexer.Value, entry []indexer.Value) bool {
+	// Iterate values in the index entry to look for a duplicate
+	for i := range entry {
+		if in.Equal(entry[i]) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored []entry.Value) (bool, error) {
+func (s *sthStorage) removeValue(k []byte, value indexer.Value, stored []indexer.Value) (bool, error) {
 	for i := range stored {
 		if value.Equal(stored[i]) {
 			// It is the only value, remove the value
@@ -214,8 +215,8 @@ func (s *sthStorage) removeEntry(k []byte, value entry.Value, stored []entry.Val
 
 			// else remove from value and put updated structure
 			stored[i] = stored[len(stored)-1]
-			stored[len(stored)-1] = entry.Value{}
-			b, err := entry.Marshal(stored[:len(stored)-1])
+			stored[len(stored)-1] = indexer.Value{}
+			b, err := indexer.Marshal(stored[:len(stored)-1])
 			if err != nil {
 				return false, err
 			}

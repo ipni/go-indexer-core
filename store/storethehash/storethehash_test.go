@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core/entry"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
@@ -78,9 +78,9 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry := entry.MakeValue(p, 0, cids[0].Bytes())
+	value := indexer.MakeValue(p, 0, cids[0].Bytes())
 	for _, c := range cids[1:] {
-		_, err = s.Put(c, entry)
+		_, err = s.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +103,7 @@ func TestPeriodicFlush(t *testing.T) {
 	if !found {
 		t.Fatal("Error finding single cid")
 	}
-	if !i[0].Equal(entry) {
+	if !i[0].Equal(value) {
 		t.Errorf("Got wrong value for single cid")
 	}
 
