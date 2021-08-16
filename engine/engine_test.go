@@ -1,4 +1,4 @@
-package indexer
+package engine
 
 import (
 	"io/ioutil"
@@ -15,7 +15,7 @@ import (
 
 const protocolID = 0
 
-func initStorage(t *testing.T, withCache bool) *Engine {
+func initEngine(t *testing.T, withCache bool) *Engine {
 	tmpDir, err := ioutil.TempDir("", "sth")
 	if err != nil {
 		t.Fatal(err)
@@ -30,11 +30,11 @@ func initStorage(t *testing.T, withCache bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return NewEngine(resultCache, valueStore)
+	return New(resultCache, valueStore)
 }
 
 func TestPassthrough(t *testing.T) {
-	s := initStorage(t, true)
+	eng := initEngine(t, true)
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
@@ -50,117 +50,115 @@ func TestPassthrough(t *testing.T) {
 	single := cids[2]
 
 	// First put should go to value store
-	_, err = s.Put(single, entry1)
+	_, err = eng.Put(single, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	_, found, _ := s.valueStore.Get(single)
+	_, found, _ := eng.valueStore.Get(single)
 	if !found {
 		t.Fatal("single put did not go to value store")
 	}
-	_, found, _ = s.resultCache.Get(single)
+	_, found, _ = eng.resultCache.Get(single)
 	if found {
 		t.Fatal("single put went to result cache")
 	}
 
 	// Getting the value should put it in cache
-	v, found, _ := s.Get(single)
+	v, found, _ := eng.Get(single)
 	if !found || !v[0].Equal(entry1) {
 		t.Fatal("value not found in combined storage")
 	}
-	_, found, _ = s.resultCache.Get(single)
+	_, found, _ = eng.resultCache.Get(single)
 	if !found {
 		t.Fatal("cid not moved to cache after miss get")
 	}
 
 	// Updating an existing CID should also update cache
-	_, err = s.Put(single, entry2)
+	_, err = eng.Put(single, entry2)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	values, _, _ := s.valueStore.Get(single)
+	values, _, _ := eng.valueStore.Get(single)
 	if len(values) != 2 {
 		t.Fatal("values not updated in value store")
 	}
-	values, _, _ = s.resultCache.Get(single)
+	values, _, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
 		t.Fatal("values not updated in resutl cache")
 	}
 
 	// Remove should apply to both storages
-	_, err = s.Remove(single, entry1)
+	_, err = eng.Remove(single, entry1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	values, _, _ = s.valueStore.Get(single)
+	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from value store")
 	}
-	values, _, _ = s.resultCache.Get(single)
+	values, _, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from result cache")
 	}
 
 	// Putting many should only update in cache the ones
 	// already stored, adding all to value store.
-	err = s.PutMany(cids[2:], entry1)
+	err = eng.PutMany(cids[2:], entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	values, _, _ = s.valueStore.Get(single)
+	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 2 {
 		t.Fatal("value not updated in value store after PutMany")
 	}
-	values, _, _ = s.resultCache.Get(single)
+	values, _, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
 		t.Fatal("value not updated in result cache after PutMany")
 	}
 
 	// This CID should only be found in value store
-	_, found, _ = s.valueStore.Get(cids[4])
+	_, found, _ = eng.valueStore.Get(cids[4])
 	if !found {
 		t.Fatal("single put did not go to value store")
 	}
-	_, found, _ = s.resultCache.Get(cids[4])
+	_, found, _ = eng.resultCache.Get(cids[4])
 	if found {
 		t.Fatal("single put went to result cache")
 	}
 
-	// RemoveMany should remove the corresponding from both storages.
-	err = s.RemoveMany(cids[2:], entry1)
+	// RemoveMany should remove the corresponding from both storages
+	err = eng.RemoveMany(cids[2:], entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	values, _, _ = s.valueStore.Get(single)
+	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 1 {
 		t.Fatal("values not removed from value store")
 	}
-	values, _, _ = s.resultCache.Get(single)
+	values, _, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from result cache after RemoveMany")
 	}
 
-	_, found, _ = s.valueStore.Get(cids[4])
+	_, found, _ = eng.valueStore.Get(cids[4])
 	if found {
 		t.Fatal("remove many did not remove values from value store")
 	}
-	_, found, _ = s.resultCache.Get(cids[4])
+	_, found, _ = eng.resultCache.Get(cids[4])
 	if found {
 		t.Fatal("remove many did not remove value from result cache")
 	}
 }
 
 func TestOnlyValueStore(t *testing.T) {
-	s := initStorage(t, false)
-	e2e(t, s)
+	e2e(t, initEngine(t, false))
 }
 
 func TestBoth(t *testing.T) {
-	s := initStorage(t, true)
-	e2e(t, s)
+	e2e(t, initEngine(t, true))
 }
 
-func e2e(t *testing.T, s *Engine) {
+func e2e(t *testing.T, eng *Engine) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -182,12 +180,12 @@ func e2e(t *testing.T, s *Engine) {
 
 	// Put a single CID
 	t.Logf("Put/Get a single CID in storage")
-	_, err = s.Put(single, entry1)
+	_, err = eng.Put(single, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
 
-	i, found, err := s.Get(single)
+	i, found, err := eng.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,12 +198,12 @@ func e2e(t *testing.T, s *Engine) {
 
 	// Put a batch of CIDs
 	t.Logf("Put/Get a batch of CIDs in storage")
-	err = s.PutMany(batch, entry1)
+	err = eng.PutMany(batch, entry1)
 	if err != nil {
 		t.Fatal("Error putting batch of cids: ", err)
 	}
 
-	i, found, err = s.Get(cids[5])
+	i, found, err = eng.Get(cids[5])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,14 +216,14 @@ func e2e(t *testing.T, s *Engine) {
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
-	_, err = s.Put(single, entry2)
+	_, err = eng.Put(single, entry2)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	i, found, err = s.Get(single)
+	i, found, err = eng.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +239,7 @@ func e2e(t *testing.T, s *Engine) {
 
 	// Get a key that is not set
 	t.Logf("Get non-existing key")
-	_, found, err = s.Get(noadd)
+	_, found, err = eng.Get(noadd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,12 +249,12 @@ func e2e(t *testing.T, s *Engine) {
 
 	// Remove a key
 	t.Logf("Remove key")
-	_, err = s.Remove(remove, entry1)
+	_, err = eng.Remove(remove, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
 
-	_, found, err = s.Get(remove)
+	_, found, err = eng.Get(remove)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,11 +263,11 @@ func e2e(t *testing.T, s *Engine) {
 	}
 
 	// Remove an entry from the key
-	_, err = s.Remove(single, entry1)
+	_, err = eng.Remove(single, entry1)
 	if err != nil {
 		t.Fatal("Error putting single cid: ", err)
 	}
-	i, found, err = s.Get(single)
+	i, found, err = eng.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +281,7 @@ func e2e(t *testing.T, s *Engine) {
 }
 
 func SizeTest(t *testing.T) {
-	s := initStorage(t, true)
+	eng := initEngine(t, true)
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -297,13 +295,13 @@ func SizeTest(t *testing.T) {
 
 	entry := entry.MakeValue(p, protocolID, cids[0].Bytes())
 	for _, c := range cids[1:] {
-		_, err = s.Put(c, entry)
+		_, err = eng.Put(c, entry)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	size, err := s.Size()
+	size, err := eng.Size()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
-package indexer
+package engine
 
 import (
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/filecoin-project/go-indexer-core/entry"
 	"github.com/filecoin-project/go-indexer-core/store"
@@ -11,14 +12,18 @@ import (
 
 var log = logging.Logger("indexer-core")
 
-// Engine combines a result cache and a value store
+// Engine is an implementation of indexer.Interface that combines a result
+// cache and a value store
 type Engine struct {
 	resultCache cache.Interface
 	valueStore  store.Interface
 }
 
-// NewEngine creates a new Engine with the given result cache and value store
-func NewEngine(resultCache cache.Interface, valueStore store.Interface) *Engine {
+var _ indexer.Interface = &Engine{}
+
+// New implements the indexer.Interface.  It creates a new Engine with the
+// given result cache and value store
+func New(resultCache cache.Interface, valueStore store.Interface) *Engine {
 	if valueStore == nil {
 		panic("valueStore is required")
 	}
