@@ -1,6 +1,6 @@
 module github.com/filecoin-project/go-indexer-core
 
-go 1.15
+go 1.16
 
 require (
 	github.com/akrylysov/pogreb v0.10.1
