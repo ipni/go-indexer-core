@@ -24,7 +24,6 @@ func initSth(t *testing.T) store.Interface {
 	} else {
 		tmpDir = t.TempDir()
 	}
-	t.Log("---> tempdir:", tmpDir)
 	s, err := storethehash.New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
