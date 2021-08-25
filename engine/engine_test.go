@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"io/ioutil"
+	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -14,7 +16,17 @@ import (
 const protocolID = 0
 
 func initEngine(t *testing.T, withCache bool) *Engine {
-	valueStore, err := storethehash.New(t.TempDir())
+	var tmpDir string
+	var err error
+	if runtime.GOOS == "windows" {
+		tmpDir, err = ioutil.TempDir("", "sth")
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		tmpDir = t.TempDir()
+	}
+	valueStore, err := storethehash.New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
