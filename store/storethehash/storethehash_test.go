@@ -13,43 +13,42 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-func initSth() (store.Interface, error) {
-	tmpDir, err := ioutil.TempDir("", "sth")
-	if err != nil {
-		return nil, err
+func initSth(t *testing.T) store.Interface {
+	var tmpDir string
+	var err error
+	if runtime.GOOS == "windows" {
+		tmpDir, err = ioutil.TempDir("", "sth")
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		tmpDir = t.TempDir()
 	}
-	return storethehash.New(tmpDir)
-}
-
-func TestE2E(t *testing.T) {
-	s, err := initSth()
+	t.Log("---> tempdir:", tmpDir)
+	s, err := storethehash.New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return s
+}
+
+func TestE2E(t *testing.T) {
+	s := initSth(t)
 	test.E2ETest(t, s)
 }
 
 func TestSize(t *testing.T) {
-	s, err := initSth()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initSth(t)
 	test.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
-	s, err := initSth()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initSth(t)
 	test.RemoveManyTest(t, s)
 }
 
 func TestParallel(t *testing.T) {
-	s, err := initSth()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initSth(t)
 	test.ParallelUpdateTest(t, s)
 }
 
@@ -58,10 +57,7 @@ func TestPeriodicFlush(t *testing.T) {
 		t.SkipNow()
 	}
 	// Init storage
-	tmpDir, err := ioutil.TempDir("", "sth")
-	if err != nil {
-		t.Fatal(err)
-	}
+	tmpDir := t.TempDir()
 
 	s, err := storethehash.New(tmpDir)
 	if err != nil {
