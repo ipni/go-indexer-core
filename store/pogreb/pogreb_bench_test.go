@@ -5,24 +5,25 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initBenchStore() store.Interface {
-	s, err := initPogreb()
+func initBenchStore(b *testing.B) store.Interface {
+	s, err := pogreb.New(b.TempDir())
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 	return s
 }
 
 func BenchmarkGet(b *testing.B) {
 	skipBenchIf32bit(b)
-	test.BenchCidGet(initBenchStore(), b)
+	test.BenchCidGet(initBenchStore(b), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
 	skipBenchIf32bit(b)
-	test.BenchParallelCidGet(initBenchStore(), b)
+	test.BenchParallelCidGet(initBenchStore(b), b)
 }
 
 // To run this storage benchmarks run:
@@ -30,19 +31,19 @@ func BenchmarkParallelGet(b *testing.B) {
 func TestBenchSingle10MB(t *testing.T) {
 	skipIf32bit(t)
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "10MB", t)
+	test.BenchReadAll(initPogreb(t), "10MB", t)
 }
 
 func TestBenchSingle100MB(t *testing.T) {
 	skipIf32bit(t)
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "100MB", t)
+	test.BenchReadAll(initPogreb(t), "100MB", t)
 }
 
 func TestBenchSingle1GB(t *testing.T) {
 	skipIf32bit(t)
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "1GB", t)
+	test.BenchReadAll(initPogreb(t), "1GB", t)
 }
 
 func skipBenchIf32bit(b *testing.B) {
