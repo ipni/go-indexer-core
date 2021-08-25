@@ -8,7 +8,7 @@ require (
 	github.com/im7mortal/kmutex v1.0.1
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-log/v2 v2.3.0
-	github.com/ipld/go-storethehash v0.0.0-20210825181156-cce6ee6d4eb1
+	github.com/ipld/go-storethehash v0.0.0-20210825183827-efb212b402c8
 	github.com/libp2p/go-libp2p-core v0.9.0
 	github.com/multiformats/go-multihash v0.0.16
 	github.com/multiformats/go-varint v0.0.6
