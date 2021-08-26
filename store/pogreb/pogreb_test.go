@@ -10,51 +10,49 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initPogreb() (store.Interface, error) {
-	tmpDir, err := ioutil.TempDir("", "sth")
-	if err != nil {
-		return nil, err
+func initPogreb(t *testing.T) store.Interface {
+	var tmpDir string
+	var err error
+	if runtime.GOOS == "windows" {
+		tmpDir, err = ioutil.TempDir("", "sth")
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		tmpDir = t.TempDir()
 	}
-	return pogreb.New(tmpDir)
+	s, err := pogreb.New(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func TestE2E(t *testing.T) {
 	skipIf32bit(t)
 
-	s, err := initPogreb()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initPogreb(t)
 	test.E2ETest(t, s)
 }
 
 func TestParallel(t *testing.T) {
 	skipIf32bit(t)
 
-	s, err := initPogreb()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initPogreb(t)
 	test.ParallelUpdateTest(t, s)
 }
 
 func TestSize(t *testing.T) {
 	skipIf32bit(t)
 
-	s, err := initPogreb()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initPogreb(t)
 	test.SizeTest(t, s)
 }
 
 func TestRemoveMany(t *testing.T) {
 	skipIf32bit(t)
 
-	s, err := initPogreb()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := initPogreb(t)
 	test.RemoveManyTest(t, s)
 }
 

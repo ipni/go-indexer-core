@@ -2,12 +2,12 @@ package engine
 
 import (
 	"io/ioutil"
+	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
-	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -16,17 +16,21 @@ import (
 const protocolID = 0
 
 func initEngine(t *testing.T, withCache bool) *Engine {
-	tmpDir, err := ioutil.TempDir("", "sth")
+	var tmpDir string
+	var err error
+	if runtime.GOOS == "windows" {
+		tmpDir, err = ioutil.TempDir("", "sth")
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		tmpDir = t.TempDir()
+	}
+	valueStore, err := storethehash.New(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var resultCache cache.Interface
-	var valueStore store.Interface
-
-	valueStore, err = storethehash.New(tmpDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}

@@ -4,37 +4,38 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initBenchStore() store.Interface {
-	s, err := initSth()
+func initBenchStore(b *testing.B) store.Interface {
+	s, err := storethehash.New(b.TempDir())
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 	return s
 }
 
 func BenchmarkGet(b *testing.B) {
-	test.BenchCidGet(initBenchStore(), b)
+	test.BenchCidGet(initBenchStore(b), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
-	test.BenchParallelCidGet(initBenchStore(), b)
+	test.BenchParallelCidGet(initBenchStore(b), b)
 }
 
 // To run this storage benchmarks run:
 // TEST_STORAGE=true go test -v -timeout=30m
 func TestBenchSingle10MB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "10MB", t)
+	test.BenchReadAll(initSth(t), "10MB", t)
 }
 
 func TestBenchSingle100MB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "100MB", t)
+	test.BenchReadAll(initSth(t), "100MB", t)
 }
 
 func TestBenchSingle1GB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initBenchStore(), "1GB", t)
+	test.BenchReadAll(initSth(t), "1GB", t)
 }
