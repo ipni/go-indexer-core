@@ -64,7 +64,7 @@ func (s *memoryStore) Put(c cid.Cid, value indexer.Value) (bool, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// Get from current or previous cache
+	// Get from cache
 	existing, found := s.getNoLock(k)
 
 	// If found values(s) then check the value to put is already there.
