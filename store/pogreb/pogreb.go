@@ -15,9 +15,8 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/im7mortal/kmutex"
-
-	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 var _ store.Interface = &pStorage{}
@@ -44,8 +43,8 @@ func New(dir string) (*pStorage, error) {
 	}, nil
 }
 
-func (s *pStorage) Get(c cid.Cid) ([]indexer.Value, bool, error) {
-	return s.get(c.Bytes())
+func (s *pStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
+	return s.get([]byte(m))
 }
 
 func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -65,8 +64,8 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
-func (s *pStorage) Put(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.put(c.Bytes(), value)
+func (s *pStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.put([]byte(m), value)
 }
 
 func (s *pStorage) put(k []byte, in indexer.Value) (bool, error) {
@@ -96,12 +95,12 @@ func (s *pStorage) put(k []byte, in indexer.Value) (bool, error) {
 	return true, nil
 }
 
-func (s *pStorage) PutMany(cs []cid.Cid, value indexer.Value) error {
-	for _, c := range cs {
-		_, err := s.put(c.Bytes(), value)
+func (s *pStorage) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
+	for i := range mhs {
+		_, err := s.put([]byte(mhs[i]), value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
-			// CID shouldn't stop from putting the rest.
+			// multihash shouldn't stop from putting the rest.
 			continue
 		}
 	}
@@ -131,12 +130,12 @@ func (s *pStorage) Size() (int64, error) {
 
 }
 
-func (s *pStorage) Remove(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.remove(c, value)
+func (s *pStorage) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.remove(m, value)
 }
 
-func (s *pStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
-	k := c.Bytes()
+func (s *pStorage) remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	k := []byte(m)
 	// Acquire lock
 	s.lock(k)
 	defer s.unlock(k)
@@ -144,7 +143,7 @@ func (s *pStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// If found it means there is a value for the cid
+	// If found it means there is a value for the multihash
 	// check if there is something to remove.
 	if found {
 		return s.removeValue(k, value, old)
@@ -152,9 +151,9 @@ func (s *pStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	return false, nil
 }
 
-func (s *pStorage) RemoveMany(cids []cid.Cid, value indexer.Value) error {
-	for i := range cids {
-		_, err := s.remove(cids[i], value)
+func (s *pStorage) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
+	for i := range mhs {
+		_, err := s.remove(mhs[i], value)
 		if err != nil {
 			return err
 		}

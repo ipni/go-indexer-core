@@ -68,13 +68,13 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Put some data in the first storage.
-	cids, err := test.RandomCids(151)
+	mhs, err := test.RandomMultihashes(151)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, 0, cids[0].Bytes())
-	for _, c := range cids[1:] {
+	value := indexer.MakeValue(p, 0, []byte(mhs[0]))
+	for _, c := range mhs[1:] {
 		_, err = s.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
@@ -90,16 +90,16 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Get data. If re-generated correctly we should find the CID
-	i, found, err := s2.Get(cids[3])
+	// Get data. If re-generated correctly we should find the multihash
+	i, found, err := s2.Get(mhs[3])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Fatal("Error finding single cid")
+		t.Fatal("Error finding single multihash")
 	}
 	if !i[0].Equal(value) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
 }

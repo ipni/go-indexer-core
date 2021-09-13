@@ -16,24 +16,24 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	cids, err := RandomCids(15)
+	mhs, err := RandomMultihashes(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	value2 := indexer.MakeValue(p, protocolID, []byte(mhs[1]))
 
-	single := cids[2]
-	noadd := cids[3]
-	batch := cids[4:]
-	remove := cids[4]
+	single := mhs[2]
+	noadd := mhs[3]
+	batch := mhs[4:]
+	remove := mhs[4]
 
-	// Put a single CID
-	t.Logf("Put/Get a single CID")
+	// Put a single multihash
+	t.Logf("Put/Get a single multihash")
 	_, err = s.Put(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 
 	i, found, err := s.Get(single)
@@ -41,35 +41,35 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding single cid")
+		t.Errorf("Error finding single multihash")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
-	// Put a batch of CIDs
-	t.Logf("Put/Get a batch of CIDs")
+	// Put a batch of multihashes
+	t.Logf("Put/Get a batch of multihashes")
 	err = s.PutMany(batch, value1)
 	if err != nil {
-		t.Fatal("Error putting batch of cids: ", err)
+		t.Fatal("Error putting batch of multihashes:", err)
 	}
 
-	i, found, err = s.Get(cids[5])
+	i, found, err = s.Get(mhs[5])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a cid from the batch")
+		t.Errorf("Error finding a multihash from the batch")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
 	_, err = s.Put(single, value2)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -79,13 +79,13 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a cid from the batch")
+		t.Errorf("Error finding a multihash from the batch")
 	}
 	if len(i) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
 	if !i[1].Equal(value2) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
 	// Get a key that is not set
@@ -95,14 +95,14 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("Error, the key for the cid shouldn't be set")
+		t.Errorf("Error, the key for the multihash should not be set")
 	}
 
 	// Remove a key
 	t.Logf("Remove key")
 	_, err = s.Remove(remove, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 
 	_, found, err = s.Get(remove)
@@ -110,20 +110,20 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("cid should have been removed")
+		t.Errorf("multihash should have been removed")
 	}
 
 	// Remove a value from the key
 	_, err = s.Remove(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	i, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("cid should still have one value")
+		t.Errorf("multihash should still have one value")
 	}
 	if len(i) != 1 {
 		t.Errorf("wrong number of values after remove")
@@ -138,13 +138,13 @@ func SizeTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	cids, err := RandomCids(151)
+	mhs, err := RandomMultihashes(151)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	for _, c := range cids[1:] {
+	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	for _, c := range mhs[1:] {
 		_, err = s.Put(c, value)
 		if err != nil {
 			t.Fatal(err)
@@ -167,43 +167,43 @@ func RemoveManyTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	cids, err := RandomCids(15)
+	mhs, err := RandomMultihashes(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	batch := cids[1:]
+	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	batch := mhs[1:]
 
-	// Put a batch of CIDs
-	t.Logf("Put/Get a batch of CIDs")
+	// Put a batch of multihashes
+	t.Logf("Put/Get a batch of multihashes")
 	err = s.PutMany(batch, value)
 	if err != nil {
-		t.Fatal("Error putting batch of cids: ", err)
+		t.Fatal("Error putting batch of multihashes:", err)
 	}
 
-	// Put a single CID
+	// Put a single multihash
 	t.Logf("Remove key")
-	err = s.RemoveMany(cids[2:], value)
+	err = s.RemoveMany(mhs[2:], value)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 
-	i, found, err := s.Get(cids[1])
+	i, found, err := s.Get(mhs[1])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("cid should not have been removed")
+		t.Errorf("multihash should not have been removed")
 	}
 	if len(i) != 1 {
-		t.Errorf("wrong number of cids removed")
+		t.Errorf("wrong number of multihashes removed")
 	}
 
 }
 
 func ParallelUpdateTest(t *testing.T, s store.Interface) {
-	cids, err := RandomCids(15)
+	mhs, err := RandomMultihashes(15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,19 +214,19 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 
-	single := cids[14]
+	single := mhs[14]
 
 	var wg sync.WaitGroup
 
-	// Test parallel writes over same CID
+	// Test parallel writes over same multihash
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
-			t.Logf("Put/Get different cid")
-			value := indexer.MakeValue(p, 0, cids[i].Bytes())
+			t.Logf("Put/Get different multihash")
+			value := indexer.MakeValue(p, 0, []byte(mhs[i]))
 			_, err := s.Put(single, value)
 			if err != nil {
-				t.Error("Error putting single cid: ", err)
+				t.Error("Error putting single multihash:", err)
 			}
 			wg.Done()
 		}(&wg, i)
@@ -237,7 +237,7 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding single cid")
+		t.Errorf("Error finding single multihash")
 	}
 	if len(x) != 5 {
 		t.Error("Value has not been updated by routines correctly", len(x))
@@ -247,11 +247,11 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
-			t.Logf("Remove cid")
-			value := indexer.MakeValue(p, 0, cids[i].Bytes())
+			t.Logf("Remove multihash")
+			value := indexer.MakeValue(p, 0, []byte(mhs[i]))
 			_, err := s.Remove(single, value)
 			if err != nil {
-				t.Error("Error removing single cid: ", err)
+				t.Error("Error removing single multihash:", err)
 			}
 			wg.Done()
 		}(&wg, i)
@@ -262,7 +262,7 @@ func ParallelUpdateTest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding single cid")
+		t.Errorf("Error finding single multihash")
 	}
 	if len(x) != 1 {
 		t.Error("Value has not been removed by routines correctly", len(x))

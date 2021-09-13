@@ -8,9 +8,9 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
+	"github.com/multiformats/go-multihash"
 
 	"github.com/im7mortal/kmutex"
-	"github.com/ipfs/go-cid"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -53,8 +53,8 @@ func New(dir string) (*sthStorage, error) {
 	}, nil
 }
 
-func (s *sthStorage) Get(c cid.Cid) ([]indexer.Value, bool, error) {
-	return s.get(c.Bytes())
+func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
+	return s.get([]byte(m))
 }
 
 func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -74,8 +74,8 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
-func (s *sthStorage) Put(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.put(c.Bytes(), value)
+func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.put([]byte(m), value)
 }
 
 func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
@@ -110,12 +110,12 @@ func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
 	return true, nil
 }
 
-func (s *sthStorage) PutMany(cs []cid.Cid, value indexer.Value) error {
-	for _, c := range cs {
-		_, err := s.put(c.Bytes(), value)
+func (s *sthStorage) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
+	for i := range mhs {
+		_, err := s.put([]byte(mhs[i]), value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
-			// CID shouldn't stop from putting the rest.
+			// multihash shouldn't stop from putting the rest.
 			continue
 		}
 	}
@@ -149,12 +149,12 @@ func (s *sthStorage) Size() (int64, error) {
 	return size, nil
 
 }
-func (s *sthStorage) Remove(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.remove(c, value)
+func (s *sthStorage) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.remove(m, value)
 }
 
-func (s *sthStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
-	k := c.Bytes()
+func (s *sthStorage) remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	k := []byte(m)
 	// Acquire lock
 	s.lock(k)
 	defer s.unlock(k)
@@ -163,7 +163,7 @@ func (s *sthStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// If found it means there is a value for the cid
+	// If found it means there is a value for the multihash
 	// check if there is something to remove.
 	if found {
 		return s.removeValue(k, value, old)
@@ -171,9 +171,9 @@ func (s *sthStorage) remove(c cid.Cid, value indexer.Value) (bool, error) {
 	return false, nil
 }
 
-func (s *sthStorage) RemoveMany(cids []cid.Cid, value indexer.Value) error {
-	for i := range cids {
-		_, err := s.remove(cids[i], value)
+func (s *sthStorage) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
+	for i := range mhs {
+		_, err := s.remove(mhs[i], value)
 		if err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 	// NOTE: There is no straightforward way of implementing this
 	// batch remove. We can either regenerate the index from
 	// the original data, or iterate through the whole the whole primary storage
-	// inspecting all values for the provider in cids.
+	// inspecting all values for the provider in multihashes.
 	// Deferring to the future
 	panic("not implemented")
 }

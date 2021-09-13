@@ -14,14 +14,14 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/gammazero/radixtree"
-	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 var _ store.Interface = &memoryStore{}
 
 type memoryStore struct {
-	// CID -> indexer.Value
+	// multihash -> indexer.Value
 	rtree *radixtree.Bytes
 	// IndexEntery interning
 	interns *radixtree.Bytes
@@ -35,12 +35,9 @@ func New() *memoryStore {
 	}
 }
 
-// cidToKey gets the multihash from a CID to be used as a cache key
-func cidToKey(c cid.Cid) string { return string(c.Hash()) }
-
-// Get retrieves a slice of values for a CID
-func (s *memoryStore) Get(c cid.Cid) ([]indexer.Value, bool, error) {
-	k := cidToKey(c)
+// Get retrieves a slice of values for a multihash
+func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
+	k := string(m)
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -57,9 +54,9 @@ func (s *memoryStore) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	return ret, true, nil
 }
 
-// Put stores an additional value for a CID if the value is not already stored
-func (s *memoryStore) Put(c cid.Cid, value indexer.Value) (bool, error) {
-	k := cidToKey(c)
+// Put stores an additional value for a multihash if the value is not already stored
+func (s *memoryStore) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
+	k := string(m)
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -76,15 +73,15 @@ func (s *memoryStore) Put(c cid.Cid, value indexer.Value) (bool, error) {
 	return true, nil
 }
 
-// PutMany stores a value for multiple CIDs
-func (s *memoryStore) PutMany(cids []cid.Cid, value indexer.Value) error {
+// PutMany stores a value for multiple multihashes
+func (s *memoryStore) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
 	var interned *indexer.Value
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	for i := range cids {
-		k := cidToKey(cids[i])
+	for i := range mhs {
+		k := string(mhs[i])
 		existing, found := s.getNoLock(k)
 		if found && valueInSlice(&value, existing) {
 			continue
@@ -99,9 +96,9 @@ func (s *memoryStore) PutMany(cids []cid.Cid, value indexer.Value) error {
 	return nil
 }
 
-// Remove removes a value for a CID
-func (s *memoryStore) Remove(c cid.Cid, value indexer.Value) (bool, error) {
-	k := cidToKey(c)
+// Remove removes a value for a multihash
+func (s *memoryStore) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	k := string(m)
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -109,13 +106,13 @@ func (s *memoryStore) Remove(c cid.Cid, value indexer.Value) (bool, error) {
 	return removeValue(s.rtree, k, &value), nil
 }
 
-// RemoveMany removes a value from multiple CIDs
-func (s *memoryStore) RemoveMany(cids []cid.Cid, value indexer.Value) error {
+// RemoveMany removes a value from multiple multihashes
+func (s *memoryStore) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	for i := range cids {
-		removeValue(s.rtree, cidToKey(cids[i]), &value)
+	for i := range mhs {
+		removeValue(s.rtree, string(mhs[i]), &value)
 	}
 	return nil
 }

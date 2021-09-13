@@ -19,11 +19,11 @@ func initBenchStore(b *testing.B) store.Interface {
 
 func BenchmarkGet(b *testing.B) {
 	skipBenchIf32bit(b)
-	test.BenchCidGet(initBenchStore(b), b)
+	test.BenchMultihashGet(initBenchStore(b), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
 	skipBenchIf32bit(b)
-	test.BenchParallelCidGet(initBenchStore(b), b)
+	test.BenchParallelMultihashGet(initBenchStore(b), b)
 }
 
 // To run this storage benchmarks run:
