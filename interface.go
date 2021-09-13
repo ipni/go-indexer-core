@@ -1,26 +1,26 @@
 package indexer
 
 import (
-	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 type Interface interface {
-	// Get retrieves a slice of Value for a CID
-	Get(c cid.Cid) ([]Value, bool, error)
+	// Get retrieves a slice of Value for a multihash
+	Get(multihash.Multihash) ([]Value, bool, error)
 
-	// Put stores a value for a CID if the value is not already stored.  New
-	// values are added to those that are already stored for the CID.
-	Put(c cid.Cid, value Value) (bool, error)
+	// Put stores a value for a multihash if the value is not already stored.
+	// New values are added to those that are already stored for the multihash.
+	Put(multihash.Multihash, Value) (bool, error)
 
-	// PutMany stores one Value for multiple CIDs
-	PutMany(cids []cid.Cid, value Value) error
+	// PutMany stores one Value for multiple multihashes
+	PutMany([]multihash.Multihash, Value) error
 
-	// Remove removes a value for the specified CID
-	Remove(c cid.Cid, value Value) (bool, error)
+	// Remove removes a value for the specified multihash
+	Remove(multihash.Multihash, Value) (bool, error)
 
-	// RemoveMany removes the specified value from multiple CIDs
-	RemoveMany(cids []cid.Cid, value Value) error
+	// RemoveMany removes the specified value from multiple multihashes
+	RemoveMany([]multihash.Multihash, Value) error
 
 	// RemoveProvider removes all values for specified provider.  This is used
 	// when a provider is no longer indexed by the indexer.

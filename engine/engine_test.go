@@ -44,19 +44,19 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cids, err := test.RandomCids(5)
+	mhs, err := test.RandomMultihashes(5)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
-	single := cids[2]
+	value1 := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	value2 := indexer.MakeValue(p, protocolID, []byte(mhs[1]))
+	single := mhs[2]
 
 	// First put should go to value store
 	_, err = eng.Put(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	_, found, _ := eng.valueStore.Get(single)
 	if !found {
@@ -74,13 +74,13 @@ func TestPassthrough(t *testing.T) {
 	}
 	_, found, _ = eng.resultCache.Get(single)
 	if !found {
-		t.Fatal("cid not moved to cache after miss get")
+		t.Fatal("multihash not moved to cache after miss get")
 	}
 
-	// Updating an existing CID should also update cache
+	// Updating an existing multihash should also update cache
 	_, err = eng.Put(single, value2)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	values, _, _ := eng.valueStore.Get(single)
 	if len(values) != 2 {
@@ -107,9 +107,9 @@ func TestPassthrough(t *testing.T) {
 
 	// Putting many should only update in cache the ones
 	// already stored, adding all to value store.
-	err = eng.PutMany(cids[2:], value1)
+	err = eng.PutMany(mhs[2:], value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 2 {
@@ -120,20 +120,20 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("value not updated in result cache after PutMany")
 	}
 
-	// This CID should only be found in value store
-	_, found, _ = eng.valueStore.Get(cids[4])
+	// This multihash should only be found in value store
+	_, found, _ = eng.valueStore.Get(mhs[4])
 	if !found {
 		t.Fatal("single put did not go to value store")
 	}
-	_, found, _ = eng.resultCache.Get(cids[4])
+	_, found, _ = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("single put went to result cache")
 	}
 
 	// RemoveMany should remove the corresponding from both storages
-	err = eng.RemoveMany(cids[2:], value1)
+	err = eng.RemoveMany(mhs[2:], value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 1 {
@@ -144,11 +144,11 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("value not removed from result cache after RemoveMany")
 	}
 
-	_, found, _ = eng.valueStore.Get(cids[4])
+	_, found, _ = eng.valueStore.Get(mhs[4])
 	if found {
 		t.Fatal("remove many did not remove values from value store")
 	}
-	_, found, _ = eng.resultCache.Get(cids[4])
+	_, found, _ = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("remove many did not remove value from result cache")
 	}
@@ -169,24 +169,24 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	cids, err := test.RandomCids(15)
+	mhs, err := test.RandomMultihashes(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	value2 := indexer.MakeValue(p, protocolID, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	value2 := indexer.MakeValue(p, protocolID, []byte(mhs[1]))
 
-	single := cids[2]
-	noadd := cids[3]
-	batch := cids[4:]
-	remove := cids[4]
+	single := mhs[2]
+	noadd := mhs[3]
+	batch := mhs[4:]
+	remove := mhs[4]
 
-	// Put a single CID
-	t.Logf("Put/Get a single CID in storage")
+	// Put a single multihash
+	t.Logf("Put/Get a single multihash in storage")
 	_, err = eng.Put(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 
 	i, found, err := eng.Get(single)
@@ -194,35 +194,35 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding single cid")
+		t.Errorf("Error finding single multihash")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
-	// Put a batch of CIDs
-	t.Logf("Put/Get a batch of CIDs in storage")
+	// Put a batch of multihashes
+	t.Logf("Put/Get a batch of multihashes in storage")
 	err = eng.PutMany(batch, value1)
 	if err != nil {
-		t.Fatal("Error putting batch of cids: ", err)
+		t.Fatal("Error putting batch of multihashse:", err)
 	}
 
-	i, found, err = eng.Get(cids[5])
+	i, found, err = eng.Get(mhs[5])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a cid from the batch")
+		t.Errorf("Error finding a multihash from the batch")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
 	_, err = eng.Put(single, value2)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -232,13 +232,13 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a cid from the batch")
+		t.Errorf("Error finding a multihash from the batch")
 	}
 	if len(i) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
 	if !i[1].Equal(value2) {
-		t.Errorf("Got wrong value for single cid")
+		t.Errorf("Got wrong value for single multihash")
 	}
 
 	// Get a key that is not set
@@ -248,14 +248,14 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("Error, the key for the cid shouldn't be set")
+		t.Errorf("Error, the key for the multihash shouldn't be set")
 	}
 
 	// Remove a key
 	t.Logf("Remove key")
 	_, err = eng.Remove(remove, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 
 	_, found, err = eng.Get(remove)
@@ -263,20 +263,20 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("cid should have been removed")
+		t.Errorf("multihash should have been removed")
 	}
 
 	// Remove a value from the key
 	_, err = eng.Remove(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single cid: ", err)
+		t.Fatal("Error putting single multihash:", err)
 	}
 	i, found, err = eng.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("cid should still have one value")
+		t.Errorf("multihash should still have one value")
 	}
 	if len(i) != 1 {
 		t.Errorf("wrong number of values after remove")
@@ -292,13 +292,13 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cids, err := test.RandomCids(151)
+	mhs, err := test.RandomMultihashes(151)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
-	for _, c := range cids[1:] {
+	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
+	for _, c := range mhs[1:] {
 		_, err = eng.Put(c, value)
 		if err != nil {
 			t.Fatal(err)

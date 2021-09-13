@@ -7,21 +7,21 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
+	"github.com/multiformats/go-multihash"
 )
 
 var prefix = cid.Prefix{
 	Version:  1,
 	Codec:    cid.Raw,
-	MhType:   mh.SHA2_256,
+	MhType:   multihash.SHA2_256,
 	MhLength: -1, // default length
 }
 
-// RandomCids generates the specified number of random cids.
-func RandomCids(n int) ([]cid.Cid, error) {
+// RandomMultihashes generates the specified number of random cids.
+func RandomMultihashes(n int) ([]multihash.Multihash, error) {
 	var prng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	res := make([]cid.Cid, n)
+	mhashes := make([]multihash.Multihash, n)
 	for i := 0; i < n; i++ {
 		b := make([]byte, 10*n)
 		prng.Read(b)
@@ -29,14 +29,14 @@ func RandomCids(n int) ([]cid.Cid, error) {
 		if err != nil {
 			return nil, err
 		}
-		res[i] = c
+		mhashes[i] = c.Hash()
 	}
-	return res, nil
+	return mhashes, nil
 }
 
-// ReadCids reads cids from an io.Reader and outputs them on a channel.
-// Malformed cids are ignored.
-func ReadCids(in io.Reader, out chan cid.Cid, done chan error) {
+// ReadCids reads cids from an io.Reader and outputs their multihashes on a
+// channel.  Malformed cids are ignored.
+func ReadCids(in io.Reader, out chan multihash.Multihash, done chan error) {
 	defer close(out)
 	defer close(done)
 
@@ -54,6 +54,6 @@ func ReadCids(in io.Reader, out chan cid.Cid, done chan error) {
 			// Disregarding malformed CIDs for now
 			continue
 		}
-		out <- c
+		out <- c.Hash()
 	}
 }

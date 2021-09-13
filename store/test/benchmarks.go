@@ -10,8 +10,8 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 	protocolID = 0
 )
 
-// prepare reads a cid list and imports it into the value store getting it
+// prepare reads a multihash list and imports it into the value store getting it
 // ready for benchmarking.
 func prepare(s store.Interface, size string, t *testing.T) {
 	testFile := fmt.Sprint(testDataDir, size, testDataExt)
@@ -37,13 +37,13 @@ func prepare(s store.Interface, size string, t *testing.T) {
 
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	out := make(chan cid.Cid)
+	out := make(chan multihash.Multihash)
 	errOut := make(chan error, 1)
 	go ReadCids(file, out, errOut)
 
-	for c := range out {
-		value := indexer.MakeValue(p, protocolID, c.Bytes())
-		_, err = s.Put(c, value)
+	for mh := range out {
+		value := indexer.MakeValue(p, protocolID, []byte(mh))
+		_, err = s.Put(mh, value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,7 +55,7 @@ func prepare(s store.Interface, size string, t *testing.T) {
 
 }
 
-// readAll reads all of the cids from a file and tries to get it from
+// readAll reads all of the multihashes from a file and tries to get it from
 // the value store.
 func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
 	file, err := os.OpenFile(fmt.Sprint(testDataDir, size, testDataExt), os.O_RDONLY, 0644)
@@ -64,15 +64,15 @@ func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
 	}
 	defer file.Close()
 
-	out := make(chan cid.Cid)
+	out := make(chan multihash.Multihash)
 	errOut := make(chan error, 1)
 	go ReadCids(file, out, errOut)
 
-	for c := range out {
+	for mh := range out {
 		now := time.Now()
-		_, found, err := s.Get(c)
+		_, found, err := s.Get(mh)
 		if err != nil || !found {
-			t.Errorf("cid not found")
+			t.Errorf("multihash not found")
 		}
 		m.getTime.add(time.Since(now).Microseconds())
 
@@ -84,7 +84,7 @@ func readAll(s store.Interface, size string, m *metrics, t *testing.T) {
 
 }
 
-// Benchmark the average time per get by all CIDs and the total storage used.
+// Benchmark the average time per get by all multihashes and the total storage used.
 func BenchReadAll(s store.Interface, size string, t *testing.T) {
 	m := initMetrics()
 	prepare(s, size, t)
@@ -98,17 +98,17 @@ func BenchReadAll(s store.Interface, size string, t *testing.T) {
 }
 
 // Benchmark single thread get operation
-func BenchCidGet(s store.Interface, b *testing.B) {
-	cids, err := RandomCids(1)
+func BenchMultihashGet(s store.Interface, b *testing.B) {
+	mhs, err := RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
 
-	cids, _ = RandomCids(4096)
-	err = s.PutMany(cids, value)
+	mhs, _ = RandomMultihashes(4096)
+	err = s.PutMany(mhs, value)
 	if err != nil {
 		panic(err)
 	}
@@ -118,9 +118,9 @@ func BenchCidGet(s store.Interface, b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, ok, _ := s.Get(cids[i%len(cids)])
+			_, ok, _ := s.Get(mhs[i%len(mhs)])
 			if !ok {
-				panic("missing cid")
+				panic("missing multihash")
 			}
 		}
 	})
@@ -131,26 +131,26 @@ func BenchCidGet(s store.Interface, b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N*testCount; i++ {
-				_, ok, _ := s.Get(cids[i%len(cids)])
+				_, ok, _ := s.Get(mhs[i%len(mhs)])
 				if !ok {
-					panic("missing cid")
+					panic("missing multihash")
 				}
 			}
 		})
 	}
 }
 
-func BenchParallelCidGet(s store.Interface, b *testing.B) {
-	cids, err := RandomCids(1)
+func BenchParallelMultihashGet(s store.Interface, b *testing.B) {
+	mhs, err := RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
-	value := indexer.MakeValue(p, protocolID, cids[0].Bytes())
+	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
 
-	cids, _ = RandomCids(4096)
-	err = s.PutMany(cids, value)
+	mhs, _ = RandomMultihashes(4096)
+	err = s.PutMany(mhs, value)
 	if err != nil {
 		panic(err)
 	}
@@ -164,15 +164,15 @@ func BenchParallelCidGet(s store.Interface, b *testing.B) {
 			for i := 0; i < rout; i++ {
 				wg.Add(1)
 				go func(wg *sync.WaitGroup, ch chan bool) {
-					// Each go routine starts fetching CIDs from different offset.
+					// Each go routine starts fetching multihashes from different offset.
 					// TODO: Request follow a zipf distribution.
 					off := rand.Int()
 					// Wait for all routines to be started
 					<-ch
 					for i := 0; i < b.N; i++ {
-						_, ok, _ := s.Get(cids[(off+i)%len(cids)])
+						_, ok, _ := s.Get(mhs[(off+i)%len(mhs)])
 						if !ok {
-							panic("missing cid")
+							panic("missing multihash")
 						}
 
 					}

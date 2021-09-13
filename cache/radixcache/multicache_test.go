@@ -16,76 +16,76 @@ var proto uint64
 
 func TestPutGetRemove(t *testing.T) {
 	s := New(1000000)
-	cids, err := test.RandomCids(15)
+	mhs, err := test.RandomMultihashes(15)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, proto, cids[0].Bytes())
-	value2 := indexer.MakeValue(p, proto, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, proto, []byte(mhs[0]))
+	value2 := indexer.MakeValue(p, proto, []byte(mhs[1]))
 
-	single := cids[2]
-	noadd := cids[3]
-	batch := cids[4:]
+	single := mhs[2]
+	noadd := mhs[3]
+	batch := mhs[4:]
 
-	// Put a single CID
-	t.Log("Put/Get a single CID in primary storage")
+	// Put a single multihash
+	t.Log("Put/Get a single multihash in primary storage")
 	if !s.PutCheck(single, value1) {
-		t.Fatal("Did not put new single cid")
+		t.Fatal("Did not put new single multihash")
 	}
 	ents, found, err := s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding single cid")
+		t.Error("Error finding single multihash")
 	}
 	if !ents[0].Equal(value1) {
-		t.Error("Got wrong value for single cid")
+		t.Error("Got wrong value for single multihash")
 	}
 
-	t.Log("Put existing CID value")
+	t.Log("Put existing multihash value")
 	if s.PutCheck(single, value1) {
 		t.Fatal("should not have put new value")
 	}
 
-	t.Log("Put existing CID and provider with new metadata")
+	t.Log("Put existing multihash and provider with new metadata")
 	if !s.PutCheck(single, value2) {
 		t.Fatal("should have put new value")
 	}
 
-	t.Log("Check for all valuess for single CID")
+	t.Log("Check for all valuess for single multihash")
 	ents, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding a cid from the batch")
+		t.Error("Error finding a multihash from the batch")
 	}
 	if len(ents) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
 	if !ents[1].Equal(value2) {
-		t.Error("Got wrong value for single cid")
+		t.Error("Got wrong value for single multihash")
 	}
 
-	// Put a batch of CIDs
-	t.Log("Put/Get a batch of CIDs in primary storage")
+	// Put a batch of multihashes
+	t.Log("Put/Get a batch of multihashes in primary storage")
 	count := s.PutManyCount(batch, value1)
 	if count == 0 {
-		t.Fatal("Did not put batch of cids")
+		t.Fatal("Did not put batch of multihashes")
 	}
 	t.Logf("Stored %d new values out of %d total", count, len(batch))
 
-	ents, found, err = s.Get(cids[5])
+	ents, found, err = s.Get(mhs[5])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("did not find a cid from the batch")
+		t.Error("did not find a multihash from the batch")
 	}
 	if !ents[0].Equal(value1) {
-		t.Error("Got wrong value for single cid")
+		t.Error("Got wrong value for single multihash")
 	}
 
 	// Get a key that is not set
@@ -95,30 +95,30 @@ func TestPutGetRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Error("Error, the key for the cid shouldn't be set")
+		t.Error("Error, the key for the multihash shouldn't be set")
 	}
 
-	t.Log("Remove valuey for CID")
+	t.Log("Remove valuey for multihash")
 	if !s.RemoveCheck(single, value2) {
 		t.Fatal("should have removed value")
 	}
 
-	t.Log("Check for all values for single CID")
+	t.Log("Check for all values for single multihash")
 	ents, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding a cid from the batch")
+		t.Error("Error finding a multihash from the batch")
 	}
 	if len(ents) != 1 {
 		t.Fatal("Update over existing key not correct")
 	}
 	if !ents[0].Equal(value1) {
-		t.Error("Got wrong value for single cid")
+		t.Error("Got wrong value for single multihash")
 	}
 
-	t.Log("Remove only value for CID")
+	t.Log("Remove only value for multihash")
 	if !s.RemoveCheck(single, value1) {
 		t.Fatal("should have removed value")
 	}
@@ -127,9 +127,9 @@ func TestPutGetRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Fatal("Should not have found CID with no values")
+		t.Fatal("Should not have found multihash with no values")
 	}
-	t.Log("Remove value for non-existent CID")
+	t.Log("Remove value for non-existent multihash")
 	if s.RemoveCheck(single, value1) {
 		t.Fatal("should not have removed non-existent value")
 	}
@@ -137,11 +137,11 @@ func TestPutGetRemove(t *testing.T) {
 	stats := s.Stats()
 	t.Log("Remove provider")
 	removed := s.RemoveProviderCount(p)
-	if removed < stats.Cids {
-		t.Fatalf("should have removed at least %d values, only removed %d", stats.Cids, removed)
+	if removed < stats.Indexes {
+		t.Fatalf("should have removed at least %d values, only removed %d", stats.Indexes, removed)
 	}
 	stats = s.Stats()
-	if stats.Cids != 0 {
+	if stats.Indexes != 0 {
 		t.Fatal("should have 0 size after removing only provider")
 	}
 }
@@ -149,111 +149,111 @@ func TestPutGetRemove(t *testing.T) {
 func TestRotate(t *testing.T) {
 	const maxSize = 10
 
-	cids, err := test.RandomCids(2)
+	mhs, err := test.RandomMultihashes(2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	value1 := indexer.MakeValue(p, proto, cids[0].Bytes())
-	value2 := indexer.MakeValue(p, proto, cids[1].Bytes())
+	value1 := indexer.MakeValue(p, proto, []byte(mhs[0]))
+	value2 := indexer.MakeValue(p, proto, []byte(mhs[1]))
 
 	s := New(maxSize * 2)
-	cids, err = test.RandomCids(maxSize + 5)
+	mhs, err = test.RandomMultihashes(maxSize + 5)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if s.PutManyCount(cids, value1) == 0 {
-		t.Fatal("did not put batch of cids")
+	if s.PutManyCount(mhs, value1) == 0 {
+		t.Fatal("did not put batch of multihashes")
 	}
 
-	_, found, err := s.Get(cids[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Error("Error finding a cid from previous cache")
-	}
-
-	_, found, err = s.Get(cids[maxSize+2])
+	_, found, err := s.Get(mhs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding a cid from new cache")
+		t.Error("Error finding a multihash from previous cache")
 	}
 
-	cids2, err := test.RandomCids(maxSize)
+	_, found, err = s.Get(mhs[maxSize+2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Error("Error finding a multihash from new cache")
+	}
+
+	mhs2, err := test.RandomMultihashes(maxSize)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if s.PutManyCount(cids2, value2) == 0 {
-		t.Fatal("did not put batch of cids")
+	if s.PutManyCount(mhs2, value2) == 0 {
+		t.Fatal("did not put batch of multihashes")
 	}
 
 	// Should find this because it was moved to new cache after 1st rotation
-	_, found, err = s.Get(cids[0])
+	_, found, err = s.Get(mhs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding a cid from previous cache")
+		t.Error("Error finding a multihash from previous cache")
 	}
 
 	// Should find this because it should be in old cache after 2nd rotation
-	_, found, err = s.Get(cids[maxSize+2])
+	_, found, err = s.Get(mhs[maxSize+2])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("Error finding a cid from new cache")
+		t.Error("Error finding a multihash from new cache")
 	}
 
 	// Should not find this because it was only in old cache after 1st rotation
-	_, found, err = s.Get(cids[2])
+	_, found, err = s.Get(mhs[2])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found {
-		t.Error("cid should have been rotated out of cache")
+		t.Error("multihash should have been rotated out of cache")
 	}
 }
 
 func TestMemoryUse(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	cids, err := test.RandomCids(1)
+	mhs, err := test.RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(p, proto, cids[0].Bytes())
-	var prevAlloc, prevCids uint64
+	value := indexer.MakeValue(p, proto, []byte(mhs[0]))
+	var prevAlloc, prevIndexes uint64
 
 	for count := 1; count <= 1024; count *= 2 {
-		t.Run(fmt.Sprintf("MemoryUse %d CIDs", count*1024), func(t *testing.T) {
+		t.Run(fmt.Sprintf("MemoryUse %d multihashes", count*1024), func(t *testing.T) {
 			s := New(1202 * count)
 			for i := 0; i < count; i++ {
-				cids, _ = test.RandomCids(1024)
-				err = s.PutMany(cids, value)
+				mhs, _ = test.RandomMultihashes(1024)
+				err = s.PutMany(mhs, value)
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
-			cids = nil
+			mhs = nil
 			runtime.GC()
 			m := runtime.MemStats{}
 			runtime.ReadMemStats(&m)
 			stats := s.Stats()
-			t.Log("Items in cache:", stats.Cids)
+			t.Log("Items in cache:", stats.Indexes)
 			t.Log("Alloc after GC: ", m.Alloc)
-			t.Log("Items delta:", stats.Cids-prevCids)
+			t.Log("Items delta:", stats.Indexes-prevIndexes)
 			t.Log("Alloc delta:", m.Alloc-prevAlloc)
 			t.Log("Rotations:", stats.Rotations)
 			t.Log("Values:", stats.Values)
 			t.Log("Unique Values:", stats.UniqueValues)
 			t.Log("Interned Values:", stats.InternedValues)
 			prevAlloc = m.Alloc
-			prevCids = stats.Cids
+			prevIndexes = stats.Indexes
 		})
 	}
 
@@ -262,18 +262,18 @@ func TestMemoryUse(t *testing.T) {
 func TestMemSingleVsMany(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	cids, err := test.RandomCids(1)
+	mhs, err := test.RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, []byte(mhs[0]))
 
-	t.Run(fmt.Sprintf("Put %d Single CIDs", 1024*1024), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Put %d Single multihashes", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
-			cids, _ = test.RandomCids(1024)
-			for j := range cids {
-				s.PutCheck(cids[j], value)
+			mhs, _ = test.RandomMultihashes(1024)
+			for j := range mhs {
+				s.PutCheck(mhs[j], value)
 			}
 		}
 		runtime.GC()
@@ -282,11 +282,11 @@ func TestMemSingleVsMany(t *testing.T) {
 		t.Log("Alloc after GC: ", m.Alloc)
 	})
 
-	t.Run(fmt.Sprintf("Put %d CIDs in groups of 1024", 1024*1024), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Put %d multihashes in groups of 1024", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1064)
 		for i := 0; i < 1024; i++ {
-			cids, _ = test.RandomCids(1024)
-			s.PutManyCount(cids, value)
+			mhs, _ = test.RandomMultihashes(1024)
+			s.PutManyCount(mhs, value)
 		}
 		runtime.GC()
 		m := runtime.MemStats{}
@@ -296,34 +296,34 @@ func TestMemSingleVsMany(t *testing.T) {
 }
 
 func BenchmarkPut(b *testing.B) {
-	cids, err := test.RandomCids(1)
+	mhs, err := test.RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, []byte(mhs[0]))
 
-	cids, _ = test.RandomCids(10240)
+	mhs, _ = test.RandomMultihashes(10240)
 
 	b.Run("Put single", func(b *testing.B) {
 		s := New(8192)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err = s.Put(cids[i%len(cids)], value)
+			_, err = s.Put(mhs[i%len(mhs)], value)
 			if err != nil {
 				panic(err)
 			}
 		}
 	})
 
-	for testCount := 1024; testCount < len(cids); testCount *= 2 {
+	for testCount := 1024; testCount < len(mhs); testCount *= 2 {
 		b.Run(fmt.Sprint("Put", testCount), func(b *testing.B) {
 			s := New(8192)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < testCount; j++ {
-					_, err = s.Put(cids[j], value)
+					_, err = s.Put(mhs[j], value)
 					if err != nil {
 						panic(err)
 					}
@@ -336,7 +336,7 @@ func BenchmarkPut(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				err = s.PutMany(cids[:testCount], value)
+				err = s.PutMany(mhs[:testCount], value)
 				if err != nil {
 					panic(err)
 				}
@@ -346,23 +346,23 @@ func BenchmarkPut(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	cids, err := test.RandomCids(1)
+	mhs, err := test.RandomMultihashes(1)
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(p, proto, cids[0].Bytes())
+	value := indexer.MakeValue(p, proto, []byte(mhs[0]))
 
 	s := New(8192)
-	cids, _ = test.RandomCids(4096)
-	s.PutManyCount(cids, value)
+	mhs, _ = test.RandomMultihashes(4096)
+	s.PutManyCount(mhs, value)
 
 	b.Run("Get single", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, ok, _ := s.Get(cids[i%len(cids)])
+			_, ok, _ := s.Get(mhs[i%len(mhs)])
 			if !ok {
-				panic("missing cid")
+				panic("missing multihash")
 			}
 		}
 	})
@@ -373,9 +373,9 @@ func BenchmarkGet(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				for j := 0; j < testCount; j++ {
-					_, ok, _ := s.Get(cids[j%len(cids)])
+					_, ok, _ := s.Get(mhs[j%len(mhs)])
 					if !ok {
-						panic("missing cid")
+						panic("missing multihash")
 					}
 				}
 			}

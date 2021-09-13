@@ -4,9 +4,9 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 var log = logging.Logger("indexer-core")
@@ -32,28 +32,28 @@ func New(resultCache cache.Interface, valueStore store.Interface) *Engine {
 	}
 }
 
-// Get retrieves a slice of index.Value for a CID
-func (e *Engine) Get(c cid.Cid) ([]indexer.Value, bool, error) {
+// Get retrieves a slice of index.Value for a multihash
+func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	if e.resultCache != nil {
-		// Check if CID in resultCache
-		v, found, err := e.resultCache.Get(c)
+		// Check if multihash in resultCache
+		v, found, err := e.resultCache.Get(m)
 		if err != nil {
 			return nil, false, err
 		}
 
 		if !found && e.valueStore != nil {
-			v, found, err = e.valueStore.Get(c)
+			v, found, err = e.valueStore.Get(m)
 			if err != nil {
 				return nil, false, err
 			}
 			// TODO: What about adding a resultCache interface that includes
-			// putValues(cid, []indexer.Value) function
+			// putValues(multihash, []indexer.Value) function
 			// so we don't need to loop through indexer.Value slice to move from
 			// one storage to another?
 			if found {
 				// Move from value store to result cache
 				for i := range v {
-					_, err := e.resultCache.Put(c, v[i])
+					_, err := e.resultCache.Put(m, v[i])
 					if err != nil {
 						// Only log error since request has been satisified
 						log.Errorw("failed to put value into result cache", "err", err)
@@ -66,21 +66,21 @@ func (e *Engine) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	}
 
 	// If no result cache, get from value store
-	return e.valueStore.Get(c)
+	return e.valueStore.Get(m)
 }
 
-// Put stores a value for a CID if the value is not already stored.  New values
-// are added to those that are already stored for the CID.
-func (e *Engine) Put(c cid.Cid, value indexer.Value) (bool, error) {
-	// If there is a result cache, check first if cid already in cache
+// Put stores a value for a multihash if the value is not already stored.  New values
+// are added to those that are already stored for the multihash.
+func (e *Engine) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
+	// If there is a result cache, check first if multihash already in cache
 	if e.resultCache != nil {
-		v, found, err := e.resultCache.Get(c)
+		v, found, err := e.resultCache.Get(m)
 		if err != nil {
 			return false, err
 		}
-		// If CID found, check if value already exists in cache. Values in
-		// cache must already be in the value store, in which case there is no
-		// need to store anything new.
+		// If multihash found, check if value already exists in cache. Values
+		// in cache must already be in the value store, in which case there is
+		// no need to store anything new.
 		if found {
 			for i := range v {
 				// If exists, then already in value store
@@ -89,7 +89,7 @@ func (e *Engine) Put(c cid.Cid, value indexer.Value) (bool, error) {
 				}
 			}
 			// Add this value to those already in the result cache
-			_, err := e.resultCache.Put(c, value)
+			_, err := e.resultCache.Put(m, value)
 			if err != nil {
 				log.Errorw("failed to put value into result cache", "err", err)
 			}
@@ -97,17 +97,17 @@ func (e *Engine) Put(c cid.Cid, value indexer.Value) (bool, error) {
 	}
 
 	// If value was not in result cache, then store in value store
-	return e.valueStore.Put(c, value)
+	return e.valueStore.Put(m, value)
 }
 
-// PutMany stores one indexer.Value for multiple CIDs
-func (e *Engine) PutMany(cids []cid.Cid, value indexer.Value) error {
+// PutMany stores one indexer.Value for multiple multihashes
+func (e *Engine) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
 	if e.resultCache == nil {
-		return e.valueStore.PutMany(cids, value)
+		return e.valueStore.PutMany(mhs, value)
 	}
 
-	for i := range cids {
-		_, err := e.Put(cids[i], value)
+	for i := range mhs {
+		_, err := e.Put(mhs[i], value)
 		if err != nil {
 			return err
 		}
@@ -115,9 +115,9 @@ func (e *Engine) PutMany(cids []cid.Cid, value indexer.Value) error {
 	return nil
 }
 
-// Remove removes a value for the specified CID
-func (e *Engine) Remove(c cid.Cid, value indexer.Value) (bool, error) {
-	ok, err := e.valueStore.Remove(c, value)
+// Remove removes a value for the specified multihash
+func (e *Engine) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	ok, err := e.valueStore.Remove(m, value)
 	if err != nil {
 		return false, err
 	}
@@ -127,17 +127,17 @@ func (e *Engine) Remove(c cid.Cid, value indexer.Value) (bool, error) {
 		return false, nil
 	}
 
-	_, err = e.resultCache.Remove(c, value)
+	_, err = e.resultCache.Remove(m, value)
 	if err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// RemoveMany removes the specified value from multiple CIDs
-func (e *Engine) RemoveMany(cids []cid.Cid, value indexer.Value) error {
+// RemoveMany removes the specified value from multiple multihashes
+func (e *Engine) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
 	// Remove first from valueStore
-	err := e.valueStore.RemoveMany(cids, value)
+	err := e.valueStore.RemoveMany(mhs, value)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (e *Engine) RemoveMany(cids []cid.Cid, value indexer.Value) error {
 		return nil
 	}
 
-	return e.resultCache.RemoveMany(cids, value)
+	return e.resultCache.RemoveMany(mhs, value)
 }
 
 // RemoveProvider removes all values for specified provider.  This is used

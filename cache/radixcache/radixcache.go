@@ -10,7 +10,7 @@ import (
 
 // radixCache is a rotatable cache with value deduplication.
 type radixCache struct {
-	// CID -> indexer.Value
+	// multihash -> indexer.Value
 	current  *radixtree.Bytes
 	previous *radixtree.Bytes
 
@@ -24,7 +24,7 @@ type radixCache struct {
 }
 
 type CacheStats struct {
-	Cids           uint64
+	Indexes        uint64
 	Values         uint64
 	UniqueValues   uint64
 	InternedValues uint64
@@ -41,8 +41,8 @@ func newRadixCache(rotateSize int) *radixCache {
 }
 
 // stats returns the following:
-//   - Number of CIDs stored in cache
-//   - Number of values for all CIDs
+//   - Number of indexes stored in cache
+//   - Number of values for all indexess
 //   - Number of unique values
 //   - Number of interned values
 //   - Number of cache rotations
@@ -51,7 +51,7 @@ func newRadixCache(rotateSize int) *radixCache {
 // items have been removed from cache.
 func (c *radixCache) stats() CacheStats {
 	unique := make(map[*indexer.Value]struct{})
-	var cidCount, valCount, interned uint64
+	var indexCount, valCount, interned uint64
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -65,10 +65,10 @@ func (c *radixCache) stats() CacheStats {
 		return false
 	}
 
-	cidCount = uint64(c.current.Len())
+	indexCount = uint64(c.current.Len())
 	c.current.Walk("", walkFunc)
 	if c.previous != nil {
-		cidCount += uint64(c.previous.Len())
+		indexCount += uint64(c.previous.Len())
 		c.previous.Walk("", walkFunc)
 	}
 
@@ -78,7 +78,7 @@ func (c *radixCache) stats() CacheStats {
 	}
 
 	return CacheStats{
-		Cids:           cidCount,
+		Indexes:        indexCount,
 		Values:         valCount,
 		UniqueValues:   uint64(len(unique)),
 		InternedValues: interned,

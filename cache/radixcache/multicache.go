@@ -3,8 +3,8 @@ package radixcache
 import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 // concurrrency is the lock granularity for radixtree. Must be power of two.
@@ -17,9 +17,6 @@ type multiCache struct {
 }
 
 var _ cache.Interface = &multiCache{}
-
-// cidToKey gets the multihash from a CID to be used as a cache key
-func cidToKey(c cid.Cid) string { return string(c.Hash()) }
 
 // New creates a new multiCache
 func New(size int) *multiCache {
@@ -37,9 +34,9 @@ func New(size int) *multiCache {
 	}
 }
 
-func (s *multiCache) Get(c cid.Cid) ([]indexer.Value, bool, error) {
+func (s *multiCache) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	// Keys indexed as multihash
-	k := cidToKey(c)
+	k := string(m)
 	cache := s.getCache(k)
 
 	ents, found := cache.get(k)
@@ -54,43 +51,42 @@ func (s *multiCache) Get(c cid.Cid) ([]indexer.Value, bool, error) {
 	return ret, true, nil
 }
 
-func (s *multiCache) Put(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.PutCheck(c, value), nil
+func (s *multiCache) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.PutCheck(m, value), nil
 }
 
-// PutCheck stores an indexer.Value for a CID if the value is not already
-// stored.  New values are added to the values that are already there.
-// Returns true if a new value was added to the cache.
+// PutCheck stores an indexer.Value for a multihash if the value is not already
+// stored.  New values are added to the values that are already there.  Returns
+// true if a new value was added to the cache.
 //
 // Only rotate one cache at a time. This may leave older values in other
-// caches, but if CIDs are dirstributed evenly over the cache set then over
-// time all members should be rotated the same amount on average.  This is done
-// so that it is not necessary to lock all caches in order to perform a
+// caches, but if multihashes are dirstributed evenly over the cache set then
+// over time all members should be rotated the same amount on average.  This is
+// done so that it is not necessary to lock all caches in order to perform a
 // rotation.  This also means that items age out more incrementally.
-func (s *multiCache) PutCheck(c cid.Cid, value indexer.Value) bool {
-	k := cidToKey(c)
-
+func (s *multiCache) PutCheck(m multihash.Multihash, value indexer.Value) bool {
+	k := string(m)
 	cache := s.getCache(k)
 	return cache.put(k, value)
 }
 
-func (s *multiCache) PutMany(cids []cid.Cid, value indexer.Value) error {
-	s.PutManyCount(cids, value)
+func (s *multiCache) PutMany(mhashes []multihash.Multihash, value indexer.Value) error {
+	s.PutManyCount(mhashes, value)
 	return nil
 }
 
-// PutManyCount stores an indexer.Value for multiple CIDs.  Returns the
-// number of new values stored.  A new value is counted whenever a value
-// is added to the list of values for a CID, whether or not that CID was
-// already in the cache.
+// PutManyCount stores an indexer.Value for multiple multihashess.  Returns the
+// number of new values stored.  A new value is counted whenever a value is
+// added to the list of values for a multihash, whether or not that multihash
+// was already in the cache.
 //
 // This is more efficient than using Put to store individual values, becase
 // PutMany allows the same indexer.Value to be reused across all sub-caches.
-func (s *multiCache) PutManyCount(cids []cid.Cid, value indexer.Value) uint64 {
+func (s *multiCache) PutManyCount(mhashes []multihash.Multihash, value indexer.Value) uint64 {
 	if len(s.cacheSet) == 1 {
-		keys := make([]string, len(cids))
-		for i := range cids {
-			keys[i] = cidToKey(cids[i])
+		keys := make([]string, len(mhashes))
+		for i := range mhashes {
+			keys[i] = string(mhashes[i])
 		}
 		return uint64(s.cacheSet[0].putMany(keys, value))
 	}
@@ -98,8 +94,8 @@ func (s *multiCache) PutManyCount(cids []cid.Cid, value indexer.Value) uint64 {
 	var reuseEnt *indexer.Value
 	interns := make(map[*radixCache]*indexer.Value, len(s.cacheSet))
 
-	for i := range cids {
-		k := cidToKey(cids[i])
+	for i := range mhashes {
+		k := string(mhashes[i])
 		cache := s.getCache(k)
 		ent, ok := interns[cache]
 		if !ok {
@@ -125,31 +121,30 @@ func (s *multiCache) PutManyCount(cids []cid.Cid, value indexer.Value) uint64 {
 	return stored
 }
 
-func (s *multiCache) Remove(c cid.Cid, value indexer.Value) (bool, error) {
-	return s.RemoveCheck(c, value), nil
+func (s *multiCache) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
+	return s.RemoveCheck(m, value), nil
 }
 
-// RemoveCheck removes an indexer.Value for a CID.  Returns true if a value was
-// removed from cache.
-func (s *multiCache) RemoveCheck(c cid.Cid, value indexer.Value) bool {
-	k := cidToKey(c)
-
+// RemoveCheck removes an indexer.Value for a multihash.  Returns true if a
+// value was removed from cache.
+func (s *multiCache) RemoveCheck(m multihash.Multihash, value indexer.Value) bool {
+	k := string(m)
 	cache := s.getCache(k)
 	return cache.remove(k, &value)
 }
 
-func (s *multiCache) RemoveMany(cids []cid.Cid, value indexer.Value) error {
-	s.RemoveManyCount(cids, value)
+func (s *multiCache) RemoveMany(mhashes []multihash.Multihash, value indexer.Value) error {
+	s.RemoveManyCount(mhashes, value)
 	return nil
 }
 
-// RemoveManyCount removes an indexer.Value from multiple CIDs.  Returns
+// RemoveManyCount removes an indexer.Value from multiple multihashes.  Returns
 // the number of values removed.
-func (s *multiCache) RemoveManyCount(cids []cid.Cid, value indexer.Value) uint64 {
+func (s *multiCache) RemoveManyCount(mhashes []multihash.Multihash, value indexer.Value) uint64 {
 	var removed uint64
 
-	for i := range cids {
-		k := cidToKey(cids[i])
+	for i := range mhashes {
+		k := string(mhashes[i])
 		cache := s.getCache(k)
 		if cache.remove(k, &value) {
 			removed++
@@ -191,7 +186,7 @@ func (s *multiCache) Stats() CacheStats {
 	var totalStats CacheStats
 	for i := 0; i < len(s.cacheSet); i++ {
 		stats := <-statsChan
-		totalStats.Cids += stats.Cids
+		totalStats.Indexes += stats.Indexes
 		totalStats.Values += stats.Values
 		totalStats.UniqueValues += stats.UniqueValues
 		totalStats.InternedValues += stats.InternedValues

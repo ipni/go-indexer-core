@@ -2,24 +2,24 @@ package store
 
 import (
 	"github.com/filecoin-project/go-indexer-core"
-	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 // Interface is the interface any value store used in the indexer. A value
 // store keeps all values, unlike a cache which may only keep values up to some
 // limit.
 type Interface interface {
-	// Get retrieves a slice of values for a CID
-	Get(cid.Cid) ([]indexer.Value, bool, error)
-	// Put stores an additional value for a CID if the value is not already stored
-	Put(cid.Cid, indexer.Value) (bool, error)
-	// PutMany stores a value for multiple CIDs
-	PutMany([]cid.Cid, indexer.Value) error
-	// Remove removes a value for a CID
-	Remove(cid.Cid, indexer.Value) (bool, error)
-	// RemoveMany removes a value from multiple CIDs
-	RemoveMany([]cid.Cid, indexer.Value) error
+	// Get retrieves a slice of values for a multihash
+	Get(multihash.Multihash) ([]indexer.Value, bool, error)
+	// Put stores an additional value for a multihash if the value is not already stored
+	Put(multihash.Multihash, indexer.Value) (bool, error)
+	// PutMany stores a value for multiple multihashes
+	PutMany([]multihash.Multihash, indexer.Value) error
+	// Remove removes a value for a multihash
+	Remove(multihash.Multihash, indexer.Value) (bool, error)
+	// RemoveMany removes a value from multiple multihashes
+	RemoveMany([]multihash.Multihash, indexer.Value) error
 	// RemoveProvider removes all values for specified provider.  This is used
 	// when a provider is no longer indexed by the indexer.
 	RemoveProvider(peer.ID) error
