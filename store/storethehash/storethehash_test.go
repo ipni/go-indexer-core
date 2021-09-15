@@ -77,12 +77,13 @@ func TestPeriodicFlush(t *testing.T) {
 
 	value := indexer.MakeValue(p, 0, []byte(mhs[0]))
 
-	// Check that a non-v0 CID hash can be stored.
+	// Check that a v1 CID hash can be stored.
 	c, err := cid.Decode("baguqeeqqskyz3yh4jxnsdj57v5blazexyy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Put(c.Hash(), value)
+	v1mh := c.Hash()
+	_, err = s.Put(v1mh, value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +114,17 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 	if !i[0].Equal(value) {
 		t.Errorf("Got wrong value for single multihash")
+	}
+
+	i, found, err = s2.Get(v1mh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("Error finding single multihash from v1 CID")
+	}
+	if !i[0].Equal(value) {
+		t.Errorf("Got wrong value for single multihash from v1 CID")
 	}
 
 }
