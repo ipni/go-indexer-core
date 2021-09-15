@@ -7,8 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/ipfs/go-cid"
-	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
+	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	"github.com/multiformats/go-multihash"
 
 	"github.com/im7mortal/kmutex"
@@ -29,14 +28,6 @@ type sthStorage struct {
 	mlk   *kmutex.Kmutex
 }
 
-// mhToSthKey converts a multihash into a v1 CID that can be used as a key for
-// storethehash
-//
-// This is necessary because storethehash can only keys that are CIDs.
-func mhToSthKey(m multihash.Multihash) []byte {
-	return cid.NewCidV1(cid.Raw, m).Bytes()
-}
-
 func New(dir string) (*sthStorage, error) {
 	// NOTE: Using a single file to store index and data.
 	// This may change in the future, and we may choose to set
@@ -45,7 +36,7 @@ func New(dir string) (*sthStorage, error) {
 	// (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
-	primary, err := cidprimary.OpenCIDPrimary(dataPath)
+	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +54,7 @@ func New(dir string) (*sthStorage, error) {
 }
 
 func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	return s.get(mhToSthKey(m))
+	return s.get(m)
 }
 
 func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -84,7 +75,7 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 }
 
 func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
-	return s.put(mhToSthKey(m), value)
+	return s.put(m, value)
 }
 
 func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
@@ -121,7 +112,7 @@ func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
 
 func (s *sthStorage) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
 	for i := range mhs {
-		_, err := s.put(mhToSthKey(mhs[i]), value)
+		_, err := s.put(mhs[i], value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
 			// multihash shouldn't stop from putting the rest.
@@ -163,19 +154,18 @@ func (s *sthStorage) Remove(m multihash.Multihash, value indexer.Value) (bool, e
 }
 
 func (s *sthStorage) remove(m multihash.Multihash, value indexer.Value) (bool, error) {
-	k := mhToSthKey(m)
 	// Acquire lock
-	s.lock(k)
-	defer s.unlock(k)
+	s.lock(m)
+	defer s.unlock(m)
 
-	old, found, err := s.get(k)
+	old, found, err := s.get(m)
 	if err != nil {
 		return false, err
 	}
 	// If found it means there is a value for the multihash
 	// check if there is something to remove.
 	if found {
-		return s.removeValue(k, value, old)
+		return s.removeValue(m, value, old)
 	}
 	return false, nil
 }
