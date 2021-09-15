@@ -7,6 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/ipfs/go-cid"
 	cidprimary "github.com/ipld/go-storethehash/store/primary/cid"
 	"github.com/multiformats/go-multihash"
 
@@ -26,6 +27,14 @@ type sthStorage struct {
 	dir   string
 	store *sth.Store
 	mlk   *kmutex.Kmutex
+}
+
+// mhToSthKey converts a multihash into a v1 CID that can be used as a key for
+// storethehash
+//
+// This is necessary because storethehash can only keys that are CIDs.
+func mhToSthKey(m multihash.Multihash) []byte {
+	return cid.NewCidV1(cid.Raw, m).Bytes()
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -54,7 +63,7 @@ func New(dir string) (*sthStorage, error) {
 }
 
 func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	return s.get([]byte(m))
+	return s.get(mhToSthKey(m))
 }
 
 func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -75,7 +84,7 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 }
 
 func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
-	return s.put([]byte(m), value)
+	return s.put(mhToSthKey(m), value)
 }
 
 func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
@@ -112,7 +121,7 @@ func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
 
 func (s *sthStorage) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
 	for i := range mhs {
-		_, err := s.put([]byte(mhs[i]), value)
+		_, err := s.put(mhToSthKey(mhs[i]), value)
 		if err != nil {
 			// TODO: Log error but don't return. Errors for a single
 			// multihash shouldn't stop from putting the rest.
@@ -154,7 +163,7 @@ func (s *sthStorage) Remove(m multihash.Multihash, value indexer.Value) (bool, e
 }
 
 func (s *sthStorage) remove(m multihash.Multihash, value indexer.Value) (bool, error) {
-	k := []byte(m)
+	k := mhToSthKey(m)
 	// Acquire lock
 	s.lock(k)
 	defer s.unlock(k)

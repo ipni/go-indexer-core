@@ -10,7 +10,9 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
+	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	//"github.com/multiformats/go-multihash"
 )
 
 func initSth(t *testing.T) store.Interface {
@@ -74,8 +76,20 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	value := indexer.MakeValue(p, 0, []byte(mhs[0]))
-	for _, c := range mhs[1:] {
-		_, err = s.Put(c, value)
+
+	// Check that a v1 CID hash can be stored.
+	c, err := cid.Decode("baguqeeqqskyz3yh4jxnsdj57v5blazexyy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1mh := c.Hash()
+	_, err = s.Put(v1mh, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, m := range mhs[1:] {
+		_, err = s.Put(m, value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,6 +114,17 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 	if !i[0].Equal(value) {
 		t.Errorf("Got wrong value for single multihash")
+	}
+
+	i, found, err = s2.Get(v1mh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("Error finding single multihash from v1 CID")
+	}
+	if !i[0].Equal(value) {
+		t.Errorf("Got wrong value for single multihash from v1 CID")
 	}
 
 }
