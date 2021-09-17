@@ -6,7 +6,9 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 func E2ETest(t *testing.T, s store.Interface) {
@@ -30,10 +32,10 @@ func E2ETest(t *testing.T, s store.Interface) {
 	remove := mhs[4]
 
 	// Put a single multihash
-	t.Logf("Put/Get a single multihash")
+	t.Log("Put/Get a single multihash")
 	_, err = s.Put(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatalf("Error putting single multihash: %s", err)
 	}
 
 	i, found, err := s.Get(single)
@@ -41,17 +43,17 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding single multihash")
+		t.Error("Error finding single multihash")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single multihash")
+		t.Error("Got wrong value for single multihash")
 	}
 
 	// Put a batch of multihashes
-	t.Logf("Put/Get a batch of multihashes")
+	t.Log("Put/Get a batch of multihashes")
 	err = s.PutMany(batch, value1)
 	if err != nil {
-		t.Fatal("Error putting batch of multihashes:", err)
+		t.Fatalf("Error putting batch of multihashes: %s", err)
 	}
 
 	i, found, err = s.Get(mhs[5])
@@ -59,17 +61,17 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a multihash from the batch")
+		t.Error("Error finding a multihash from the batch")
 	}
 	if !i[0].Equal(value1) {
-		t.Errorf("Got wrong value for single multihash")
+		t.Error("Got wrong value for single multihash")
 	}
 
 	// Put on an existing key
-	t.Logf("Put/Get on existing key")
+	t.Log("Put/Get on existing key")
 	_, err = s.Put(single, value2)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatalf("Error putting single multihash: %s", err)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -79,30 +81,76 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("Error finding a multihash from the batch")
+		t.Error("Error finding a multihash from the batch")
 	}
 	if len(i) != 2 {
 		t.Fatal("Update over existing key not correct")
 	}
 	if !i[1].Equal(value2) {
-		t.Errorf("Got wrong value for single multihash")
+		t.Error("Got wrong value for single multihash")
+	}
+
+	// Iterate values
+	t.Log("Igertaing values")
+	var indexCount int
+	seen := make(map[string]struct{})
+	err = s.ForEach(func(m multihash.Multihash, values []indexer.Value) bool {
+		mb58 := m.B58String()
+		t.Logf("Visited: %s", mb58)
+		_, already := seen[mb58]
+		if already {
+			t.Errorf("Error: multihash already seen: %q", mb58)
+		} else {
+			seen[mb58] = struct{}{}
+		}
+		indexCount++
+		return false
+	})
+	if err != nil {
+		t.Errorf("Iteration error: %s", err)
+	}
+	t.Logf("Visited %d multihashes", indexCount)
+	if indexCount != len(batch)+1 {
+		t.Errorf("Wrong iteration count: expected %d, got %d", len(batch)+1, indexCount)
 	}
 
 	// Get a key that is not set
-	t.Logf("Get non-existing key")
+	t.Log("Get non-existing key")
 	_, found, err = s.Get(noadd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("Error, the key for the multihash should not be set")
+		t.Error("Error, the key for the multihash should not be set")
+	}
+
+	// Check that a v1 CID hash can be stored.
+	c, err := cid.Decode("baguqeeqqskyz3yh4jxnsdj57v5blazexyy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1mh := c.Hash()
+	_, err = s.Put(v1mh, value1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i, found, err = s.Get(v1mh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("Error finding single multihash from v1 CID")
+	}
+	if !i[0].Equal(value1) {
+		t.Errorf("Got wrong value for single multihash from v1 CID")
 	}
 
 	// Remove a key
-	t.Logf("Remove key")
+	t.Log("Remove key")
 	_, err = s.Remove(remove, value1)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatalf("Error putting single multihash: %s", err)
 	}
 
 	_, found, err = s.Get(remove)
@@ -110,23 +158,23 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Fatal(err)
 	}
 	if found {
-		t.Errorf("multihash should have been removed")
+		t.Error("multihash should have been removed")
 	}
 
 	// Remove a value from the key
 	_, err = s.Remove(single, value1)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatalf("Error putting single multihash: %s", err)
 	}
 	i, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Errorf("multihash should still have one value")
+		t.Error("multihash should still have one value")
 	}
 	if len(i) != 1 {
-		t.Errorf("wrong number of values after remove")
+		t.Error("wrong number of values after remove")
 	}
 
 }

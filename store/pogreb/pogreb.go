@@ -56,12 +56,40 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := indexer.Unmarshal(value)
+	out, err := indexer.UnmarshalValues(value)
 	if err != nil {
 		return nil, false, err
 	}
 	return out, true, nil
 
+}
+
+func (s *pStorage) ForEach(iterFunc indexer.IterFunc) error {
+	err := s.store.Sync()
+	if err != nil {
+		return err
+	}
+	it := s.store.Items()
+	for {
+		key, val, err := it.Next()
+		if err != nil {
+			if err == pogreb.ErrIterationDone {
+				break
+			}
+			return err
+		}
+
+		values, err := indexer.UnmarshalValues(val)
+		if err != nil {
+			return err
+		}
+
+		if iterFunc(multihash.Multihash(key), values) {
+			break
+		}
+	}
+
+	return nil
 }
 
 func (s *pStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
@@ -83,7 +111,7 @@ func (s *pStorage) put(k []byte, in indexer.Value) (bool, error) {
 	}
 
 	li := append(old, in)
-	b, err := indexer.Marshal(li)
+	b, err := indexer.MarshalValues(li)
 	if err != nil {
 		return false, err
 	}
@@ -196,7 +224,7 @@ func (s *pStorage) removeValue(k []byte, value indexer.Value, stored []indexer.V
 			// else remove from value and put updated structure
 			stored[i] = stored[len(stored)-1]
 			stored[len(stored)-1] = indexer.Value{}
-			b, err := indexer.Marshal(stored[:len(stored)-1])
+			b, err := indexer.MarshalValues(stored[:len(stored)-1])
 			if err != nil {
 				return false, err
 			}

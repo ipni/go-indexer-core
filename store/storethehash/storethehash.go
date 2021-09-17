@@ -1,6 +1,7 @@
 package storethehash
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,6 +27,8 @@ type sthStorage struct {
 	dir   string
 	store *sth.Store
 	mlk   *kmutex.Kmutex
+
+	primary *mhprimary.MultihashPrimary
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -47,9 +50,10 @@ func New(dir string) (*sthStorage, error) {
 	}
 	s.Start()
 	return &sthStorage{
-		dir:   dir,
-		store: s,
-		mlk:   kmutex.New(),
+		dir:     dir,
+		store:   s,
+		mlk:     kmutex.New(),
+		primary: primary,
 	}, nil
 }
 
@@ -66,12 +70,64 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := indexer.Unmarshal(value)
+	out, err := indexer.UnmarshalValues(value)
 	if err != nil {
 		return nil, false, err
 	}
 	return out, true, nil
 
+}
+
+func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
+	// It is necessary to do both flush and sync before creating an iterator to
+	// read values that have not been written to file yet
+	s.primary.Flush()
+	err := s.primary.Sync()
+	if err != nil {
+		return err
+	}
+	iter, err := s.primary.Iter()
+	if err != nil {
+		return err
+	}
+
+	// Create a list of unique keys, and then call get for each unique key.
+	//
+	// This is necessary because the primary iterator returns all versions of
+	// each index.  If a key has been updated with new values, the iterator
+	// returns the key with the original values, then again with the values for
+	// the next update, and so on for as many updates a there were for a key.
+	//
+	// TODO: if there are many keys, this could take up too much memory.  Need
+	// a better iterator in storethehash.
+	uniqKeys := map[string]struct{}{}
+	for {
+		key, _, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		uniqKeys[string(key)] = struct{}{}
+	}
+
+	for key := range uniqKeys {
+		kb := []byte(key)
+		values, ok, err := s.get(kb)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+
+		if iterFunc(multihash.Multihash(kb), values) {
+			break
+		}
+	}
+
+	return nil
 }
 
 func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
@@ -98,7 +154,7 @@ func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
 	}
 
 	li := append(old, in)
-	b, err := indexer.Marshal(li)
+	b, err := indexer.MarshalValues(li)
 	if err != nil {
 		return false, err
 	}
@@ -215,7 +271,7 @@ func (s *sthStorage) removeValue(k []byte, value indexer.Value, stored []indexer
 			// else remove from value and put updated structure
 			stored[i] = stored[len(stored)-1]
 			stored[len(stored)-1] = indexer.Value{}
-			b, err := indexer.Marshal(stored[:len(stored)-1])
+			b, err := indexer.MarshalValues(stored[:len(stored)-1])
 			if err != nil {
 				return false, err
 			}

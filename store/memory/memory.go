@@ -9,6 +9,7 @@
 package memory
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -52,6 +53,29 @@ func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) 
 	}
 
 	return ret, true, nil
+}
+
+func (s *memoryStore) ForEach(iterFunc indexer.IterFunc) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	var ret []indexer.Value
+	var err error
+	s.rtree.Walk("", func(k string, v interface{}) bool {
+		m := multihash.Multihash([]byte(k))
+		vals, ok := v.([]*indexer.Value)
+		if !ok {
+			err = fmt.Errorf("unexpected type stored by %q", m.B58String())
+			return true
+		}
+		ret = ret[:0]
+		for _, v := range vals {
+			ret = append(ret, *v)
+		}
+		return iterFunc(m, ret)
+	})
+
+	return err
 }
 
 // Put stores an additional value for a multihash if the value is not already stored

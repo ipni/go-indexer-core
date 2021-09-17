@@ -5,9 +5,20 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
+// IterFunc is the type of the function called for each multihash index visited by ForEach.
+//
+// If the function returns true, ForEach stops immediately and returns.
+type IterFunc func(multihash.Multihash, []Value) bool
+
 type Interface interface {
 	// Get retrieves a slice of Value for a multihash
 	Get(multihash.Multihash) ([]Value, bool, error)
+
+	// ForEach iterates multihashes in the value store, calling the provided
+	// function for each multihash index visited
+	//
+	// It should be assumed that any write operation invalidates iteration
+	ForEach(IterFunc) error
 
 	// Put stores a value for a multihash if the value is not already stored.
 	// New values are added to those that are already stored for the multihash.
