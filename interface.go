@@ -16,6 +16,8 @@ type Interface interface {
 
 	// ForEach iterates multihashes in the value store, calling the provided
 	// function for each multihash index visited
+	//
+	// It should be assumed that any write operation invalidates iteration
 	ForEach(IterFunc) error
 
 	// Put stores a value for a multihash if the value is not already stored.
