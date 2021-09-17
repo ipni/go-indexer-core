@@ -69,6 +69,11 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	return e.valueStore.Get(m)
 }
 
+// ForEach iterates multihashes in the value store, calling the provided function for each
+func (e *Engine) ForEach(iterFunc indexer.IterFunc) error {
+	return e.valueStore.ForEach(iterFunc)
+}
+
 // Put stores a value for a multihash if the value is not already stored.  New values
 // are added to those that are already stored for the multihash.
 func (e *Engine) Put(m multihash.Multihash, value indexer.Value) (bool, error) {

@@ -56,12 +56,12 @@ func encodeMetadata(protocol uint64, data []byte) []byte {
 // Marshal serializes a Value list for storage
 // TODO: Switch from JSON to a more efficient serialization
 // format once we figure out the right data structure?
-func Marshal(li []Value) ([]byte, error) {
+func MarshalValues(li []Value) ([]byte, error) {
 	return json.Marshal(&li)
 }
 
 // Unmarshal serialized Value list
-func Unmarshal(b []byte) ([]Value, error) {
+func UnmarshalValues(b []byte) ([]Value, error) {
 	li := []Value{}
 	err := json.Unmarshal(b, &li)
 	return li, err
