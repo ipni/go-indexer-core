@@ -82,7 +82,10 @@ func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 	// It is necessary to do both flush and sync before creating an iterator to
 	// read values that have not been written to file yet
 	s.primary.Flush()
-	s.primary.Sync()
+	err := s.primary.Sync()
+	if err != nil {
+		return err
+	}
 	iter, err := s.primary.Iter()
 	if err != nil {
 		return err
@@ -109,7 +112,7 @@ func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 		uniqKeys[string(key)] = struct{}{}
 	}
 
-	for key, _ := range uniqKeys {
+	for key := range uniqKeys {
 		kb := []byte(key)
 		values, ok, err := s.get(kb)
 		if err != nil {

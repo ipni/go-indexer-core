@@ -65,7 +65,10 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 }
 
 func (s *pStorage) ForEach(iterFunc indexer.IterFunc) error {
-	s.store.Sync()
+	err := s.store.Sync()
+	if err != nil {
+		return err
+	}
 	it := s.store.Items()
 	for {
 		key, val, err := it.Next()
