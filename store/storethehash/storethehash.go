@@ -79,13 +79,7 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 }
 
 func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
-	// It is necessary to do both flush and sync before creating an iterator to
-	// read values that have not been written to file yet
-	s.primary.Flush()
-	err := s.primary.Sync()
-	if err != nil {
-		return err
-	}
+	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
 		return err
@@ -97,9 +91,6 @@ func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 	// each index.  If a key has been updated with new values, the iterator
 	// returns the key with the original values, then again with the values for
 	// the next update, and so on for as many updates a there were for a key.
-	//
-	// TODO: if there are many keys, this could take up too much memory.  Need
-	// a better iterator in storethehash.
 	uniqKeys := map[string]struct{}{}
 	for {
 		key, _, err := iter.Next()
@@ -109,12 +100,13 @@ func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 			}
 			return err
 		}
-		uniqKeys[string(key)] = struct{}{}
-	}
+		k := string(key)
+		if _, found := uniqKeys[k]; found {
+			continue
+		}
+		uniqKeys[k] = struct{}{}
 
-	for key := range uniqKeys {
-		kb := []byte(key)
-		values, ok, err := s.get(kb)
+		values, ok, err := s.get(key)
 		if err != nil {
 			return err
 		}
@@ -122,7 +114,7 @@ func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 			continue
 		}
 
-		if iterFunc(multihash.Multihash(kb), values) {
+		if iterFunc(multihash.Multihash(key), values) {
 			break
 		}
 	}

@@ -10,6 +10,7 @@ package memory
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -183,7 +184,11 @@ func valueInSlice(value *indexer.Value, values []*indexer.Value) bool {
 }
 
 func (s *memoryStore) internValue(value *indexer.Value) *indexer.Value {
-	k := string(value.ProviderID) + string(value.Metadata)
+	var b strings.Builder
+	b.Grow(len(value.ProviderID) + len(value.Metadata))
+	b.Write([]byte(value.ProviderID))
+	b.Write(value.Metadata)
+	k := b.String()
 	v, found := s.interns.Get(k)
 	if !found {
 		// Intern new value

@@ -1,6 +1,7 @@
 package radixcache
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -130,7 +131,7 @@ func (c *radixCache) put(k string, value indexer.Value) bool {
 	// Get from current or previous cache
 	existing, found := c.getNoLock(k)
 
-	// If found values(s) then check the value to put is already there.
+	// If found values(s) then check if the value to put is already there.
 	if found && valueInSlice(&value, existing) {
 		return false
 	}
@@ -220,7 +221,11 @@ func (c *radixCache) rotate() {
 }
 
 func (c *radixCache) internValue(value *indexer.Value) *indexer.Value {
-	k := string(value.ProviderID) + string(value.Metadata)
+	var b strings.Builder
+	b.Grow(len(value.ProviderID) + len(value.Metadata))
+	b.Write([]byte(value.ProviderID))
+	b.Write(value.Metadata)
+	k := b.String()
 	v, found := c.curEnts.Get(k)
 	if !found {
 		if c.prevEnts != nil {
