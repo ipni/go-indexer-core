@@ -78,6 +78,59 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
+func (s *sthStorage) Iter() *sthIter {
+	s.Flush()
+	if err != nil {
+		return &sthIter{
+			err: err,
+		}
+	}
+	iter, err := s.primary.Iter()
+	if err != nil {
+		return &sthIter{
+			err: err,
+		}
+	}
+	return &sthIter{
+		iter:     iter,
+		uniqKeys: map[string]struct{}{},
+	}
+}
+
+func (it *sthIter) Next() (m multihash.Multihash, values []indexer.Value) {
+	if it.err != nil {
+		return it.err
+	}
+
+	for {
+		key, _, err := it.iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				it.iter = nil
+				it.uniqKeys = nil
+				it.err = err
+			}
+			return err
+		}
+
+		k := string(key)
+		_, found := it.uniqKeys[k]
+		if !found {
+			continue
+		}
+		it.uniqKeys[k] = struct{}{}
+
+		values, found, err := it.s.get(key)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		return multihash.Multihash(key), values, nil
+	}
+}
+
 func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
 	s.Flush()
 	iter, err := s.primary.Iter()

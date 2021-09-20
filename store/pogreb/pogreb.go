@@ -64,32 +64,37 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
-func (s *pStorage) ForEach(iterFunc indexer.IterFunc) error {
+func (s *pStorage) Iter() *pogrebIter {
 	err := s.store.Sync()
+	if err != nil {
+		return &pogrebIter{
+			err: err,
+		}
+	}
+	return &pogrebIter{
+		iter: s.store.Items(),
+	}
+}
+
+func (it *pogrebIter) Next() (m multihash.Multihash, values []indexer.Value) {
+	if it.err != nil {
+		return it.err
+	}
+	key, val, err := it.iter.Next()
+	if err != nil {
+		if err == pogreb.ErrIterationDone {
+			err = io.EOF
+		}
+		it.err = err
+		return err
+	}
+
+	values, err := indexer.UnmarshalValues(val)
 	if err != nil {
 		return err
 	}
-	it := s.store.Items()
-	for {
-		key, val, err := it.Next()
-		if err != nil {
-			if err == pogreb.ErrIterationDone {
-				break
-			}
-			return err
-		}
 
-		values, err := indexer.UnmarshalValues(val)
-		if err != nil {
-			return err
-		}
-
-		if iterFunc(multihash.Multihash(key), values) {
-			break
-		}
-	}
-
-	return nil
+	return multihash.Multihash(key), values, nil
 }
 
 func (s *pStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
