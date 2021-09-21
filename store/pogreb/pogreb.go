@@ -7,6 +7,7 @@
 package pogreb
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,10 @@ type pStorage struct {
 	dir   string
 	store *pogreb.DB
 	mlk   *kmutex.Kmutex
+}
+
+type pogrebIter struct {
+	iter *pogreb.ItemIterator
 }
 
 func New(dir string) (*pStorage, error) {
@@ -64,32 +69,31 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
-func (s *pStorage) ForEach(iterFunc indexer.IterFunc) error {
+func (s *pStorage) Iter() (indexer.Iterator, error) {
 	err := s.store.Sync()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	it := s.store.Items()
-	for {
-		key, val, err := it.Next()
-		if err != nil {
-			if err == pogreb.ErrIterationDone {
-				break
-			}
-			return err
-		}
+	return &pogrebIter{
+		iter: s.store.Items(),
+	}, nil
+}
 
-		values, err := indexer.UnmarshalValues(val)
-		if err != nil {
-			return err
+func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
+	key, val, err := it.iter.Next()
+	if err != nil {
+		if err == pogreb.ErrIterationDone {
+			err = io.EOF
 		}
-
-		if iterFunc(multihash.Multihash(key), values) {
-			break
-		}
+		return nil, nil, err
 	}
 
-	return nil
+	values, err := indexer.UnmarshalValues(val)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return multihash.Multihash(key), values, nil
 }
 
 func (s *pStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {

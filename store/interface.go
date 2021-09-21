@@ -12,9 +12,8 @@ import (
 type Interface interface {
 	// Get retrieves a slice of values for a multihash
 	Get(multihash.Multihash) ([]indexer.Value, bool, error)
-	// ForEach iterates multihashes, calling the provided function for each
-	// multihash index visited
-	ForEach(indexer.IterFunc) error
+	// Iter creates a new value store iterator
+	Iter() (indexer.Iterator, error)
 	// Put stores an additional value for a multihash if the value is not already stored
 	Put(multihash.Multihash, indexer.Value) (bool, error)
 	// PutMany stores a value for multiple multihashes
