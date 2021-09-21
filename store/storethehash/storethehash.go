@@ -8,6 +8,7 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/ipld/go-storethehash/store/primary"
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	"github.com/multiformats/go-multihash"
 
@@ -29,6 +30,12 @@ type sthStorage struct {
 	mlk   *kmutex.Kmutex
 
 	primary *mhprimary.MultihashPrimary
+}
+
+type sthIterator struct {
+	iter     primary.PrimaryStorageIter
+	storage  *sthStorage
+	uniqKeys map[string]struct{}
 }
 
 func New(dir string) (*sthStorage, error) {
@@ -78,101 +85,46 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 
 }
 
-func (s *sthStorage) Iter() *sthIter {
+func (s *sthStorage) Iter() (indexer.Iterator, error) {
 	s.Flush()
-	if err != nil {
-		return &sthIter{
-			err: err,
-		}
-	}
 	iter, err := s.primary.Iter()
 	if err != nil {
-		return &sthIter{
-			err: err,
-		}
+		return nil, err
 	}
-	return &sthIter{
+	return &sthIterator{
 		iter:     iter,
+		storage:  s,
 		uniqKeys: map[string]struct{}{},
-	}
+	}, nil
 }
 
-func (it *sthIter) Next() (m multihash.Multihash, values []indexer.Value) {
-	if it.err != nil {
-		return it.err
-	}
-
+func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 	for {
 		key, _, err := it.iter.Next()
 		if err != nil {
 			if err == io.EOF {
 				it.iter = nil
 				it.uniqKeys = nil
-				it.err = err
 			}
-			return err
+			return nil, nil, err
 		}
 
 		k := string(key)
 		_, found := it.uniqKeys[k]
-		if !found {
+		if found {
 			continue
 		}
 		it.uniqKeys[k] = struct{}{}
 
-		values, found, err := it.s.get(key)
+		values, found, err := it.storage.Get(key)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		if !ok {
+		if !found {
 			continue
 		}
 		return multihash.Multihash(key), values, nil
 	}
-}
-
-func (s *sthStorage) ForEach(iterFunc indexer.IterFunc) error {
-	s.Flush()
-	iter, err := s.primary.Iter()
-	if err != nil {
-		return err
-	}
-
-	// Create a list of unique keys, and then call get for each unique key.
-	//
-	// This is necessary because the primary iterator returns all versions of
-	// each index.  If a key has been updated with new values, the iterator
-	// returns the key with the original values, then again with the values for
-	// the next update, and so on for as many updates a there were for a key.
-	uniqKeys := map[string]struct{}{}
-	for {
-		key, _, err := iter.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		k := string(key)
-		if _, found := uniqKeys[k]; found {
-			continue
-		}
-		uniqKeys[k] = struct{}{}
-
-		values, ok, err := s.get(key)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			continue
-		}
-
-		if iterFunc(multihash.Multihash(key), values) {
-			break
-		}
-	}
-
-	return nil
 }
 
 func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {

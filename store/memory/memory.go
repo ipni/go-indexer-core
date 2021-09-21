@@ -10,6 +10,7 @@ package memory
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -28,6 +29,11 @@ type memoryStore struct {
 	// IndexEntery interning
 	interns *radixtree.Bytes
 	mutex   sync.Mutex
+}
+
+type memoryIter struct {
+	iter   radixtree.Iterator
+	values []indexer.Value
 }
 
 func New() *memoryStore {
@@ -56,27 +62,30 @@ func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) 
 	return ret, true, nil
 }
 
-func (s *memoryStore) ForEach(iterFunc indexer.IterFunc) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+func (s *memoryStore) Iter() (indexer.Iterator, error) {
+	return &memoryIter{
+		iter: s.rtree.Iter(),
+	}, nil
+}
 
-	var ret []indexer.Value
-	var err error
-	s.rtree.Walk("", func(k string, v interface{}) bool {
-		m := multihash.Multihash([]byte(k))
-		vals, ok := v.([]*indexer.Value)
-		if !ok {
-			err = fmt.Errorf("unexpected type stored by %q", m.B58String())
-			return true
-		}
-		ret = ret[:0]
-		for _, v := range vals {
-			ret = append(ret, *v)
-		}
-		return iterFunc(m, ret)
-	})
+func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
+	key, val, done := it.iter.Next()
+	if done {
+		it.values = nil
+		return nil, nil, io.EOF
+	}
 
-	return err
+	m := multihash.Multihash([]byte(key))
+	vals, ok := val.([]*indexer.Value)
+	if !ok {
+		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())
+	}
+
+	it.values = it.values[:0]
+	for _, v := range vals {
+		it.values = append(it.values, *v)
+	}
+	return m, it.values, nil
 }
 
 // Put stores an additional value for a multihash if the value is not already stored

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"io"
 	"sync"
 	"testing"
 
@@ -8,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multihash"
 )
 
 func E2ETest(t *testing.T, s store.Interface) {
@@ -94,7 +94,20 @@ func E2ETest(t *testing.T, s store.Interface) {
 	t.Log("Igertaing values")
 	var indexCount int
 	seen := make(map[string]struct{})
-	err = s.ForEach(func(m multihash.Multihash, values []indexer.Value) bool {
+	iter, err := s.Iter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for {
+		m, _, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatalf("Iteration error: %s", err)
+		}
+
 		mb58 := m.B58String()
 		t.Logf("Visited: %s", mb58)
 		_, already := seen[mb58]
@@ -104,10 +117,6 @@ func E2ETest(t *testing.T, s store.Interface) {
 			seen[mb58] = struct{}{}
 		}
 		indexCount++
-		return false
-	})
-	if err != nil {
-		t.Errorf("Iteration error: %s", err)
 	}
 	t.Logf("Visited %d multihashes", indexCount)
 	if indexCount != len(batch)+1 {

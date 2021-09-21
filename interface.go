@@ -9,8 +9,8 @@ type Interface interface {
 	// Get retrieves a slice of Value for a multihash
 	Get(multihash.Multihash) ([]Value, bool, error)
 
-	// Create a new interator instance
-	Iter() Iterator
+	// Iter creates a new value store iterator
+	Iter() (Iterator, error)
 
 	// Put stores a value for a multihash if the value is not already stored.
 	// New values are added to those that are already stored for the multihash.
@@ -39,8 +39,9 @@ type Interface interface {
 
 // Iterator iterates multihashes and values in the value store
 //
-// It should be assumed that any write operation invalidates iteration
+// It should be assumed that any write operation invalidates the iterator
 type Iterator interface {
-	// Next returns the next multihash and the value it indexex.  Returns io.Eof when finished iterating.
-	Next() (multihash.Multihash, []Value)
+	// Next returns the next multihash and the value it indexex.  Returns
+	// io.EOF when finished iterating.
+	Next() (multihash.Multihash, []Value, error)
 }
