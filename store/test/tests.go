@@ -123,6 +123,11 @@ func E2ETest(t *testing.T, s store.Interface) {
 		t.Errorf("Wrong iteration count: expected %d, got %d", len(batch)+1, indexCount)
 	}
 
+	_, _, err = iter.Next()
+	if err != io.EOF {
+		t.Fatal("caling iter.Next() after iteration finished should yield same result")
+	}
+
 	// Get a key that is not set
 	t.Log("Get non-existing key")
 	_, found, err = s.Get(noadd)

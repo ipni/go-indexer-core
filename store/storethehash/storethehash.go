@@ -103,7 +103,6 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		key, _, err := it.iter.Next()
 		if err != nil {
 			if err == io.EOF {
-				it.iter = nil
 				it.uniqKeys = nil
 			}
 			return nil, nil, err
