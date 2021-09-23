@@ -15,7 +15,7 @@ import (
 	"github.com/akrylysov/pogreb"
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store"
-	"github.com/im7mortal/kmutex"
+	"github.com/gammazero/keymutex"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
@@ -27,7 +27,7 @@ const DefaultSyncInterval = time.Second
 type pStorage struct {
 	dir   string
 	store *pogreb.DB
-	mlk   *kmutex.Kmutex
+	mlk   *keymutex.KeyMutex
 }
 
 type pogrebIter struct {
@@ -44,7 +44,7 @@ func New(dir string) (*pStorage, error) {
 	return &pStorage{
 		dir:   dir,
 		store: s,
-		mlk:   kmutex.New(),
+		mlk:   keymutex.New(0),
 	}, nil
 }
 
