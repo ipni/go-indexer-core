@@ -12,7 +12,7 @@ import (
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	"github.com/multiformats/go-multihash"
 
-	"github.com/im7mortal/kmutex"
+	"github.com/gammazero/keymutex"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -27,7 +27,7 @@ const DefaultSyncInterval = time.Second
 type sthStorage struct {
 	dir   string
 	store *sth.Store
-	mlk   *kmutex.Kmutex
+	mlk   *keymutex.KeyMutex
 
 	primary *mhprimary.MultihashPrimary
 }
@@ -59,7 +59,7 @@ func New(dir string) (*sthStorage, error) {
 	return &sthStorage{
 		dir:     dir,
 		store:   s,
-		mlk:     kmutex.New(),
+		mlk:     keymutex.New(0),
 		primary: primary,
 	}, nil
 }
