@@ -111,21 +111,15 @@ keysLoop:
 		k := string(mhs[i])
 		existing, found := s.get(k)
 		if found {
-			for j, v := range existing {
+			for _, v := range existing {
 				if v == interned {
 					// Key is already mapped to value
 					continue keysLoop
 				}
-				// TODO: Should be able to remove this code block: It should
-				// not be possible for the provided value to match an existing
-				// value, but not be the interned value.
-				if value.Match(*v) {
-					panic("should not be possible")
-					// Replace existing matching value
-					existing[j] = interned
-					s.rtree.Put(k, existing)
-					continue keysLoop
-				}
+				// There is no need to match and replace any existing value,
+				// because the existing values with the same ProviderID and
+				// ContextID would already have had their metadata updaed by
+				// internValue().
 			}
 		}
 
@@ -235,16 +229,6 @@ func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
 		return nil, false
 	}
 	return v.([]*indexer.Value), true
-}
-
-// valueInSlice checks if the value already exists in slice of values
-func valueInSlice(value *indexer.Value, values []*indexer.Value) bool {
-	for _, v := range values {
-		if value == v || value.Equal(*v) {
-			return true
-		}
-	}
-	return false
 }
 
 // internValue stores a single copy of a Value under a key composed of

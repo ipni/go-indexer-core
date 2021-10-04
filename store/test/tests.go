@@ -483,8 +483,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 		go func(wg *sync.WaitGroup, i int) {
 			t.Log("Put/Get different multihash")
 			value := indexer.MakeValue(p, []byte(mhs[i]), 0, metadata)
-			err = s.Put(value, single)
-			if err != nil {
+			if err := s.Put(value, single); err != nil {
 				t.Error("Error putting single multihash:", err)
 			}
 			wg.Done()
@@ -508,8 +507,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 		go func(wg *sync.WaitGroup, i int) {
 			t.Log("Remove multihash")
 			value := indexer.MakeValue(p, []byte(mhs[i]), 0, metadata)
-			err = s.Remove(value, single)
-			if err != nil {
+			if err := s.Remove(value, single); err != nil {
 				t.Error("Error removing single multihash:", err)
 			}
 			wg.Done()

@@ -399,7 +399,7 @@ func makeMetadataKey(value indexer.Value) []byte {
 	// Create a sha1 hash of the ProviderID and ContextID so that the key
 	// lenght is fixed.  Note: a faster non-crypto hash could be used here.
 	h := sha1.New()
-	io.WriteString(h, string(value.ProviderID))
+	_, _ = io.WriteString(h, string(value.ProviderID))
 	h.Write(value.ContextID)
 
 	var b bytes.Buffer

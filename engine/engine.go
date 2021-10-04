@@ -3,12 +3,9 @@ package engine
 import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
-
-var log = logging.Logger("indexer-core")
 
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store

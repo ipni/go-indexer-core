@@ -80,19 +80,17 @@ keysLoop:
 		k := string(mhs[i])
 		existing, found := c.get(k)
 		if found {
-			for j, v := range existing {
+			for _, v := range existing {
 				if v == interned {
 					// Key is already mapped to value
 					continue keysLoop
 				}
-				if value.Match(*v) {
-					// Replace existing matching value
-					//
-					// TODO: Determine if is this ever possible and how.
-					existing[j] = interned
-					c.current.Put(k, existing)
-					continue keysLoop
-				}
+				// There is no need to match and replace any existing value,
+				// because the existing values with the same ProviderID and
+				// ContextID would already have had their metadata updaed by
+				// internValue().  This is true for items that only existed in
+				// old cache, since the interning process would have brought
+				// their value pointers forward into the new cache.
 			}
 		}
 
