@@ -9,9 +9,6 @@ type Interface interface {
 	// Get retrieves a slice of Value for a multihash
 	Get(multihash.Multihash) ([]Value, bool, error)
 
-	// Iter creates a new value store iterator
-	Iter() (Iterator, error)
-
 	// Put stores a Value and adds a mapping from each of the given multihashs
 	// to that Value.  If the Value has the same ProviderID and ContextID as a
 	// previously stored Value, then update the metadata in the stored Value
@@ -43,6 +40,9 @@ type Interface interface {
 
 	// Close gracefully closes the store flushing all pending data from memory
 	Close() error
+
+	// Iter creates a new value store iterator
+	Iter() (Iterator, error)
 }
 
 // Iterator iterates multihashes and values in the value store

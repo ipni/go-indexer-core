@@ -3,7 +3,7 @@ package engine
 import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
 
@@ -28,7 +28,6 @@ func New(resultCache cache.Interface, valueStore indexer.Interface) *Engine {
 	}
 }
 
-// Get retrieves a slice of index.Value for a multihash
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	if e.resultCache == nil {
 		// If no result cache, get from value store
@@ -53,12 +52,6 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	return v, found, nil
 }
 
-// Iter creates a new value store iterator
-func (e *Engine) Iter() (indexer.Iterator, error) {
-	return e.valueStore.Iter()
-}
-
-// Put implements the indexer.Interface
 func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if e.resultCache != nil {
 		var mhsCopy []multihash.Multihash
@@ -109,7 +102,6 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	return e.valueStore.Put(value, mhs...)
 }
 
-// Remove removes the specified value from multiple multihashes
 func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	// Remove first from valueStore
 	err := e.valueStore.Remove(value, mhs...)
@@ -125,8 +117,6 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-// RemoveProvider removes all values for specified provider.  This is used
-// when a provider is no longer indexed by the indexer.
 func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	// Remove first from valueStore
 	err := e.valueStore.RemoveProvider(providerID)
@@ -142,8 +132,6 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	return nil
 }
 
-// RemoveProviderContext removes all values for specified provider that
-// have the specified contextID.
 func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
 	// Remove first from valueStore
 	err := e.valueStore.RemoveProviderContext(providerID, contextID)
@@ -159,18 +147,18 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 	return nil
 }
 
-// Size returns the total bytes of storage used by the value store to store the
-// indexed content.  This does not include memory used by the result cache.
 func (e *Engine) Size() (int64, error) {
 	return e.valueStore.Size()
 }
 
-// Close gracefully closes the store flushing all pending data from memory
+func (e *Engine) Flush() error {
+	return e.valueStore.Flush()
+}
+
 func (e *Engine) Close() error {
 	return e.valueStore.Close()
 }
 
-// Flush commits changes to storage
-func (e *Engine) Flush() error {
-	return e.valueStore.Flush()
+func (e *Engine) Iter() (indexer.Iterator, error) {
+	return e.valueStore.Iter()
 }

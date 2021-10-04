@@ -22,8 +22,6 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-var _ indexer.Interface = &memoryStore{}
-
 type memoryStore struct {
 	// multihash -> indexer.Value
 	rtree *radixtree.Bytes
@@ -37,6 +35,8 @@ type memoryIter struct {
 	values []indexer.Value
 }
 
+// New creates a new indexer.Interface implemented by a radixtree-based value
+// store.
 func New() *memoryStore {
 	return &memoryStore{
 		rtree:   radixtree.New(),
@@ -44,7 +44,6 @@ func New() *memoryStore {
 	}
 }
 
-// Get retrieves a slice of values for a multihash
 func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	k := string(m)
 
@@ -63,33 +62,6 @@ func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) 
 	return ret, true, nil
 }
 
-func (s *memoryStore) Iter() (indexer.Iterator, error) {
-	return &memoryIter{
-		iter: s.rtree.Iter(),
-	}, nil
-}
-
-func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
-	key, val, done := it.iter.Next()
-	if done {
-		it.values = nil
-		return nil, nil, io.EOF
-	}
-
-	m := multihash.Multihash([]byte(key))
-	vals, ok := val.([]*indexer.Value)
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())
-	}
-
-	it.values = it.values[:0]
-	for _, v := range vals {
-		it.values = append(it.values, *v)
-	}
-	return m, it.values, nil
-}
-
-// Put stores a value for multiple multihashes
 func (s *memoryStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if len(value.Metadata) == 0 {
 		return errors.New("value missing metadata")
@@ -129,7 +101,6 @@ keysLoop:
 	return nil
 }
 
-// Remove removes a value from multiple multihashes
 func (s *memoryStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -145,8 +116,6 @@ func (s *memoryStore) Remove(value indexer.Value, mhs ...multihash.Multihash) er
 	return nil
 }
 
-// RemoveProvider removes all values for specified provider.  This is used
-// when a provider is no longer indexed by the indexer.
 func (s *memoryStore) RemoveProvider(providerID peer.ID) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -156,10 +125,6 @@ func (s *memoryStore) RemoveProvider(providerID peer.ID) error {
 	return nil
 }
 
-// RemoveProviderContext removes all values for specified providerID that have
-// the specified contextID.  The mappings of multihashes to these values are
-// removed when they are retrieved, by detecting that the metadata of these
-// values no longer exists.
 func (s *memoryStore) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -181,7 +146,7 @@ func (s *memoryStore) RemoveProviderContext(providerID peer.ID, contextID []byte
 		for i := 0; i < len(values); {
 			if values[i].Match(delVal) {
 				if len(values) == 1 {
-					// Last value, so just delete index
+					// Last value, so just delete index.
 					deletes = append(deletes, k)
 					needUpdate = false
 					break
@@ -211,16 +176,39 @@ func (s *memoryStore) RemoveProviderContext(providerID peer.ID, contextID []byte
 	return nil
 }
 
-// Size returns the total storage capacity being used
 func (s *memoryStore) Size() (int64, error) {
 	return 0, nil
 }
 
-// Flush commits changes to storage
 func (s *memoryStore) Flush() error { return nil }
 
-// Close gracefully closes the store flushing all pending data from memory
 func (s *memoryStore) Close() error { return nil }
+
+func (s *memoryStore) Iter() (indexer.Iterator, error) {
+	return &memoryIter{
+		iter: s.rtree.Iter(),
+	}, nil
+}
+
+func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
+	key, val, done := it.iter.Next()
+	if done {
+		it.values = nil
+		return nil, nil, io.EOF
+	}
+
+	m := multihash.Multihash([]byte(key))
+	vals, ok := val.([]*indexer.Value)
+	if !ok {
+		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())
+	}
+
+	it.values = it.values[:0]
+	for _, v := range vals {
+		it.values = append(it.values, *v)
+	}
+	return m, it.values, nil
+}
 
 func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
 	// Search current cache
