@@ -9,8 +9,10 @@ import (
 
 const testProtoID = 999
 
-var p peer.ID = "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA"
+var p1 peer.ID = "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA"
+var p2 peer.ID = "12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV"
 var testData = []byte("some data")
+var testCtxID = []byte("QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB")
 
 func TestPutGetData(t *testing.T) {
 	var value Value
@@ -33,19 +35,33 @@ func TestPutGetData(t *testing.T) {
 }
 
 func TestEqual(t *testing.T) {
-	value1 := MakeValue(p, testProtoID, testData)
-	value2 := MakeValue(p, testProtoID, testData)
+	value1 := MakeValue(p1, testCtxID, testProtoID, testData)
+	value2 := MakeValue(p1, testCtxID, testProtoID, testData)
 	if !value1.Equal(value2) {
 		t.Fatal("values are not equal")
 	}
 
-	value2 = MakeValue(p, testProtoID+1, testData)
+	// Changing provider ID should make values unequal
+	value2 = MakeValue(p2, testCtxID, testProtoID, testData)
 	if value1.Equal(value2) {
-		t.Fatal("values not equal")
+		t.Fatal("values are equal")
 	}
 
-	value2 = MakeValue(p, testProtoID, []byte("some dataX"))
+	// Changing context ID should make values unequal
+	value2 = MakeValue(p1, []byte("some-context-id"), testProtoID, testData)
 	if value1.Equal(value2) {
-		t.Fatal("values not equal")
+		t.Fatal("values are equal")
+	}
+
+	// Changing protocol ID should make values unequal
+	value2 = MakeValue(p1, testCtxID, testProtoID+1, testData)
+	if value1.Equal(value2) {
+		t.Fatal("values are equal")
+	}
+
+	// Changing metadata should make values unequal
+	value2 = MakeValue(p1, testCtxID, testProtoID, []byte("some dataX"))
+	if value1.Equal(value2) {
+		t.Fatal("values are equal")
 	}
 }

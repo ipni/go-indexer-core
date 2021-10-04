@@ -5,12 +5,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initPogreb(t *testing.T) store.Interface {
+func initPogreb(t *testing.T) indexer.Interface {
 	var tmpDir string
 	var err error
 	if runtime.GOOS == "windows" {
@@ -49,11 +49,18 @@ func TestSize(t *testing.T) {
 	test.SizeTest(t, s)
 }
 
-func TestRemoveMany(t *testing.T) {
+func TestRemove(t *testing.T) {
 	skipIf32bit(t)
 
 	s := initPogreb(t)
-	test.RemoveManyTest(t, s)
+	test.RemoveTest(t, s)
+}
+
+func TestRemoveProviderContext(t *testing.T) {
+	skipIf32bit(t)
+
+	s := initPogreb(t)
+	test.RemoveProviderContextTest(t, s)
 }
 
 func skipIf32bit(t *testing.T) {

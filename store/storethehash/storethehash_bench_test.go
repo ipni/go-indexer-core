@@ -3,12 +3,12 @@ package storethehash_test
 import (
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	indexer "github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initBenchStore(b *testing.B) store.Interface {
+func initBenchStore(b *testing.B) indexer.Interface {
 	s, err := storethehash.New(b.TempDir())
 	if err != nil {
 		b.Fatal(err)

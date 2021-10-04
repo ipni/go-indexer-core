@@ -3,7 +3,6 @@ package engine
 import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/filecoin-project/go-indexer-core/store"
 	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
@@ -15,14 +14,14 @@ var log = logging.Logger("indexer-core")
 // cache and a value store
 type Engine struct {
 	resultCache cache.Interface
-	valueStore  store.Interface
+	valueStore  indexer.Interface
 }
 
 var _ indexer.Interface = &Engine{}
 
 // New implements the indexer.Interface.  It creates a new Engine with the
 // given result cache and value store
-func New(resultCache cache.Interface, valueStore store.Interface) *Engine {
+func New(resultCache cache.Interface, valueStore indexer.Interface) *Engine {
 	if valueStore == nil {
 		panic("valueStore is required")
 	}
@@ -34,39 +33,27 @@ func New(resultCache cache.Interface, valueStore store.Interface) *Engine {
 
 // Get retrieves a slice of index.Value for a multihash
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	if e.resultCache != nil {
-		// Check if multihash in resultCache
-		v, found, err := e.resultCache.Get(m)
+	if e.resultCache == nil {
+		// If no result cache, get from value store
+		return e.valueStore.Get(m)
+	}
+
+	// Check if multihash in resultCache
+	v, found := e.resultCache.Get(m)
+	if !found && e.valueStore != nil {
+		var err error
+		v, found, err = e.valueStore.Get(m)
 		if err != nil {
 			return nil, false, err
 		}
-
-		if !found && e.valueStore != nil {
-			v, found, err = e.valueStore.Get(m)
-			if err != nil {
-				return nil, false, err
-			}
-			// TODO: What about adding a resultCache interface that includes
-			// putValues(multihash, []indexer.Value) function
-			// so we don't need to loop through indexer.Value slice to move from
-			// one storage to another?
-			if found {
-				// Move from value store to result cache
-				for i := range v {
-					_, err := e.resultCache.Put(m, v[i])
-					if err != nil {
-						// Only log error since request has been satisified
-						log.Errorw("failed to put value into result cache", "err", err)
-						break
-					}
-				}
+		if found {
+			// Store result in result cache.
+			for i := range v {
+				e.resultCache.Put(v[i], m)
 			}
 		}
-		return v, found, err
 	}
-
-	// If no result cache, get from value store
-	return e.valueStore.Get(m)
+	return v, found, nil
 }
 
 // Iter creates a new value store iterator
@@ -74,75 +61,61 @@ func (e *Engine) Iter() (indexer.Iterator, error) {
 	return e.valueStore.Iter()
 }
 
-// Put stores a value for a multihash if the value is not already stored.  New values
-// are added to those that are already stored for the multihash.
-func (e *Engine) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
-	// If there is a result cache, check first if multihash already in cache
+// Put implements the indexer.Interface
+func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if e.resultCache != nil {
-		v, found, err := e.resultCache.Get(m)
-		if err != nil {
-			return false, err
-		}
-		// If multihash found, check if value already exists in cache. Values
-		// in cache must already be in the value store, in which case there is
-		// no need to store anything new.
-		if found {
-			for i := range v {
-				// If exists, then already in value store
-				if v[i].Equal(value) {
-					return false, nil
+		var mhsCopy []multihash.Multihash
+		var putVal bool
+		for i := 0; i < len(mhs); {
+			v, found := e.resultCache.Get(mhs[i])
+
+			// If multihash found, check if value already exists in
+			// cache. Values in cache must already be in the value store, in
+			// which case there is no need to store anything new.
+			if found {
+				found = false
+				for j := range v {
+					if v[j].Equal(value) {
+						found = true
+						break
+					}
 				}
+				if found {
+					// The multihash was found and is already mapped to this
+					// value, so do not try to put it in the value store.  The
+					// value store will handle this, but at a higher cost
+					// requiring reading from disk.
+					if mhsCopy == nil {
+						// Copy-on-write
+						mhsCopy = make([]multihash.Multihash, len(mhs))
+						copy(mhsCopy, mhs)
+						mhs = mhsCopy
+					}
+					mhs[i] = mhs[len(mhs)-1]
+					mhs[len(mhs)-1] = nil
+					mhs = mhs[:len(mhs)-1]
+					continue
+				}
+				// Add this value to those already in the result cache, since
+				// the multihash was already cached.
+				e.resultCache.Put(value, mhs[i])
+				putVal = true
 			}
-			// Add this value to those already in the result cache
-			_, err := e.resultCache.Put(m, value)
-			if err != nil {
-				log.Errorw("failed to put value into result cache", "err", err)
-			}
+			i++
+		}
+		if !putVal {
+			// If there was no put to update existing metadata in the cache,
+			// then do it here.
+			e.resultCache.Put(value)
 		}
 	}
-
-	// If value was not in result cache, then store in value store
-	return e.valueStore.Put(m, value)
+	return e.valueStore.Put(value, mhs...)
 }
 
-// PutMany stores one indexer.Value for multiple multihashes
-func (e *Engine) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
-	if e.resultCache == nil {
-		return e.valueStore.PutMany(mhs, value)
-	}
-
-	for i := range mhs {
-		_, err := e.Put(mhs[i], value)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Remove removes a value for the specified multihash
-func (e *Engine) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
-	ok, err := e.valueStore.Remove(m, value)
-	if err != nil {
-		return false, err
-	}
-
-	// If not located in valueStore or no result cache, nothing more to do
-	if !ok || e.resultCache == nil {
-		return false, nil
-	}
-
-	_, err = e.resultCache.Remove(m, value)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// RemoveMany removes the specified value from multiple multihashes
-func (e *Engine) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
+// Remove removes the specified value from multiple multihashes
+func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	// Remove first from valueStore
-	err := e.valueStore.RemoveMany(mhs, value)
+	err := e.valueStore.Remove(value, mhs...)
 	if err != nil {
 		return err
 	}
@@ -151,7 +124,8 @@ func (e *Engine) RemoveMany(mhs []multihash.Multihash, value indexer.Value) erro
 		return nil
 	}
 
-	return e.resultCache.RemoveMany(mhs, value)
+	e.resultCache.Remove(value, mhs...)
+	return nil
 }
 
 // RemoveProvider removes all values for specified provider.  This is used
@@ -167,11 +141,39 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 		return nil
 	}
 
-	return e.resultCache.RemoveProvider(providerID)
+	e.resultCache.RemoveProvider(providerID)
+	return nil
+}
+
+// RemoveProviderContext removes all values for specified provider that
+// have the specified contextID.
+func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
+	// Remove first from valueStore
+	err := e.valueStore.RemoveProviderContext(providerID, contextID)
+	if err != nil {
+		return err
+	}
+
+	if e.resultCache == nil {
+		return nil
+	}
+
+	e.resultCache.RemoveProviderContext(providerID, contextID)
+	return nil
 }
 
 // Size returns the total bytes of storage used by the value store to store the
 // indexed content.  This does not include memory used by the result cache.
 func (e *Engine) Size() (int64, error) {
 	return e.valueStore.Size()
+}
+
+// Close gracefully closes the store flushing all pending data from memory
+func (e *Engine) Close() error {
+	return e.valueStore.Close()
+}
+
+// Flush commits changes to storage
+func (e *Engine) Flush() error {
+	return e.valueStore.Flush()
 }

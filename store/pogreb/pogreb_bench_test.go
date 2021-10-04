@@ -4,12 +4,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/store"
+	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initBenchStore(b *testing.B) store.Interface {
+func initBenchStore(b *testing.B) indexer.Interface {
 	s, err := pogreb.New(b.TempDir())
 	if err != nil {
 		b.Fatal(err)
