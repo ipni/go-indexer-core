@@ -10,7 +10,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 const protocolID = 0
@@ -49,12 +49,12 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
-	value2 := indexer.MakeValue(p, protocolID, []byte(mhs[1]))
+	value1 := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("mtadata-1"))
+	value2 := indexer.MakeValue(p, []byte(mhs[1]), protocolID, []byte("mtadata-2"))
 	single := mhs[2]
 
 	// First put should go to value store
-	_, err = eng.Put(single, value1)
+	err = eng.Put(value1, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -62,7 +62,7 @@ func TestPassthrough(t *testing.T) {
 	if !found {
 		t.Fatal("single put did not go to value store")
 	}
-	_, found, _ = eng.resultCache.Get(single)
+	_, found = eng.resultCache.Get(single)
 	if found {
 		t.Fatal("single put went to result cache")
 	}
@@ -72,13 +72,13 @@ func TestPassthrough(t *testing.T) {
 	if !found || !v[0].Equal(value1) {
 		t.Fatal("value not found in combined storage")
 	}
-	_, found, _ = eng.resultCache.Get(single)
+	_, found = eng.resultCache.Get(single)
 	if !found {
 		t.Fatal("multihash not moved to cache after miss get")
 	}
 
 	// Updating an existing multihash should also update cache
-	_, err = eng.Put(single, value2)
+	err = eng.Put(value2, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -86,13 +86,13 @@ func TestPassthrough(t *testing.T) {
 	if len(values) != 2 {
 		t.Fatal("values not updated in value store")
 	}
-	values, _, _ = eng.resultCache.Get(single)
+	values, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
 		t.Fatal("values not updated in resutl cache")
 	}
 
 	// Remove should apply to both storages
-	_, err = eng.Remove(single, value1)
+	err = eng.Remove(value1, single)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,22 +100,27 @@ func TestPassthrough(t *testing.T) {
 	if len(values) != 1 {
 		t.Fatal("value not removed from value store")
 	}
-	values, _, _ = eng.resultCache.Get(single)
+	values, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from result cache")
 	}
 
 	// Putting many should only update in cache the ones
 	// already stored, adding all to value store.
-	err = eng.PutMany(mhs[2:], value1)
+	err = eng.Put(value1, mhs[2:]...)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatal("Error putting multiple multihashes:", err)
 	}
+	_, found = eng.resultCache.Get(mhs[4])
+	if found {
+		t.Fatal("mhs[4] should not be in result cache")
+	}
+
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 2 {
 		t.Fatal("value not updated in value store after PutMany")
 	}
-	values, _, _ = eng.resultCache.Get(single)
+	values, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
 		t.Fatal("value not updated in result cache after PutMany")
 	}
@@ -125,21 +130,21 @@ func TestPassthrough(t *testing.T) {
 	if !found {
 		t.Fatal("single put did not go to value store")
 	}
-	_, found, _ = eng.resultCache.Get(mhs[4])
+	_, found = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("single put went to result cache")
 	}
 
 	// RemoveMany should remove the corresponding from both storages
-	err = eng.RemoveMany(mhs[2:], value1)
+	err = eng.Remove(value1, mhs[2:]...)
 	if err != nil {
-		t.Fatal("Error putting single multihash:", err)
+		t.Fatal("Error removing multiple multihashes:", err)
 	}
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 1 {
 		t.Fatal("values not removed from value store")
 	}
-	values, _, _ = eng.resultCache.Get(single)
+	values, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from result cache after RemoveMany")
 	}
@@ -148,7 +153,7 @@ func TestPassthrough(t *testing.T) {
 	if found {
 		t.Fatal("remove many did not remove values from value store")
 	}
-	_, found, _ = eng.resultCache.Get(mhs[4])
+	_, found = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("remove many did not remove value from result cache")
 	}
@@ -174,8 +179,8 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
-	value2 := indexer.MakeValue(p, protocolID, []byte(mhs[1]))
+	value1 := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("metadata1"))
+	value2 := indexer.MakeValue(p, []byte(mhs[1]), protocolID, []byte("metadata2"))
 
 	single := mhs[2]
 	noadd := mhs[3]
@@ -184,7 +189,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Put a single multihash
 	t.Logf("Put/Get a single multihash in storage")
-	_, err = eng.Put(single, value1)
+	err = eng.Put(value1, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -202,7 +207,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Put a batch of multihashes
 	t.Logf("Put/Get a batch of multihashes in storage")
-	err = eng.PutMany(batch, value1)
+	err = eng.Put(value1, batch...)
 	if err != nil {
 		t.Fatal("Error putting batch of multihashse:", err)
 	}
@@ -220,7 +225,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Put on an existing key
 	t.Logf("Put/Get on existing key")
-	_, err = eng.Put(single, value2)
+	err = eng.Put(value2, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -253,7 +258,7 @@ func e2e(t *testing.T, eng *Engine) {
 
 	// Remove a key
 	t.Logf("Remove key")
-	_, err = eng.Remove(remove, value1)
+	err = eng.Remove(value1, remove)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -267,7 +272,7 @@ func e2e(t *testing.T, eng *Engine) {
 	}
 
 	// Remove a value from the key
-	_, err = eng.Remove(single, value1)
+	err = eng.Remove(value1, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
 	}
@@ -297,12 +302,11 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, protocolID, []byte(mhs[0]))
-	for _, c := range mhs[1:] {
-		_, err = eng.Put(c, value)
-		if err != nil {
-			t.Fatal(err)
-		}
+	value := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("metadata"))
+
+	err = eng.Put(value, mhs[1:]...)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	size, err := eng.Size()

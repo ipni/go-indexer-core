@@ -17,7 +17,12 @@ func TestParallel(t *testing.T) {
 	test.ParallelUpdateTest(t, s)
 }
 
-func TestRemoveMany(t *testing.T) {
+func TestRemove(t *testing.T) {
 	s := memory.New()
-	test.RemoveManyTest(t, s)
+	test.RemoveTest(t, s)
+}
+
+func TestRemoveProviderContext(t *testing.T) {
+	s := memory.New()
+	test.RemoveProviderContextTest(t, s)
 }

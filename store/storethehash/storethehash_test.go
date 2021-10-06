@@ -7,14 +7,12 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
-	peer "github.com/libp2p/go-libp2p-core/peer"
-	//"github.com/multiformats/go-multihash"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-func initSth(t *testing.T) store.Interface {
+func initSth(t *testing.T) indexer.Interface {
 	var tmpDir string
 	var err error
 	if runtime.GOOS == "windows" {
@@ -42,9 +40,14 @@ func TestSize(t *testing.T) {
 	test.SizeTest(t, s)
 }
 
-func TestRemoveMany(t *testing.T) {
+func TestMany(t *testing.T) {
 	s := initSth(t)
-	test.RemoveManyTest(t, s)
+	test.RemoveTest(t, s)
+}
+
+func TestRemoveProviderContext(t *testing.T) {
+	s := initSth(t)
+	test.RemoveProviderContextTest(t, s)
 }
 
 func TestParallel(t *testing.T) {
@@ -74,12 +77,10 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, 0, []byte(mhs[0]))
-	for _, m := range mhs[1:] {
-		_, err = s.Put(m, value)
-		if err != nil {
-			t.Fatal(err)
-		}
+	value := indexer.MakeValue(p, []byte(mhs[0]), 0, []byte("some-metadata"))
+	err = s.Put(value, mhs[1:]...)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Sleep for 2 sync Intervals to ensure that data is flushed

@@ -1,13 +1,17 @@
 package storethehash
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store"
 	"github.com/ipld/go-storethehash/store/primary"
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	"github.com/multiformats/go-multihash"
@@ -17,17 +21,23 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-var _ store.Interface = &sthStorage{}
-
 // TODO: Benchmark and fine-tune for better performance.
-const DefaultIndexSizeBits = uint8(24)
-const DefaultBurstRate = 4 * 1024 * 1024
-const DefaultSyncInterval = time.Second
+const (
+	DefaultIndexSizeBits = uint8(24)
+	DefaultBurstRate     = 4 * 1024 * 1024
+	DefaultSyncInterval  = time.Second
+)
+
+var (
+	indexKeyPrefix = []byte("I")
+	mdKeyPrefix    = []byte("M")
+)
 
 type sthStorage struct {
-	dir   string
-	store *sth.Store
-	mlk   *keymutex.KeyMutex
+	dir    string
+	store  *sth.Store
+	mlk    *keymutex.KeyMutex
+	mdLock sync.RWMutex
 
 	primary *mhprimary.MultihashPrimary
 }
@@ -38,12 +48,13 @@ type sthIterator struct {
 	uniqKeys map[string]struct{}
 }
 
-func New(dir string) (*sthStorage, error) {
-	// NOTE: Using a single file to store index and data.
-	// This may change in the future, and we may choose to set
-	// a max. size to files. Having several files for storage
-	// increases complexity but mimizes the overhead of compaction
-	// (once we have it)
+// New creates a new indexer.Interface implemented by a storethehash-based
+// value store.
+func New(dir string) (indexer.Interface, error) {
+	// NOTE: Using a single file to store index and data.  This may change in
+	// the future, and we may choose to set a max. size to files. Having
+	// several files for storage increases complexity but minimizes the
+	// overhead of compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
 	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
@@ -65,24 +76,86 @@ func New(dir string) (*sthStorage, error) {
 }
 
 func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	return s.get(m)
+	return s.get(makeIndexKey(m))
 }
 
-func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
-	value, found, err := s.store.Get(k)
+func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
+	err := s.updateMetadata(value, len(mhs) != 0)
 	if err != nil {
-		return nil, false, err
-	}
-	if !found {
-		return nil, false, nil
+		return fmt.Errorf("cannot update metadata: %w", err)
 	}
 
-	out, err := indexer.UnmarshalValues(value)
-	if err != nil {
-		return nil, false, err
+	for i := range mhs {
+		err = s.putIndex(mhs[i], value)
+		if err != nil {
+			return err
+		}
 	}
-	return out, true, nil
+	return nil
+}
 
+func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
+	for i := range mhs {
+		k := makeIndexKey(mhs[i])
+		err := s.removeIndex(k, value)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
+	// NOTE: There is no straightforward way of implementing this
+	// batch remove. We can either regenerate the index from
+	// the original data, or iterate through the whole the whole primary storage
+	// inspecting all values for the provider in multihashes.
+	// Deferring to the future
+	panic("not implemented")
+}
+
+func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
+	mdKey := makeMetadataKey(indexer.Value{
+		ProviderID: providerID,
+		ContextID:  contextID,
+	})
+
+	s.mdLock.Lock()
+	defer s.mdLock.Unlock()
+
+	// Remove any previous value.
+	_, err := s.store.Remove(mdKey)
+	return err
+}
+
+func (s *sthStorage) Size() (int64, error) {
+	size := int64(0)
+	fi, err := os.Stat(filepath.Join(s.dir, "storethehash.data"))
+	if err != nil {
+		return size, err
+	}
+	size += fi.Size()
+	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index"))
+	if err != nil {
+		return size, err
+	}
+	size += fi.Size()
+	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index.free"))
+	if err != nil {
+		return size, err
+	}
+	size += fi.Size()
+	return size, nil
+
+}
+
+func (s *sthStorage) Flush() error {
+	s.store.Flush()
+	return s.store.Err()
+}
+
+func (s *sthStorage) Close() error {
+	return s.store.Close()
 }
 
 func (s *sthStorage) Iter() (indexer.Iterator, error) {
@@ -108,160 +181,179 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
-		k := string(key)
+		// Decode the key and see if it is an index key.
+		dm, err := multihash.Decode(key)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !bytes.HasPrefix(dm.Digest, indexKeyPrefix) {
+			// Key does not have index prefix, so is not an index key.
+			continue
+		}
+
+		origMultihash := multihash.Multihash(dm.Digest[len(indexKeyPrefix):])
+		k := string(origMultihash)
 		_, found := it.uniqKeys[k]
 		if found {
 			continue
 		}
 		it.uniqKeys[k] = struct{}{}
 
-		values, found, err := it.storage.Get(key)
+		valueData, found, err := it.storage.store.Get(multihash.Multihash(key))
 		if err != nil {
 			return nil, nil, err
 		}
 		if !found {
 			continue
 		}
-		return multihash.Multihash(key), values, nil
+		values, err := indexer.UnmarshalValues(valueData)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Get the metadata for each value
+		values, err = it.storage.populateMetadata(key, values)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if len(values) == 0 {
+			continue
+		}
+
+		return origMultihash, values, nil
 	}
 }
 
-func (s *sthStorage) Put(m multihash.Multihash, value indexer.Value) (bool, error) {
-	return s.put(m, value)
+func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
+	value, found, err := s.store.Get(k)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+
+	values, err := indexer.UnmarshalValues(value)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Get the metadata for each value
+	values, err = s.populateMetadata(k, values)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(values) == 0 {
+		return nil, false, nil
+	}
+
+	return values, true, nil
 }
 
-func (s *sthStorage) put(k []byte, in indexer.Value) (bool, error) {
-	// Acquire lock
+func (s *sthStorage) putIndex(m multihash.Multihash, value indexer.Value) error {
+	k := makeIndexKey(m)
+
 	s.lock(k)
 	defer s.unlock(k)
-	// NOTE: The implementation of Put in storethehash already
-	// performs a first lookup to check the type of update that
-	// needs to be done over the key. We can probably save this
-	// additional get access by implementing the duplicateValue comparison
-	// low-level
-	old, found, err := s.get(k)
+
+	// NOTE: The implementation of Put in storethehash already performs a first
+	// lookup to check the type of update that needs to be done over the
+	// key. We can probably save this additional get access by implementing a
+	// duplicate value comparison low-level
+	existing, found, err := s.get(k)
 	if err != nil {
-		return false, err
+		return err
 	}
-	// If found it means there is already a value there.
-	// Check if we are trying to put a duplicate value
-	if found && duplicateValue(in, old) {
-		return false, nil
+	if found {
+		// If found it means there is already a value there.  Check if we are
+		// trying to put a duplicate value.
+		for j := range existing {
+			if value.Match(existing[j]) {
+				return nil
+			}
+		}
 	}
 
-	li := append(old, in)
-	b, err := indexer.MarshalValues(li)
+	// Values are stored without metadata, and are used as a key to lookup the
+	// metadata.
+	value.Metadata = nil
+	vals := append(existing, value)
+
+	// store the list of value keys for the multihash
+	b, err := indexer.MarshalValues(vals)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	err = s.store.Put(k, b)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return true, nil
-}
 
-func (s *sthStorage) PutMany(mhs []multihash.Multihash, value indexer.Value) error {
-	for i := range mhs {
-		_, err := s.put(mhs[i], value)
-		if err != nil {
-			// TODO: Log error but don't return. Errors for a single
-			// multihash shouldn't stop from putting the rest.
-			continue
-		}
-	}
 	return nil
 }
 
-func (s *sthStorage) Flush() error {
-	s.store.Flush()
-	return s.store.Err()
-}
+func (s *sthStorage) updateMetadata(value indexer.Value, saveNew bool) error {
+	// All values must have metadata, even if this only consists of the
+	// protocol ID.  When retrieving values, those that have nil metadata are
+	// ones that have been deleted, and this is used to remove remaining
+	// mappings from a multihash to the value.
+	if len(value.Metadata) == 0 {
+		return errors.New("value missing metadata")
+	}
 
-func (s *sthStorage) Size() (int64, error) {
-	// NOTE: Should we flush to commit all changes before returning the
-	// size?
-	size := int64(0)
-	fi, err := os.Stat(filepath.Join(s.dir, "storethehash.data"))
+	mdKey := makeMetadataKey(value)
+
+	s.mdLock.Lock()
+	defer s.mdLock.Unlock()
+
+	// See if there is a previous value.
+	metadata, found, err := s.store.Get(mdKey)
 	if err != nil {
-		return size, err
+		return err
 	}
-	size += fi.Size()
-	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index"))
-	if err != nil {
-		return size, err
-	}
-	size += fi.Size()
-	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index.free"))
-	if err != nil {
-		return size, err
-	}
-	size += fi.Size()
-	return size, nil
-
-}
-func (s *sthStorage) Remove(m multihash.Multihash, value indexer.Value) (bool, error) {
-	return s.remove(m, value)
-}
-
-func (s *sthStorage) remove(m multihash.Multihash, value indexer.Value) (bool, error) {
-	// Acquire lock
-	s.lock(m)
-	defer s.unlock(m)
-
-	old, found, err := s.get(m)
-	if err != nil {
-		return false, err
-	}
-	// If found it means there is a value for the multihash
-	// check if there is something to remove.
-	if found {
-		return s.removeValue(m, value, old)
-	}
-	return false, nil
-}
-
-func (s *sthStorage) RemoveMany(mhs []multihash.Multihash, value indexer.Value) error {
-	for i := range mhs {
-		_, err := s.remove(mhs[i], value)
-		if err != nil {
-			return err
+	if !found {
+		if saveNew {
+			// Store the new metadata
+			return s.store.Put(mdKey, value.Metadata)
 		}
+		return nil
 	}
+
+	// Found previous metadata.  If it is different, then update it.
+	if !bytes.Equal(value.Metadata, metadata) {
+		return s.store.Put(mdKey, value.Metadata)
+	}
+
 	return nil
 }
 
-// RemoveProvider removes all enrties for specified provider.  This is used
-// when a provider is no longer indexed by the indexer.
-func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
-	// NOTE: There is no straightforward way of implementing this
-	// batch remove. We can either regenerate the index from
-	// the original data, or iterate through the whole the whole primary storage
-	// inspecting all values for the provider in multihashes.
-	// Deferring to the future
-	panic("not implemented")
-}
+func (s *sthStorage) removeIndex(k []byte, value indexer.Value) error {
+	s.lock(k)
+	defer s.unlock(k)
 
-// duplicateValue checks if the value already exists in the index entry. An
-// value for the same provider but different metadata is not considered a
-// duplicate value.
-func duplicateValue(in indexer.Value, entry []indexer.Value) bool {
-	// Iterate values in the index entry to look for a duplicate
-	for i := range entry {
-		if in.Equal(entry[i]) {
-			return true
-		}
+	old, found, err := s.get(k)
+	if err != nil {
+		return err
 	}
-	return false
+	// If found it means there is a value for the multihash check if there is
+	// something to remove.
+	if !found {
+		return nil
+	}
+
+	return s.removeValue(k, value, old)
 }
 
-func (s *sthStorage) removeValue(k []byte, value indexer.Value, stored []indexer.Value) (bool, error) {
+func (s *sthStorage) removeValue(k []byte, value indexer.Value, stored []indexer.Value) error {
 	for i := range stored {
-		if value.Equal(stored[i]) {
+		if value.Match(stored[i]) {
 			// It is the only value, remove the value
 			if len(stored) == 1 {
-				return s.store.Remove(k)
+				_, err := s.store.Remove(k)
+				return err
 			}
 
 			// else remove from value and put updated structure
@@ -269,27 +361,105 @@ func (s *sthStorage) removeValue(k []byte, value indexer.Value, stored []indexer
 			stored[len(stored)-1] = indexer.Value{}
 			b, err := indexer.MarshalValues(stored[:len(stored)-1])
 			if err != nil {
-				return false, err
+				return err
 			}
 			if err := s.store.Put(k, b); err != nil {
-				return false, err
+				return err
 			}
-			return true, nil
+			return nil
 		}
 	}
-	return false, nil
-}
-
-// Close stops all storage-related routines, and flushes
-// pending data
-func (s *sthStorage) Close() error {
-	return s.store.Close()
+	return nil
 }
 
 func (s *sthStorage) lock(k []byte) {
-	s.mlk.Lock(string(k))
+	s.mlk.LockBytes(k)
 }
 
 func (s *sthStorage) unlock(k []byte) {
-	s.mlk.Unlock(string(k))
+	s.mlk.UnlockBytes(k)
+}
+
+func (s *sthStorage) populateMetadata(key []byte, values []indexer.Value) ([]indexer.Value, error) {
+	s.mdLock.RLock()
+	defer s.mdLock.RUnlock()
+
+	startLen := len(values)
+	for i := 0; i < len(values); {
+		// Try to get metadata from previous matching value.
+		var prev int
+		for prev = i - 1; prev >= 0; prev-- {
+			prevVal := values[prev]
+			if values[i].Match(prevVal) {
+				values[i].Metadata = prevVal.Metadata
+				break
+			}
+		}
+		// If metadata not in previous value, fetch from datastore.
+		if prev < 0 {
+			md, found, err := s.store.Get(makeMetadataKey(values[i]))
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				// If metadata not in datastore, this means it has been
+				// deleted, and the mapping from the multihash to that value
+				// should also be removed.
+				values[i] = values[len(values)-1]
+				values[len(values)-1] = indexer.Value{}
+				values = values[:len(values)-1]
+				continue
+			}
+			values[i].Metadata = md
+		}
+		i++
+	}
+	if len(values) < startLen {
+		s.lock(key)
+		defer s.unlock(key)
+
+		if len(values) == 0 {
+			_, err := s.store.Remove(key)
+			if err != nil {
+				return nil, err
+			}
+			return nil, nil
+		}
+
+		// Update the values this metadata maps to.
+		b, err := indexer.MarshalValues(values)
+		if err != nil {
+			return nil, err
+		}
+		if err = s.store.Put(key, b); err != nil {
+			return nil, err
+		}
+	}
+
+	return values, nil
+}
+
+func makeIndexKey(m multihash.Multihash) multihash.Multihash {
+	mhb := []byte(m)
+	var b bytes.Buffer
+	b.Grow(len(indexKeyPrefix) + len(mhb))
+	b.Write(indexKeyPrefix)
+	b.Write(mhb)
+	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
+	return mh
+}
+
+func makeMetadataKey(value indexer.Value) multihash.Multihash {
+	// Create a sha1 hash of the ProviderID and ContextID so that the key
+	// length is fixed.  Note: a faster non-crypto hash could be used here.
+	h := sha1.New()
+	_, _ = io.WriteString(h, string(value.ProviderID))
+	h.Write(value.ContextID)
+
+	var b bytes.Buffer
+	b.Grow(len(mdKeyPrefix) + sha1.Size)
+	b.Write(mdKeyPrefix)
+	b.Write(h.Sum(nil))
+	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
+	return mh
 }
