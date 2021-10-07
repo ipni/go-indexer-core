@@ -348,10 +348,9 @@ func (c *radixCache) internValue(value *indexer.Value, updateMeta, saveNew bool)
 	if found {
 		// The provided value has matching ProviderID and ContextID but
 		// different Metadata.  Treat this as an update.
-		if updateMeta && !bytes.Equal(v.Metadata, value.Metadata) {
-			metadata := make([]byte, len(value.Metadata))
-			copy(metadata, value.Metadata)
-			v.Metadata = metadata
+		if updateMeta && !bytes.Equal(v.MetadataBytes, value.MetadataBytes) {
+			v.MetadataBytes = make([]byte, len(value.MetadataBytes))
+			copy(v.MetadataBytes, value.MetadataBytes)
 		}
 		return v
 	}

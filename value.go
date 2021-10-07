@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	peer "github.com/libp2p/go-libp2p-core/peer"
-	varint "github.com/multiformats/go-varint"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 // Value is the value of an index entry that is stored for each CID in the indexer.
@@ -14,43 +13,49 @@ type Value struct {
 	ProviderID peer.ID
 	// ContextID identifies the metadata that is part of this value
 	ContextID []byte
-	// Metadata is serialized data that provides information about retrieving
-	// data, for the indexed CID, from the identified provider.
-	Metadata []byte `json:",omitempty"`
+	// MetadataBytes is serialized metadata.  The is kept serialized, because
+	// the indexer never serializes this data.
+	MetadataBytes []byte `json:",omitempty"`
 }
 
 func MakeValue(providerID peer.ID, contextID []byte, protocol uint64, data []byte) Value {
 	return Value{
 		ProviderID: providerID,
 		ContextID:  contextID,
-		Metadata:   encodeMetadata(protocol, data),
+		MetadataBytes: EncodeMetadata(Metadata{
+			ProtocolID: protocol,
+			Data:       data,
+		}),
 	}
 }
 
 // PutData writes the protocol ID and the encoded data to Value.Metadata
 func (v *Value) PutData(protocol uint64, data []byte) {
-	v.Metadata = encodeMetadata(protocol, data)
+	m := Metadata{
+		ProtocolID: protocol,
+		Data:       data,
+	}
+	v.MetadataBytes = EncodeMetadata(m)
 }
 
 // GetData returns the protocol ID and the encoded data from the Value.Metadata
 func (v *Value) GetData() (uint64, []byte, error) {
-	protocol, len, err := varint.FromUvarint(v.Metadata)
+	metadata, err := DecodeMetadata(v.MetadataBytes)
 	if err != nil {
 		return 0, nil, err
 	}
-	return protocol, v.Metadata[len:], nil
-}
 
-// Equal returns true if two Value instances are identical
-func (v Value) Equal(other Value) bool {
-	return v.ProviderID == other.ProviderID &&
-		bytes.Equal(v.ContextID, other.ContextID) &&
-		bytes.Equal(v.Metadata, other.Metadata)
+	return metadata.ProtocolID, metadata.Data, nil
 }
 
 // Match return true if both values have the same ProviderID and ContextID.
 func (v Value) Match(other Value) bool {
 	return v.ProviderID == other.ProviderID && bytes.Equal(v.ContextID, other.ContextID)
+}
+
+// Equal returns true if two Value instances are identical
+func (v Value) Equal(other Value) bool {
+	return v.Match(other) && bytes.Equal(v.MetadataBytes, other.MetadataBytes)
 }
 
 // MatchEqual returns true for the first bool if both values have the same
@@ -59,19 +64,9 @@ func (v Value) Match(other Value) bool {
 func (v Value) MatchEqual(other Value) (isMatch bool, isEqual bool) {
 	if v.Match(other) {
 		isMatch = true
-		isEqual = bytes.Equal(v.Metadata, other.Metadata)
+		isEqual = bytes.Equal(v.MetadataBytes, other.MetadataBytes)
 	}
 	return
-}
-
-func encodeMetadata(protocol uint64, data []byte) []byte {
-	varintSize := varint.UvarintSize(protocol)
-	buf := make([]byte, varintSize+len(data))
-	varint.PutUvarint(buf, protocol)
-	if len(data) != 0 {
-		copy(buf[varintSize:], data)
-	}
-	return buf
 }
 
 // MarshalValue serializes a single value
