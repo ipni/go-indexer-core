@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multicodec"
 )
 
 // Value is the value of an index entry that is stored for each CID in the indexer.
@@ -18,7 +19,7 @@ type Value struct {
 	MetadataBytes []byte `json:",omitempty"`
 }
 
-func MakeValue(providerID peer.ID, contextID []byte, protocol uint64, data []byte) Value {
+func MakeValue(providerID peer.ID, contextID []byte, protocol multicodec.Code, data []byte) Value {
 	return Value{
 		ProviderID: providerID,
 		ContextID:  contextID,
@@ -30,7 +31,7 @@ func MakeValue(providerID peer.ID, contextID []byte, protocol uint64, data []byt
 }
 
 // PutData writes the protocol ID and the encoded data to Value.Metadata
-func (v *Value) PutData(protocol uint64, data []byte) {
+func (v *Value) PutData(protocol multicodec.Code, data []byte) {
 	m := Metadata{
 		ProtocolID: protocol,
 		Data:       data,
@@ -39,7 +40,7 @@ func (v *Value) PutData(protocol uint64, data []byte) {
 }
 
 // GetData returns the protocol ID and the encoded data from the Value.Metadata
-func (v *Value) GetData() (uint64, []byte, error) {
+func (v *Value) GetData() (multicodec.Code, []byte, error) {
 	metadata, err := DecodeMetadata(v.MetadataBytes)
 	if err != nil {
 		return 0, nil, err

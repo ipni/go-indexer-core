@@ -3,6 +3,7 @@ package indexer
 import (
 	"bytes"
 
+	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-varint"
 )
 
@@ -10,7 +11,7 @@ import (
 // data for an index, from a particular provider.
 type Metadata struct {
 	// ProtocolID defines the protocol used for data retrieval.
-	ProtocolID uint64
+	ProtocolID multicodec.Code
 	// Data is specific to the identified protocol, and provides data, or a
 	// link to data, necessary for retrieval.
 	Data []byte
@@ -23,9 +24,9 @@ func (m Metadata) Equal(other Metadata) bool {
 
 // EncodeMetadata serializes Metadata to []byte.
 func EncodeMetadata(m Metadata) []byte {
-	varintSize := varint.UvarintSize(m.ProtocolID)
+	varintSize := varint.UvarintSize(uint64(m.ProtocolID))
 	buf := make([]byte, varintSize+len(m.Data))
-	varint.PutUvarint(buf, m.ProtocolID)
+	varint.PutUvarint(buf, uint64(m.ProtocolID))
 	if len(m.Data) != 0 {
 		copy(buf[varintSize:], m.Data)
 	}
@@ -39,7 +40,7 @@ func DecodeMetadata(data []byte) (Metadata, error) {
 		return Metadata{}, err
 	}
 	return Metadata{
-		ProtocolID: protocol,
+		ProtocolID: multicodec.Code(protocol),
 		Data:       data[len:],
 	}, nil
 }
