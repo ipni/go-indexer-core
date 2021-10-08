@@ -63,7 +63,7 @@ func (s *memoryStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) 
 }
 
 func (s *memoryStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
-	if len(value.Metadata) == 0 {
+	if len(value.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
 	}
 
@@ -240,10 +240,9 @@ func (s *memoryStore) internValue(value *indexer.Value, saveNew bool) *indexer.V
 	if found {
 		// The provided value has matching ProviderID and ContextID but
 		// different Metadata.  Treat this as an update.
-		if !bytes.Equal(v.Metadata, value.Metadata) {
-			metadata := make([]byte, len(value.Metadata))
-			copy(metadata, value.Metadata)
-			v.Metadata = metadata
+		if !bytes.Equal(v.MetadataBytes, value.MetadataBytes) {
+			v.MetadataBytes = make([]byte, len(value.MetadataBytes))
+			copy(v.MetadataBytes, value.MetadataBytes)
 		}
 		return v
 	}

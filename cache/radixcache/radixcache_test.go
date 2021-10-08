@@ -9,12 +9,13 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multicodec"
 )
 
 const peerID = "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA"
 
 var provID peer.ID
-var proto uint64
+var proto multicodec.Code
 var ctxID []byte
 
 func init() {

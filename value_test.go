@@ -18,7 +18,7 @@ func TestPutGetData(t *testing.T) {
 	var value Value
 
 	value.PutData(testProtoID, testData)
-	if len(value.Metadata) == 0 {
+	if len(value.MetadataBytes) == 0 {
 		t.Fatal("did not encode metadata")
 	}
 
@@ -40,11 +40,18 @@ func TestEqual(t *testing.T) {
 	if !value1.Equal(value2) {
 		t.Fatal("values are not equal")
 	}
+	if !value1.Match(value1) {
+		t.Fatal("values do not match")
+	}
 
 	// Changing provider ID should make values unequal
 	value2 = MakeValue(p2, testCtxID, testProtoID, testData)
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
+	}
+	// Changing provider ID should make values not match
+	if value1.Match(value2) {
+		t.Fatal("values match")
 	}
 
 	// Changing context ID should make values unequal
@@ -52,16 +59,28 @@ func TestEqual(t *testing.T) {
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
+	// Changing context ID should make values not match
+	if value1.Match(value2) {
+		t.Fatal("values match")
+	}
 
 	// Changing protocol ID should make values unequal
 	value2 = MakeValue(p1, testCtxID, testProtoID+1, testData)
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
+	// Changing protocol ID should not affect match
+	if !value1.Match(value2) {
+		t.Fatal("values do not match")
+	}
 
 	// Changing metadata should make values unequal
 	value2 = MakeValue(p1, testCtxID, testProtoID, []byte("some dataX"))
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
+	}
+	// Changing metadata should not affect match
+	if !value1.Match(value2) {
+		t.Fatal("values do not match")
 	}
 }

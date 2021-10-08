@@ -220,7 +220,7 @@ func (s *pStorage) putIndex(m multihash.Multihash, value indexer.Value) error {
 
 	// Values are stored without metadata, and are used as a key to lookup
 	// the metadata.
-	value.Metadata = nil
+	value.MetadataBytes = nil
 	vals := append(existing, value)
 
 	// Store the list of value keys for the multihash.
@@ -261,7 +261,7 @@ func (s *pStorage) updateMetadata(value indexer.Value, saveNew bool) error {
 	// protocol ID.  When retrieving values, those that have nil metadata are
 	// ones that have been deleted, and this is used to remove remaining
 	// mappings from a multihash to the value.
-	if len(value.Metadata) == 0 {
+	if len(value.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
 	}
 
@@ -278,14 +278,14 @@ func (s *pStorage) updateMetadata(value indexer.Value, saveNew bool) error {
 	if metadata == nil {
 		if saveNew {
 			// Store the new metadata
-			return s.store.Put(mdKey, value.Metadata)
+			return s.store.Put(mdKey, value.MetadataBytes)
 		}
 		return nil
 	}
 
 	// Found previous metadata.  If it is different, then update it.
-	if !bytes.Equal(value.Metadata, metadata) {
-		return s.store.Put(mdKey, value.Metadata)
+	if !bytes.Equal(value.MetadataBytes, metadata) {
+		return s.store.Put(mdKey, value.MetadataBytes)
 	}
 
 	return nil
@@ -333,7 +333,7 @@ func (s *pStorage) populateMetadata(key []byte, values []indexer.Value) ([]index
 		var prev int
 		for prev = i - 1; prev >= 0; prev-- {
 			if values[i].Match(values[prev]) {
-				values[i].Metadata = values[prev].Metadata
+				values[i].MetadataBytes = values[prev].MetadataBytes
 				break
 			}
 		}
@@ -352,7 +352,7 @@ func (s *pStorage) populateMetadata(key []byte, values []indexer.Value) ([]index
 				values = values[:len(values)-1]
 				continue
 			}
-			values[i].Metadata = md
+			values[i].MetadataBytes = md
 		}
 		i++
 	}
@@ -366,7 +366,12 @@ func (s *pStorage) populateMetadata(key []byte, values []indexer.Value) ([]index
 		}
 
 		// Update the values this metadata maps to.
-		b, err := indexer.MarshalValues(values)
+		storeVals := make([]indexer.Value, len(values))
+		for i := range values {
+			storeVals[i] = values[i]
+			storeVals[i].MetadataBytes = nil
+		}
+		b, err := indexer.MarshalValues(storeVals)
 		if err != nil {
 			return nil, err
 		}
