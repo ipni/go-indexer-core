@@ -17,26 +17,36 @@ var testCtxID = []byte("QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB")
 func TestPutGetData(t *testing.T) {
 	var value Value
 
-	value.PutData(testProtoID, testData)
+	value.MetadataBytes = Metadata{
+		ProtocolID: testProtoID,
+		Data:       testData,
+	}.Encode()
+
 	if len(value.MetadataBytes) == 0 {
 		t.Fatal("did not encode metadata")
 	}
 
-	protoID, decodedData, err := value.GetData()
+	metadata, err := DecodeMetadata(value.MetadataBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if protoID != testProtoID {
+	if metadata.ProtocolID != testProtoID {
 		t.Fatal("got wrong protocol ID")
 	}
-	if !bytes.Equal(decodedData, testData) {
+	if !bytes.Equal(metadata.Data, testData) {
 		t.Fatal("did not get expected data")
 	}
 }
 
 func TestEqual(t *testing.T) {
-	value1 := MakeValue(p1, testCtxID, testProtoID, testData)
-	value2 := MakeValue(p1, testCtxID, testProtoID, testData)
+	meta := Metadata{
+		ProtocolID: testProtoID,
+		Data:       testData,
+	}
+	metaBytes := meta.Encode()
+
+	value1 := Value{p1, testCtxID, metaBytes}
+	value2 := Value{p1, testCtxID, metaBytes}
 	if !value1.Equal(value2) {
 		t.Fatal("values are not equal")
 	}
@@ -45,7 +55,7 @@ func TestEqual(t *testing.T) {
 	}
 
 	// Changing provider ID should make values unequal
-	value2 = MakeValue(p2, testCtxID, testProtoID, testData)
+	value2 = Value{p2, testCtxID, metaBytes}
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
@@ -55,7 +65,7 @@ func TestEqual(t *testing.T) {
 	}
 
 	// Changing context ID should make values unequal
-	value2 = MakeValue(p1, []byte("some-context-id"), testProtoID, testData)
+	value2 = Value{p1, []byte("some-context-id"), metaBytes}
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
@@ -65,7 +75,8 @@ func TestEqual(t *testing.T) {
 	}
 
 	// Changing protocol ID should make values unequal
-	value2 = MakeValue(p1, testCtxID, testProtoID+1, testData)
+	meta.ProtocolID = testProtoID + 1
+	value2 = Value{p1, testCtxID, meta.Encode()}
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
@@ -75,7 +86,9 @@ func TestEqual(t *testing.T) {
 	}
 
 	// Changing metadata should make values unequal
-	value2 = MakeValue(p1, testCtxID, testProtoID, []byte("some dataX"))
+	meta.ProtocolID = testProtoID
+	meta.Data = []byte("some dataX")
+	value2 = Value{p1, testCtxID, meta.Encode()}
 	if value1.Equal(value2) {
 		t.Fatal("values are equal")
 	}
