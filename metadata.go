@@ -23,7 +23,7 @@ func (m Metadata) Equal(other Metadata) bool {
 }
 
 // EncodeMetadata serializes Metadata to []byte.
-func EncodeMetadata(m Metadata) []byte {
+func (m Metadata) Encode() []byte {
 	varintSize := varint.UvarintSize(uint64(m.ProtocolID))
 	buf := make([]byte, varintSize+len(m.Data))
 	varint.PutUvarint(buf, uint64(m.ProtocolID))

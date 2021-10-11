@@ -8,45 +8,21 @@ import (
 	"github.com/multiformats/go-multicodec"
 )
 
-// Value is the value of an index entry that is stored for each CID in the indexer.
+// Value is the value of an index entry that is stored for each multihash in
+// the indexer.
 type Value struct {
-	// PrividerID is the peer ID of the provider of the CID
+	// PrividerID is the peer ID of the provider of the multihash.
 	ProviderID peer.ID
-	// ContextID identifies the metadata that is part of this value
+	// ContextID identifies the metadata that is part of this value.
 	ContextID []byte
 	// MetadataBytes is serialized metadata.  The is kept serialized, because
-	// the indexer never serializes this data.
+	// the indexer only uses the serialized form of this data.
 	MetadataBytes []byte `json:",omitempty"`
 }
 
+// MakeValue encodes matadata and constructs a Value.
 func MakeValue(providerID peer.ID, contextID []byte, protocol multicodec.Code, data []byte) Value {
-	return Value{
-		ProviderID: providerID,
-		ContextID:  contextID,
-		MetadataBytes: EncodeMetadata(Metadata{
-			ProtocolID: protocol,
-			Data:       data,
-		}),
-	}
-}
-
-// PutData writes the protocol ID and the encoded data to Value.Metadata
-func (v *Value) PutData(protocol multicodec.Code, data []byte) {
-	m := Metadata{
-		ProtocolID: protocol,
-		Data:       data,
-	}
-	v.MetadataBytes = EncodeMetadata(m)
-}
-
-// GetData returns the protocol ID and the encoded data from the Value.Metadata
-func (v *Value) GetData() (multicodec.Code, []byte, error) {
-	metadata, err := DecodeMetadata(v.MetadataBytes)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	return metadata.ProtocolID, metadata.Data, nil
+	return Value{providerID, contextID, Metadata{protocol, data}.Encode()}
 }
 
 // Match return true if both values have the same ProviderID and ContextID.
