@@ -77,7 +77,11 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, []byte(mhs[0]), 0, []byte("some-metadata"))
+	value := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("some-metadata"),
+	}
 	err = s.Put(value, mhs[1:]...)
 	if err != nil {
 		t.Fatal(err)

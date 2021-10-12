@@ -13,8 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-const protocolID = 0
-
 func initEngine(t *testing.T, withCache bool) *Engine {
 	var tmpDir string
 	var err error
@@ -49,8 +47,17 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("mtadata-1"))
-	value2 := indexer.MakeValue(p, []byte(mhs[1]), protocolID, []byte("mtadata-2"))
+	value1 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("mtadata-1"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[1]),
+		MetadataBytes: []byte("mtadata-2"),
+	}
+
 	single := mhs[2]
 
 	// First put should go to value store
@@ -179,8 +186,16 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("metadata1"))
-	value2 := indexer.MakeValue(p, []byte(mhs[1]), protocolID, []byte("metadata2"))
+	value1 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("mtadata-1"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[1]),
+		MetadataBytes: []byte("mtadata-2"),
+	}
 
 	single := mhs[2]
 	noadd := mhs[3]
@@ -302,7 +317,11 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("metadata"))
+	value := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("mtadata"),
+	}
 
 	err = eng.Put(value, mhs[1:]...)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multicodec"
 )
 
 // Value is the value of an index entry that is stored for each multihash in
@@ -18,11 +17,6 @@ type Value struct {
 	// MetadataBytes is serialized metadata.  The is kept serialized, because
 	// the indexer only uses the serialized form of this data.
 	MetadataBytes []byte `json:",omitempty"`
-}
-
-// MakeValue encodes matadata and constructs a Value.
-func MakeValue(providerID peer.ID, contextID []byte, protocol multicodec.Code, data []byte) Value {
-	return Value{providerID, contextID, Metadata{protocol, data}.Encode()}
 }
 
 // Match return true if both values have the same ProviderID and ContextID.

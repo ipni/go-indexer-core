@@ -9,13 +9,11 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multicodec"
 )
 
 const peerID = "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA"
 
 var provID peer.ID
-var proto multicodec.Code
 var ctxID []byte
 
 func init() {
@@ -39,8 +37,16 @@ func TestPutGetRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value1 := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[0]))
-	value2 := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[1]))
+	value1 := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[0]),
+	}
+	value2 := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[1]),
+	}
 
 	single := mhs[2]
 	noadd := mhs[3]
@@ -80,7 +86,11 @@ func TestPutGetRemove(t *testing.T) {
 	}
 
 	ctxID2 := []byte("test-ctx-2")
-	value3 := indexer.MakeValue(provID, ctxID2, proto, []byte(mhs[1]))
+	value3 := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID2,
+		MetadataBytes: []byte(mhs[1]),
+	}
 	s.Put(value3, single)
 	if s.IndexCount() != 1 {
 		t.Fatalf("expected index count 2, got %d", s.IndexCount())
@@ -174,8 +184,16 @@ func TestRotate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value1 := indexer.MakeValue(provID, []byte("test-ctx-1"), proto, []byte(mhs[0]))
-	value2 := indexer.MakeValue(provID, []byte("test-ctx-2"), proto, []byte(mhs[1]))
+	value1 := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     []byte("test-ctx-1"),
+		MetadataBytes: []byte(mhs[0]),
+	}
+	value2 := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     []byte("test-ctx-2"),
+		MetadataBytes: []byte(mhs[1]),
+	}
 
 	s := New(maxSize * 2)
 	mhs, err = test.RandomMultihashes(maxSize + 5)
@@ -234,7 +252,11 @@ func TestMemoryUse(t *testing.T) {
 		panic(err)
 	}
 	ctxID := []byte("test-ctx-1")
-	value := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[0]))
+	value := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[0]),
+	}
 	var prevAlloc, prevIndexes uint64
 
 	for count := 1; count <= 1024; count *= 2 {
@@ -271,7 +293,11 @@ func TestMemSingleVsMany(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[0]))
+	value := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[0]),
+	}
 
 	t.Run(fmt.Sprintf("Put %d Single multihashes", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1024)
@@ -305,7 +331,11 @@ func BenchmarkPut(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[0]))
+	value := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[0]),
+	}
 
 	mhs, _ = test.RandomMultihashes(10240)
 
@@ -347,7 +377,11 @@ func BenchmarkGet(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	value := indexer.MakeValue(provID, ctxID, proto, []byte(mhs[0]))
+	value := indexer.Value{
+		ProviderID:    provID,
+		ContextID:     ctxID,
+		MetadataBytes: []byte(mhs[0]),
+	}
 
 	s := New(8192)
 	mhs, _ = test.RandomMultihashes(4096)
