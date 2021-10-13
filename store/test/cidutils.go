@@ -18,20 +18,20 @@ var prefix = cid.Prefix{
 }
 
 // RandomMultihashes generates the specified number of random cids.
-func RandomMultihashes(n int) ([]multihash.Multihash, error) {
-	var prng = rand.New(rand.NewSource(time.Now().UnixNano()))
+func RandomMultihashes(n int) []multihash.Multihash {
+	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	mhashes := make([]multihash.Multihash, n)
 	for i := 0; i < n; i++ {
-		b := make([]byte, 10*n)
+		b := make([]byte, 10*n+16)
 		prng.Read(b)
 		c, err := prefix.Sum(b)
 		if err != nil {
-			return nil, err
+			panic(err.Error)
 		}
 		mhashes[i] = c.Hash()
 	}
-	return mhashes, nil
+	return mhashes
 }
 
 // ReadCids reads cids from an io.Reader and outputs their multihashes on a

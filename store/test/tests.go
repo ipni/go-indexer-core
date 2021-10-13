@@ -17,18 +17,23 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
 	ctxid1 := []byte(mhs[0])
 	metadata1 := []byte("test-meta-1")
 	ctxid2 := []byte(mhs[1])
 	metadata2 := []byte("test-meta-2")
 
-	value1 := indexer.MakeValue(p, ctxid1, protocolID, metadata1)
-	value2 := indexer.MakeValue(p, ctxid2, protocolID, metadata2)
+	value1 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     ctxid1,
+		MetadataBytes: metadata1,
+	}
+	value2 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     ctxid2,
+		MetadataBytes: metadata2,
+	}
 
 	single := mhs[2]
 	noadd := mhs[3]
@@ -177,7 +182,11 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 
 	// Update a value's metadata
 	metadata3 := []byte("test-meta-3")
-	value1a := indexer.MakeValue(p, ctxid1, protocolID, metadata3)
+	value1a := indexer.Value{
+		ProviderID:    p,
+		ContextID:     ctxid1,
+		MetadataBytes: metadata3,
+	}
 	err = s.Put(value1a, v1mh)
 	if err != nil {
 		t.Fatal(err)
@@ -234,12 +243,13 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(151)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(151)
 
-	value := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("test-metadata"))
+	value := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("test-metadata"),
+	}
 	for _, c := range mhs[1:] {
 		err = s.Put(value, c)
 		if err != nil {
@@ -263,12 +273,13 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
-	value := indexer.MakeValue(p, []byte(mhs[0]), protocolID, []byte("test-metadata"))
+	value := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("test-metadata"),
+	}
 	batch := mhs[1:]
 
 	// Put a batch of multihashes
@@ -308,21 +319,27 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(2)
 
 	ctx1id := []byte(mhs[0])
 	ctx2id := []byte(mhs[1])
-	value1 := indexer.MakeValue(prov1, ctx1id, protocolID, []byte("ctx1-metadata"))
-	value2 := indexer.MakeValue(prov1, ctx2id, protocolID, []byte("ctx2-metadata"))
-	value3 := indexer.MakeValue(prov2, ctx1id, protocolID, []byte("ctx3-metadata"))
-
-	mhs, err = RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
+	value1 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx1-metadata"),
 	}
+	value2 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx2id,
+		MetadataBytes: []byte("ctx2-metadata"),
+	}
+	value3 := indexer.Value{
+		ProviderID:    prov2,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx3-metadata"),
+	}
+
+	mhs = RandomMultihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -461,10 +478,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 }
 
 func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -482,7 +496,11 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
 			t.Log("Put/Get different multihash")
-			value := indexer.MakeValue(p, []byte(mhs[i]), 0, metadata)
+			value := indexer.Value{
+				ProviderID:    p,
+				ContextID:     []byte(mhs[i]),
+				MetadataBytes: metadata,
+			}
 			if err := s.Put(value, single); err != nil {
 				t.Error("Error putting single multihash:", err)
 			}
@@ -506,7 +524,11 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, i int) {
 			t.Log("Remove multihash")
-			value := indexer.MakeValue(p, []byte(mhs[i]), 0, metadata)
+			value := indexer.Value{
+				ProviderID:    p,
+				ContextID:     []byte(mhs[i]),
+				MetadataBytes: metadata,
+			}
 			if err := s.Remove(value, single); err != nil {
 				t.Error("Error removing single multihash:", err)
 			}
