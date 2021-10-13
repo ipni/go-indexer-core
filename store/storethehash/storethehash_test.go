@@ -72,10 +72,7 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Put some data in the first storage.
-	mhs, err := test.RandomMultihashes(151)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := test.RandomMultihashes(151)
 
 	value := indexer.Value{
 		ProviderID:    p,

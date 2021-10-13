@@ -101,10 +101,7 @@ func BenchReadAll(s indexer.Interface, size string, t *testing.T) {
 
 // Benchmark single thread get operation
 func BenchMultihashGet(s indexer.Interface, b *testing.B) {
-	mhs, err := RandomMultihashes(1)
-	if err != nil {
-		panic(err)
-	}
+	mhs := RandomMultihashes(1)
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
 	value := indexer.Value{
@@ -113,8 +110,8 @@ func BenchMultihashGet(s indexer.Interface, b *testing.B) {
 		MetadataBytes: []byte("dummy-metadata"),
 	}
 
-	mhs, _ = RandomMultihashes(4096)
-	err = s.Put(value, mhs...)
+	mhs = RandomMultihashes(4096)
+	err := s.Put(value, mhs...)
 	if err != nil {
 		panic(err)
 	}
@@ -147,10 +144,7 @@ func BenchMultihashGet(s indexer.Interface, b *testing.B) {
 }
 
 func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
-	mhs, err := RandomMultihashes(1)
-	if err != nil {
-		panic(err)
-	}
+	mhs := RandomMultihashes(1)
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
 	value := indexer.Value{
@@ -159,8 +153,8 @@ func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
 		MetadataBytes: []byte("dummy-metadata"),
 	}
 
-	mhs, _ = RandomMultihashes(4096)
-	err = s.Put(value, mhs...)
+	mhs = RandomMultihashes(4096)
+	err := s.Put(value, mhs...)
 	if err != nil {
 		panic(err)
 	}

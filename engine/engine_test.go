@@ -42,10 +42,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs, err := test.RandomMultihashes(5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := test.RandomMultihashes(5)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -181,10 +178,7 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	mhs, err := test.RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := test.RandomMultihashes(15)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -312,10 +306,7 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs, err := test.RandomMultihashes(151)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := test.RandomMultihashes(151)
 
 	value := indexer.Value{
 		ProviderID:    p,

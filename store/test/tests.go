@@ -17,10 +17,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
 	ctxid1 := []byte(mhs[0])
 	metadata1 := []byte("test-meta-1")
@@ -246,10 +243,7 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(151)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(151)
 
 	value := indexer.Value{
 		ProviderID:    p,
@@ -279,10 +273,7 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
 	value := indexer.Value{
 		ProviderID:    p,
@@ -328,10 +319,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs, err := RandomMultihashes(2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(2)
 
 	ctx1id := []byte(mhs[0])
 	ctx2id := []byte(mhs[1])
@@ -351,10 +339,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs, err = RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs = RandomMultihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -493,10 +478,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 }
 
 func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
-	mhs, err := RandomMultihashes(15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mhs := RandomMultihashes(15)
 
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
