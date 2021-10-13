@@ -21,9 +21,9 @@ var prefix = cid.Prefix{
 func RandomMultihashes(n int) []multihash.Multihash {
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	b := make([]byte, 64)
 	mhashes := make([]multihash.Multihash, n)
 	for i := 0; i < n; i++ {
+		b := make([]byte, 10*n+16)
 		prng.Read(b)
 		c, err := prefix.Sum(b)
 		if err != nil {
