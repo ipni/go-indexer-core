@@ -37,22 +37,23 @@ func TestPutGetRemove(t *testing.T) {
 	value1 := indexer.Value{
 		ProviderID:    provID,
 		ContextID:     ctxID,
-		MetadataBytes: []byte(mhs[0]),
+		MetadataBytes: []byte("metadata1"),
 	}
 	value2 := indexer.Value{
 		ProviderID:    provID,
 		ContextID:     ctxID,
-		MetadataBytes: []byte(mhs[1]),
+		MetadataBytes: []byte("metadata2"),
 	}
 
-	single := mhs[2]
-	noadd := mhs[3]
-	batch := mhs[4:]
+	single := mhs[0]
+	noadd := mhs[1]
+	batch := mhs[2:]
 
 	// Put a single multihash
 	t.Log("Put/Get a single multihash in primary storage")
 	s.Put(value1, single)
-	if s.IndexCount() != 1 {
+	stats := s.Stats()
+	if stats.Indexes != 1 || stats.Values != 1 {
 		t.Fatal("Did not put new single multihash")
 	}
 	ents, found := s.Get(single)
@@ -65,14 +66,23 @@ func TestPutGetRemove(t *testing.T) {
 
 	t.Log("Put existing multihash value again")
 	s.Put(value1, single)
-	if s.IndexCount() != 1 {
-		t.Fatalf("should not have put new value, index count: %d", s.IndexCount())
+	stats = s.Stats()
+	if stats.Indexes != 1 {
+		t.Fatalf("should not have put new index, count: %d", stats.Indexes)
+	}
+	if stats.Values != 1 {
+		t.Fatalf("should not have put new value, count: %d", stats.Values)
 	}
 
 	t.Log("Put existing multihash and provider with new metadata")
 	s.Put(value2, single)
-	if s.IndexCount() != 1 {
-		t.Fatalf("should not have put new value, index count: %d", s.IndexCount())
+	stats = s.Stats()
+	if stats.Indexes != 1 {
+		t.Fatalf("should not have put new index, count: %d", stats.Indexes)
+	}
+	// Values should still be 1, since context ID of value 1 and 2 is the same.
+	if stats.Values != 1 {
+		t.Fatalf("should not have put new value, count: %d", stats.Values)
 	}
 	ents, found = s.Get(single)
 	if !found {
@@ -89,8 +99,12 @@ func TestPutGetRemove(t *testing.T) {
 		MetadataBytes: []byte(mhs[1]),
 	}
 	s.Put(value3, single)
-	if s.IndexCount() != 1 {
-		t.Fatalf("expected index count 2, got %d", s.IndexCount())
+	stats = s.Stats()
+	if stats.Indexes != 1 {
+		t.Fatalf("expected index count 1, got %d", stats.Indexes)
+	}
+	if stats.Values != 2 {
+		t.Fatalf("expected value count 2, got %d", stats.Values)
 	}
 
 	t.Log("Check for all valuess for single multihash")
@@ -107,12 +121,13 @@ func TestPutGetRemove(t *testing.T) {
 
 	// Put a batch of multihashes
 	t.Log("Put/Get a batch of multihashes in primary storage")
-	prevIndexCount := s.IndexCount()
+	prevStats := s.Stats()
 	s.Put(value1, batch...)
-	if s.IndexCount() != prevIndexCount+len(batch) {
-		t.Fatalf("Did not get expected index count of %d, got %d", len(batch)+2, s.IndexCount())
+	curStats := s.Stats()
+	if curStats.Indexes != prevStats.Indexes+len(batch) {
+		t.Fatalf("Did not get expected index count of %d, got %d", prevStats.Indexes+len(batch), curStats.Indexes)
 	}
-	t.Logf("Stored %d new values out of %d total", len(batch), s.IndexCount())
+	t.Logf("Stored %d new values out of %d total", len(batch), curStats.Indexes)
 
 	ents, found = s.Get(mhs[5])
 	if !found {
@@ -161,15 +176,15 @@ func TestPutGetRemove(t *testing.T) {
 		t.Fatal("should not have removed non-existent value")
 	}
 
-	indexes := s.IndexCount()
+	stats = s.Stats()
 	t.Log("Remove provider")
 	removed = s.RemoveProvider(provID)
-	if removed < indexes {
-		t.Fatalf("should have removed %d indexes, only removed %d", indexes, removed)
+	if removed < stats.Indexes {
+		t.Fatalf("should have removed %d indexes, only removed %d", stats.Indexes, removed)
 	}
-	indexes = s.IndexCount()
-	if indexes != 0 {
-		t.Fatalf("should have 0 indexes after removing only provider, got %d", indexes)
+	stats = s.Stats()
+	if stats.Indexes != 0 || stats.Values != 0 {
+		t.Fatalf("should have no indexes or values after removing only provider")
 	}
 }
 
@@ -193,7 +208,8 @@ func TestRotate(t *testing.T) {
 	mhs = test.RandomMultihashes(maxSize + 5)
 
 	s.Put(value1, mhs...)
-	if s.IndexCount() == 0 {
+	stats := s.Stats()
+	if stats.Indexes == 0 || stats.Values == 0 {
 		t.Fatal("did not put batch of multihashes")
 	}
 
@@ -232,6 +248,48 @@ func TestRotate(t *testing.T) {
 	}
 }
 
+func TestUnboundedGrowth(t *testing.T) {
+	const maxSize = 4
+	s := New(maxSize)
+	mhs := test.RandomMultihashes(11)
+
+	mhash := mhs[0]
+	mhs = mhs[1:]
+	value := indexer.Value{
+		ProviderID:    provID,
+		MetadataBytes: []byte("metadata"),
+	}
+
+	for i := range mhs {
+		value.ContextID = []byte(mhs[i])
+		s.Put(value, mhash)
+		s.Remove(value, mhash)
+	}
+
+	st := s.Stats()
+	if st.Values > maxSize {
+		t.Fatal("Unbounded memory growth")
+	}
+
+	s = New(maxSize)
+
+	for i := 0; i < maxSize; i++ {
+		value.ContextID = []byte(mhs[i])
+		s.Put(value, mhash)
+		s.Remove(value, mhash)
+	}
+
+	value.ContextID = []byte(mhs[4])
+	s.Put(value, mhash)
+	value.ContextID = []byte(mhs[5])
+	s.Put(value, mhash)
+
+	st = s.Stats()
+	if st.Values > 2*maxSize {
+		t.Fatal("Unbounded memory growth")
+	}
+}
+
 func TestMemoryUse(t *testing.T) {
 	skipUnlessMemUse(t)
 
@@ -243,7 +301,8 @@ func TestMemoryUse(t *testing.T) {
 		ContextID:     ctxID,
 		MetadataBytes: []byte(mhs[0]),
 	}
-	var prevAlloc, prevIndexes uint64
+	var prevAlloc uint64
+	var prevIndexes int
 
 	for count := 1; count <= 1024; count *= 2 {
 		t.Run(fmt.Sprintf("MemoryUse %d multihashes", count*1024), func(t *testing.T) {
@@ -261,10 +320,8 @@ func TestMemoryUse(t *testing.T) {
 			t.Log("Alloc after GC: ", m.Alloc)
 			t.Log("Items delta:", stats.Indexes-prevIndexes)
 			t.Log("Alloc delta:", m.Alloc-prevAlloc)
-			t.Log("Rotations:", stats.Rotations)
+			t.Log("Evictions:", stats.Evictions)
 			t.Log("Values:", stats.Values)
-			t.Log("MaxForIndex:", stats.MaxForIndex)
-			t.Log("Interned Values:", stats.InternedValues)
 			prevAlloc = m.Alloc
 			prevIndexes = stats.Indexes
 		})

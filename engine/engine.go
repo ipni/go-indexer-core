@@ -1,10 +1,15 @@
 package engine
 
 import (
+	"context"
+	"time"
+
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
+	"github.com/filecoin-project/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
+	"go.opencensus.io/stats"
 )
 
 // Engine is an implementation of indexer.Interface that combines a result
@@ -34,9 +39,16 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 		return e.valueStore.Get(m)
 	}
 
+	startTime := time.Now()
+	ctx := context.Background()
+	defer func() {
+		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
+	}()
+
 	// Check if multihash in resultCache
 	v, found := e.resultCache.Get(m)
-	if !found && e.valueStore != nil {
+	if !found {
+		stats.Record(ctx, metrics.CacheMisses.M(1))
 		var err error
 		v, found, err = e.valueStore.Get(m)
 		if err != nil {
@@ -48,6 +60,8 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 				e.resultCache.Put(v[i], m)
 			}
 		}
+	} else {
+		stats.Record(ctx, metrics.CacheHits.M(1))
 	}
 	return v, found, nil
 }
@@ -98,8 +112,14 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 			// then do it here.
 			e.resultCache.Put(value)
 		}
+		e.updateCacheStats()
 	}
-	return e.valueStore.Put(value, mhs...)
+	err := e.valueStore.Put(value, mhs...)
+	if err != nil {
+		return err
+	}
+	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	return nil
 }
 
 func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
@@ -114,6 +134,7 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	}
 
 	e.resultCache.Remove(value, mhs...)
+	e.updateCacheStats()
 	return nil
 }
 
@@ -129,6 +150,7 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 	}
 
 	e.resultCache.RemoveProvider(providerID)
+	e.updateCacheStats()
 	return nil
 }
 
@@ -144,6 +166,7 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 	}
 
 	e.resultCache.RemoveProviderContext(providerID, contextID)
+	e.updateCacheStats()
 	return nil
 }
 
@@ -161,4 +184,13 @@ func (e *Engine) Close() error {
 
 func (e *Engine) Iter() (indexer.Iterator, error) {
 	return e.valueStore.Iter()
+}
+
+func (e *Engine) updateCacheStats() {
+	st := e.resultCache.Stats()
+	stats.Record(context.Background(),
+		metrics.CacheItems.M(int64(st.Indexes)),
+		metrics.CacheValues.M(int64(st.Values)),
+		metrics.CacheEvictions.M(int64(st.Evictions)),
+	)
 }

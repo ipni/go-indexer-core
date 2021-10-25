@@ -10,4 +10,5 @@ require (
 	github.com/ipld/go-storethehash v0.0.0-20210915160027-d72ca9b0968c
 	github.com/libp2p/go-libp2p-core v0.9.0
 	github.com/multiformats/go-multihash v0.0.16
+	go.opencensus.io v0.23.0
 )
