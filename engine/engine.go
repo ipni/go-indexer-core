@@ -34,16 +34,16 @@ func New(resultCache cache.Interface, valueStore indexer.Interface) *Engine {
 }
 
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	if e.resultCache == nil {
-		// If no result cache, get from value store
-		return e.valueStore.Get(m)
-	}
-
 	startTime := time.Now()
 	ctx := context.Background()
 	defer func() {
 		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
 	}()
+
+	if e.resultCache == nil {
+		// If no result cache, get from value store
+		return e.valueStore.Get(m)
+	}
 
 	// Check if multihash in resultCache
 	v, found := e.resultCache.Get(m)
