@@ -10,9 +10,12 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/gammazero/radixtree"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
+
+var log = logging.Logger("indexer-core/cache")
 
 // radixCache is a rotatable cache with value deduplication.
 type radixCache struct {
@@ -102,6 +105,7 @@ keysLoop:
 	// rotation.
 	if c.curEnts.Len() > (c.rotateSize << 1) {
 		c.rotate()
+		// Remove all non-indexed cache entries.
 		c.previous.Walk("", func(k string, v interface{}) bool {
 			values := v.([]*indexer.Value)
 			for _, val := range values {
@@ -116,13 +120,15 @@ keysLoop:
 		c.previous = nil
 		c.prevEnts = nil
 
-		// If there are still too many values, this means that there are more
-		// values than multihashes, and probably indicates a misuse of the
-		// indexer.  Dump the cache as an emergency mechanism to prevent
-		// unbounded memory growth.
-		fmt.Fprintln(os.Stderr, "Error too many values: the number of values greatly exceeds the number of multihashes (indexer misuse), dumping cache.")
-		c.rotate()
-		c.rotate()
+		if c.curEnts.Len() > (c.rotateSize << 1) {
+			// If there are still too many values, this means that there are
+			// more values than multihashes, and probably indicates a misuse of
+			// the indexer.  Dump the cache as an emergency mechanism to
+			// prevent unbounded memory growth.
+			log.Error("The number of values greatly exceeds the number of multihashes (indexer misuse), dumping cache.")
+			c.rotate()
+			c.rotate()
+		}
 	}
 
 	return count
@@ -333,6 +339,7 @@ func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
 func (c *radixCache) rotate() {
 	if c.previous != nil {
 		c.evictions += c.previous.Len()
+		log.Infow("Rotating cache", "evictions", c.previous.Len())
 	}
 	c.previous, c.current = c.current, radixtree.New()
 	c.prevEnts, c.curEnts = c.curEnts, radixtree.New()
