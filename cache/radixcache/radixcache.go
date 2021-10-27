@@ -2,17 +2,19 @@ package radixcache
 
 import (
 	"bytes"
-	"fmt"
-	"os"
+	"context"
+
 	"strings"
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
+	"github.com/filecoin-project/go-indexer-core/metrics"
 	"github.com/gammazero/radixtree"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
+	"go.opencensus.io/stats"
 )
 
 var log = logging.Logger("indexer-core/cache")
@@ -125,9 +127,11 @@ keysLoop:
 			// more values than multihashes, and probably indicates a misuse of
 			// the indexer.  Dump the cache as an emergency mechanism to
 			// prevent unbounded memory growth.
-			log.Error("The number of values greatly exceeds the number of multihashes (indexer misuse), dumping cache.")
+			log.Error("Too many values indexed by multihashes (indexer misuse), clearing cache.",
+				"values", c.curEnts.Len, "multihashes", c.current.Len())
 			c.rotate()
 			c.rotate()
+			stats.Record(context.Background(), metrics.CacheMisuse.M(1))
 		}
 	}
 
