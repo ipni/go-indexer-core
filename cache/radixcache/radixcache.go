@@ -2,6 +2,8 @@ package radixcache
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -114,9 +116,13 @@ keysLoop:
 		c.previous = nil
 		c.prevEnts = nil
 
-		// TODO: if there are still too many values, then need to refuse to
-		// cache some.  This means that there are more values than multihashes,
-		// which probably indicates a misuse of the indexer.
+		// If there are still too many values, this means that there are more
+		// values than multihashes, and probably indicates a misuse of the
+		// indexer.  Dump the cache as an emergency mechanism to prevent
+		// unbounded memory growth.
+		fmt.Fprintln(os.Stderr, "Error too many values: the number of values greatly exceeds the number of multihashes (indexer misuse), dumping cache.")
+		c.rotate()
+		c.rotate()
 	}
 
 	return count
@@ -148,7 +154,6 @@ func (c *radixCache) Remove(value indexer.Value, mhs ...multihash.Multihash) int
 	if c.prevEnts != nil && c.previous != nil && c.previous.Len() == 0 {
 		c.prevEnts = nil
 	}
-	//if c.current.Len()
 
 	return count
 }

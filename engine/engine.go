@@ -17,9 +17,13 @@ import (
 type Engine struct {
 	resultCache cache.Interface
 	valueStore  indexer.Interface
+
+	statsSampleCountdown int
 }
 
 var _ indexer.Interface = &Engine{}
+
+const recordStatsEveryNSamples = 500
 
 // New implements the indexer.Interface.  It creates a new Engine with the
 // given result cache and value store
@@ -187,6 +191,11 @@ func (e *Engine) Iter() (indexer.Iterator, error) {
 }
 
 func (e *Engine) updateCacheStats() {
+	if e.statsSampleCountdown > 0 {
+		e.statsSampleCountdown--
+		return
+	}
+	e.statsSampleCountdown = recordStatsEveryNSamples
 	st := e.resultCache.Stats()
 	stats.Record(context.Background(),
 		metrics.CacheItems.M(int64(st.Indexes)),
