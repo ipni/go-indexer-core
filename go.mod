@@ -7,7 +7,9 @@ require (
 	github.com/gammazero/keymutex v0.0.2
 	github.com/gammazero/radixtree v0.2.5
 	github.com/ipfs/go-cid v0.1.0
+	github.com/ipfs/go-log/v2 v2.3.0
 	github.com/ipld/go-storethehash v0.0.0-20210915160027-d72ca9b0968c
 	github.com/libp2p/go-libp2p-core v0.9.0
 	github.com/multiformats/go-multihash v0.0.16
+	go.opencensus.io v0.23.0
 )

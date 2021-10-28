@@ -33,6 +33,21 @@ type Interface interface {
 	// RemoveProviderContext removes the value that has the specified
 	// providerID and contextID, and all indexes mapped to that value.  This is
 	// used when a provider no longer provides values for a particular context.
-	// Returns the number of indexes that were mapped to the value
+	// Returns the number of indexes that were mapped to the value.
 	RemoveProviderContext(providerID peer.ID, contextID []byte) int
+
+	// IndexCount returns the numbert of cached multihash-to-values entries.
+	IndexCount() int
+
+	// Stats returns a Stats snapshot of cache values.
+	Stats() Stats
+}
+
+type Stats struct {
+	// Indexes counts the indexes cached; each index is multihash->[]Value.
+	Indexes int
+	// Values counts cached values, whether or not they are reachable by index.
+	Values int
+	// Evictions counts the number of multihashes evicted from cache.
+	Evictions int
 }
