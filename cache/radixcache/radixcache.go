@@ -290,7 +290,7 @@ func (c *radixCache) IndexCount() int {
 	return indexCount
 }
 
-func (c *radixCache) Stats() cache.CacheStats {
+func (c *radixCache) Stats() cache.Stats {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -304,7 +304,7 @@ func (c *radixCache) Stats() cache.CacheStats {
 		valueCount += c.prevEnts.Len()
 	}
 
-	return cache.CacheStats{
+	return cache.Stats{
 		Indexes:   indexCount,
 		Values:    valueCount,
 		Evictions: c.evictions,

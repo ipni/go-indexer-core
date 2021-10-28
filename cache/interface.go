@@ -39,11 +39,11 @@ type Interface interface {
 	// IndexCount returns the numbert of cached multihash-to-values entries.
 	IndexCount() int
 
-	// Stats returns a CacheStats snapshot of cache values.
-	Stats() CacheStats
+	// Stats returns a Stats snapshot of cache values.
+	Stats() Stats
 }
 
-type CacheStats struct {
+type Stats struct {
 	// Indexes counts the indexes cached; each index is multihash->[]Value.
 	Indexes int
 	// Values counts cached values, whether or not they are reachable by index.

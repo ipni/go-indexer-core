@@ -20,7 +20,7 @@ var (
 	CacheItems     = stats.Int64("core/cache/items", "Number of indexes in cache", stats.UnitDimensionless)
 	CacheValues    = stats.Int64("core/cache/values", "Number of values in cache", stats.UnitDimensionless)
 	CacheEvictions = stats.Int64("core/cache/evictions", "Number of indexes evicted from cache", stats.UnitDimensionless)
-	CacheMisuse    = stats.Int64("core/cache/misuse", "Emergency cache clears due to misuse", stats.UnitDimensionless)
+	CacheMisuse    = stats.Int64("core/cache/misuse", "Cache clears due to high value to multihash ratio (indexer misuse)", stats.UnitDimensionless)
 
 	GetIndexLatency   = stats.Float64("core/get_index_latency", "Time to retrieve an index", stats.UnitMilliseconds)
 	IngestMultihashes = stats.Int64("core/ingest_multihashes", "Number of multihashes put into the indexer", stats.UnitDimensionless)
@@ -76,6 +76,7 @@ var DefaultViews = []*view.View{
 	cacheItemsView,
 	cacheValuesView,
 	cacheEvictionsView,
+	cacheMisuseView,
 	getIndexLatencyView,
 	ingestMultihashesView,
 	storeSizeView,
