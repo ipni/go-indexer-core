@@ -88,11 +88,101 @@ func (s *pStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error
 }
 
 func (s *pStorage) RemoveProvider(providerID peer.ID) error {
-	// NOTE: There is no straightforward way of implementing this batch
-	// remove. We could use an offline process which iterates through all keys
-	// removing/updating the ones belonging to provider.  Deferring to the
-	// future
-	panic("not implemented")
+	err := s.store.Sync()
+	if err != nil {
+		return err
+	}
+	iter := s.store.Items()
+
+	valsToDel := map[string]struct{}{}
+
+	s.mdLock.Lock()
+	defer s.mdLock.Unlock()
+
+	for {
+		key, val, err := iter.Next()
+		if err != nil {
+			if err == pogreb.ErrIterationDone {
+				return nil
+			}
+			return err
+		}
+
+		if !bytes.HasPrefix(key, indexKeyPrefix) {
+			// Key does not have index prefix, so is not an index key.
+			continue
+		}
+
+		values, err := indexer.UnmarshalValues(val)
+		if err != nil {
+			return err
+		}
+
+		if len(values) == 0 {
+			if err = s.store.Delete(key); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Separate values into those to remove and those to keep.
+		var vdel, vkeep []indexer.Value
+		for i := range values {
+			if values[i].ProviderID == providerID {
+				vdel = append(vdel, values[i])
+			} else {
+				vkeep = append(vkeep, values[i])
+			}
+		}
+
+		if len(vdel) == 0 {
+			continue
+		}
+
+		// If there are no values to keep, then remove the index.  Otherwise,
+		// update the index to have the remaining values.
+		if len(vkeep) == 0 {
+			if err = s.store.Delete(key); err != nil {
+				return err
+			}
+		} else {
+			// store the list of value keys for the multihash
+			b, err := indexer.MarshalValues(vkeep)
+			if err != nil {
+				return err
+			}
+			err = s.store.Put(key, b)
+			if err != nil {
+				return err
+			}
+		}
+
+		for i := range vdel {
+			valsToDel[string(vdel[i].ContextID)] = struct{}{}
+		}
+	}
+
+	if len(valsToDel) == 0 {
+		return nil
+	}
+
+	// Delete the metadata for each value.
+	var buf bytes.Buffer
+	for ctxid := range valsToDel {
+		buf.WriteString(ctxid)
+		mdKey := makeMetadataKey(indexer.Value{
+			ProviderID: providerID,
+			ContextID:  buf.Bytes(),
+		})
+		// Remove metadata.
+		err = s.store.Delete(mdKey)
+		if err != nil {
+			return err
+		}
+		buf.Reset()
+	}
+
+	return nil
 }
 
 func (s *pStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
