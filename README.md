@@ -34,6 +34,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
@@ -52,6 +53,7 @@ func main() {
 	const cacheSize = 65536
 
 	// Create value store of configured type.
+	os.Mkdir(valueStoreDir, 0770)
 	var valueStore indexer.Interface
 	var err error
 	if storeType == "sth" {
@@ -79,9 +81,10 @@ func main() {
 	cid1, _ := cid.Decode("QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB")
 	cid2, _ := cid.Decode("QmUaPc2U1nUJeVj6HxBxS5fGxTWAmpvzwnhB8kavMVAotE")
 	peerID, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	ctxID := []byte("someCtxID")
 	value := indexer.Value{
 		ProviderID:    peerID,
-		ContextID:     []byte("someCtxID"),
+		ContextID:     ctxID,
 		MetadataBytes: []byte("someMetadata"),
 	}
 	indexerCore.Put(value, cid1.Hash(), cid2.Hash())
@@ -93,6 +96,11 @@ func main() {
 	}
 	if found {
 		log.Printf("Found %d values for cid1", len(values))
+	}
+	
+	// Remove provider values by contextID, and multihashes that map to them.
+	if err = indexerCore.RemoveProviderContext(peerID, ctxID); err != nil {
+		log.Fatal(err)                                                                                                                   
 	}
 }
 ```
