@@ -17,6 +17,7 @@ import (
 type Engine struct {
 	resultCache cache.Interface
 	valueStore  indexer.Interface
+	cacheOnPut  bool
 
 	prevCacheStats cache.Stats
 }
@@ -25,13 +26,20 @@ var _ indexer.Interface = &Engine{}
 
 // New implements the indexer.Interface.  It creates a new Engine with the
 // given result cache and value store
-func New(resultCache cache.Interface, valueStore indexer.Interface) *Engine {
+func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
+	var cfg config
+	err := cfg.apply(options...)
+	if err != nil {
+		panic(err.Error())
+	}
+
 	if valueStore == nil {
 		panic("valueStore is required")
 	}
 	return &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
+		cacheOnPut:  cfg.cacheOnPut,
 	}
 }
 
@@ -71,8 +79,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 
 func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if e.resultCache != nil {
-		var mhsCopy []multihash.Multihash
-		var putVal bool
+		var addToCache, mhsCopy []multihash.Multihash
 		for i := 0; i < len(mhs); {
 			v, found := e.resultCache.Get(mhs[i])
 
@@ -105,16 +112,15 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 				}
 				// Add this value to those already in the result cache, since
 				// the multihash was already cached.
-				e.resultCache.Put(value, mhs[i])
-				putVal = true
+				addToCache = append(addToCache, mhs[i])
+			} else if e.cacheOnPut {
+				addToCache = append(addToCache, mhs[i])
 			}
 			i++
 		}
-		if !putVal {
-			// If there was no put to update existing metadata in the cache,
-			// then do it here.
-			e.resultCache.Put(value)
-		}
+
+		// Update value for existing multihashes, or add new index entries to cache if cacheOnPut is set.
+		e.resultCache.Put(value, addToCache...)
 		e.updateCacheStats()
 	}
 	err := e.valueStore.Put(value, mhs...)
