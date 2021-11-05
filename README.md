@@ -87,7 +87,10 @@ func main() {
 		ContextID:     ctxID,
 		MetadataBytes: []byte("someMetadata"),
 	}
-	indexerCore.Put(value, cid1.Hash(), cid2.Hash())
+	err = indexerCore.Put(value, cid1.Hash(), cid2.Hash())
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Lookup provider data by multihash.
 	values, found, err := indexerCore.Get(cid1.Hash())
@@ -99,7 +102,8 @@ func main() {
 	}
 	
 	// Remove provider values by contextID, and multihashes that map to them.
-	if err = indexerCore.RemoveProviderContext(peerID, ctxID); err != nil {
+	err = indexerCore.RemoveProviderContext(peerID, ctxID)
+	if err != nil {
 		log.Fatal(err)                                                                                                                   
 	}
 }
