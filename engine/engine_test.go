@@ -13,7 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-func initEngine(t *testing.T, withCache bool) *Engine {
+func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 	var tmpDir string
 	var err error
 	if runtime.GOOS == "windows" {
@@ -32,11 +32,11 @@ func initEngine(t *testing.T, withCache bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return New(resultCache, valueStore)
+	return New(resultCache, valueStore, CacheOnPut(cacheOnPut))
 }
 
 func TestPassthrough(t *testing.T) {
-	eng := initEngine(t, true)
+	eng := initEngine(t, true, false)
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
 		t.Fatal(err)
@@ -163,12 +163,63 @@ func TestPassthrough(t *testing.T) {
 	}
 }
 
+func TestCacheOnPut(t *testing.T) {
+	eng := initEngine(t, true, true)
+	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mhs := test.RandomMultihashes(3)
+
+	value1 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("mtadata-1"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[1]),
+		MetadataBytes: []byte("mtadata-2"),
+	}
+
+	single := mhs[2]
+
+	// First put should go to value store and cache
+	err = eng.Put(value1, single)
+	if err != nil {
+		t.Fatal("Error putting single multihash:", err)
+	}
+	_, found, _ := eng.valueStore.Get(single)
+	if !found {
+		t.Fatal("single put did not go to value store")
+	}
+	_, found = eng.resultCache.Get(single)
+	if !found {
+		t.Fatal("single put did not go to result cache")
+	}
+
+	// Updating an existing multihash should also update cache
+	err = eng.Put(value2, single)
+	if err != nil {
+		t.Fatal("Error putting single multihash:", err)
+	}
+	values, _, _ := eng.valueStore.Get(single)
+	if len(values) != 2 {
+		t.Fatal("values not updated in value store")
+	}
+	values, _ = eng.resultCache.Get(single)
+	if len(values) != 2 {
+		t.Fatal("values not updated in resutl cache")
+	}
+}
+
 func TestOnlyValueStore(t *testing.T) {
-	e2e(t, initEngine(t, false))
+	e2e(t, initEngine(t, false, false))
 }
 
 func TestBoth(t *testing.T) {
-	e2e(t, initEngine(t, true))
+	e2e(t, initEngine(t, true, false))
 }
 
 func e2e(t *testing.T, eng *Engine) {
@@ -299,7 +350,7 @@ func e2e(t *testing.T, eng *Engine) {
 }
 
 func SizeTest(t *testing.T) {
-	eng := initEngine(t, true)
+	eng := initEngine(t, true, false)
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
