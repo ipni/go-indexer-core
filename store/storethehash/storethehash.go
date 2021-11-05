@@ -122,7 +122,7 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 		key, _, err := iter.Next()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				break
 			}
 			return err
 		}
@@ -193,10 +193,6 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 		for i := range vdel {
 			valsToDel[string(vdel[i].ContextID)] = struct{}{}
 		}
-	}
-
-	if len(valsToDel) == 0 {
-		return nil
 	}
 
 	// Delete the metadata for each value.

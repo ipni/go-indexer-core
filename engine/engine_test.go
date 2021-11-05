@@ -163,6 +163,122 @@ func TestPassthrough(t *testing.T) {
 	}
 }
 
+func RemoveProviderTest(t *testing.T, s indexer.Interface) {
+	eng := initEngine(t, true)
+
+	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov2, err := peer.Decode("12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV")
+	ctx1id := []byte("ctxid-1")
+	ctx2id := []byte("ctxid-2")
+	value1 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx1-metadata"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx2id,
+		MetadataBytes: []byte("ctx2-metadata"),
+	}
+	value3 := indexer.Value{
+		ProviderID:    prov2,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx3-metadata"),
+	}
+
+	mhs := test.RandomMultihashes(15)
+
+	batch1 := mhs[:5]
+	batch2 := mhs[5:10]
+	batch3 := mhs[10:15]
+
+	// Put a batches of multihashes
+	t.Log("Put batch1 value (provider1 context1)")
+	if err = eng.Put(value1, batch1...); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Put batch2 values (provider1 context1), (provider1 context2)")
+	if err = eng.Put(value1, batch2...); err != nil {
+		t.Fatal(err)
+	}
+	if err = eng.Put(value2, batch2...); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Put batch3 values (provider1 context2), (provider2 context1)")
+	if err = eng.Put(value2, batch3...); err != nil {
+		t.Fatal(err)
+	}
+	if err = eng.Put(value3, batch3...); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := eng.resultCache.Stats()
+	if stats.Values != 3 {
+		t.Fatalf("Wrong number of values; expected 3, got %d", stats.Values)
+	}
+
+	t.Log("Removing provider1")
+	if err = eng.RemoveProvider(prov1); err != nil {
+		t.Fatalf("Error removing provider: %s", err)
+	}
+	_, found, err := eng.Get(mhs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("multihash should have been removed")
+	}
+	_, found, err = eng.Get(mhs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("multihash should have been removed")
+	}
+	_, found, err = eng.Get(mhs[5])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("multihash should have been removed")
+	}
+	vals, found, err := eng.Get(mhs[10])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("multihash should have been found")
+	}
+	if len(vals) != 1 {
+		t.Fatalf("wrong number of values removed for batch3, expected 1 got %d", len(vals))
+	}
+
+	stats = eng.resultCache.Stats()
+	if stats.Values != 1 {
+		t.Fatalf("Wrong number of values; expected 1, got %d", stats.Values)
+	}
+
+	t.Log("Removing provider2")
+	if err = s.RemoveProvider(prov2); err != nil {
+		t.Fatalf("Error removing provider: %s", err)
+	}
+	_, found, err = s.Get(mhs[10])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("multihash should have been removed")
+	}
+
+	stats = eng.resultCache.Stats()
+	if stats.Values != 0 {
+		t.Fatalf("Wrong number of values; expected 0, got %d", stats.Values)
+	}
+}
+
 func TestCacheOnPut(t *testing.T) {
 	eng := initEngine(t, true, true)
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")

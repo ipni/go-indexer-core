@@ -550,14 +550,14 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 	if found {
 		t.Fatal("multihash should have been removed")
 	}
-	vals, found, err := s.Get(mhs[5])
+	_, found, err = s.Get(mhs[5])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found {
 		t.Fatal("multihash should have been removed")
 	}
-	vals, found, err = s.Get(mhs[10])
+	vals, found, err := s.Get(mhs[10])
 	if err != nil {
 		t.Fatal(err)
 	}

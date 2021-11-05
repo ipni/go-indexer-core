@@ -103,7 +103,7 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 		key, val, err := iter.Next()
 		if err != nil {
 			if err == pogreb.ErrIterationDone {
-				return nil
+				break
 			}
 			return err
 		}
@@ -160,10 +160,6 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 		for i := range vdel {
 			valsToDel[string(vdel[i].ContextID)] = struct{}{}
 		}
-	}
-
-	if len(valsToDel) == 0 {
-		return nil
 	}
 
 	// Delete the metadata for each value.
