@@ -3,7 +3,6 @@ package radixcache
 import (
 	"bytes"
 	"context"
-
 	"strings"
 	"sync"
 
@@ -178,18 +177,27 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 
 	walkFunc := func(k string, v interface{}) bool {
 		values := v.([]*indexer.Value)
-		for i := range values {
+		var vrm int
+		for i := 0; i < len(values); {
 			if providerID == values[i].ProviderID {
-				count++
+				vrm++
 				if len(values) == 1 {
-					deletes = append(deletes, k)
-				} else {
-					values[i] = values[len(values)-1]
-					values[len(values)-1] = nil
-					tree.Put(k, values[:len(values)-1])
+					values = nil
+					break
 				}
+				values[i] = values[len(values)-1]
+				values[len(values)-1] = nil
+				values = values[:len(values)-1]
+				continue
 			}
+			i++
 		}
+		if len(values) == 0 {
+			deletes = append(deletes, k)
+		} else if vrm != 0 {
+			tree.Put(k, values)
+		}
+		count += vrm
 		return false
 	}
 
@@ -241,19 +249,27 @@ func (c *radixCache) RemoveProviderContext(providerID peer.ID, contextID []byte)
 
 	walkFunc := func(k string, v interface{}) bool {
 		values := v.([]*indexer.Value)
-		for i := range values {
+		var vrm int
+		for i := 0; i < len(values); {
 			if values[i] == val {
+				vrm++
 				if len(values) == 1 {
-					deletes = append(deletes, k)
-				} else {
-					values[i] = values[len(values)-1]
-					values[len(values)-1] = nil
-					tree.Put(k, values[:len(values)-1])
+					values = nil
+					break
 				}
-				count++
-				break
+				values[i] = values[len(values)-1]
+				values[len(values)-1] = nil
+				values = values[:len(values)-1]
+				continue
 			}
+			i++
 		}
+		if len(values) == 0 {
+			deletes = append(deletes, k)
+		} else {
+			tree.Put(k, values)
+		}
+		count += vrm
 		return false
 	}
 
