@@ -171,6 +171,9 @@ func TestRemoveProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	prov2, err := peer.Decode("12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV")
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx1id := []byte("ctxid-1")
 	ctx2id := []byte("ctxid-2")
 	value1 := indexer.Value{
