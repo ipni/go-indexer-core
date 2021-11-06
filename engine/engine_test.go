@@ -164,7 +164,7 @@ func TestPassthrough(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	eng := initEngine(t, true)
+	eng := initEngine(t, true, true)
 
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -213,12 +213,6 @@ func TestRemoveProvider(t *testing.T) {
 	}
 	if err = eng.Put(value3, batch3...); err != nil {
 		t.Fatal(err)
-	}
-	for i := range mhs {
-		_, _, err = eng.Get(mhs[i])
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 
 	stats := eng.resultCache.Stats()
@@ -337,7 +331,7 @@ func TestCacheOnPut(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	eng := initEngine(t, true)
+	eng := initEngine(t, true, true)
 
 	// Create new valid peer.ID
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -391,12 +385,6 @@ func TestRemoveProviderContext(t *testing.T) {
 	}
 	if err = eng.Put(value3, batch3...); err != nil {
 		t.Fatal(err)
-	}
-	for i := range mhs {
-		_, _, err = eng.Get(mhs[i])
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 
 	// Verify starting with correct values
