@@ -26,3 +26,8 @@ func TestRemoveProviderContext(t *testing.T) {
 	s := memory.New()
 	test.RemoveProviderContextTest(t, s)
 }
+
+func TestRemoveProvider(t *testing.T) {
+	s := memory.New()
+	test.RemoveProviderTest(t, s)
+}

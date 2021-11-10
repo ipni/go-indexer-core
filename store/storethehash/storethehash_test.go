@@ -50,6 +50,11 @@ func TestRemoveProviderContext(t *testing.T) {
 	test.RemoveProviderContextTest(t, s)
 }
 
+func TestRemoveProvider(t *testing.T) {
+	s := initSth(t)
+	test.RemoveProviderTest(t, s)
+}
+
 func TestParallel(t *testing.T) {
 	s := initSth(t)
 	test.ParallelUpdateTest(t, s)

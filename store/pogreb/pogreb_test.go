@@ -63,6 +63,13 @@ func TestRemoveProviderContext(t *testing.T) {
 	test.RemoveProviderContextTest(t, s)
 }
 
+func TestRemoveProvider(t *testing.T) {
+	skipIf32bit(t)
+
+	s := initPogreb(t)
+	test.RemoveProviderTest(t, s)
+}
+
 func skipIf32bit(t *testing.T) {
 	if runtime.GOARCH == "386" {
 		t.Skip("Pogreb cannot use GOARCH=386")

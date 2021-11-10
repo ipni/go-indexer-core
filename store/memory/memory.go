@@ -306,16 +306,23 @@ func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 
 	s.rtree.Walk("", func(k string, v interface{}) bool {
 		values := v.([]*indexer.Value)
-		for i := range values {
+		for i := 0; i < len(values); {
 			if providerID == values[i].ProviderID {
 				if len(values) == 1 {
-					deletes = append(deletes, k)
-				} else {
-					values[i] = values[len(values)-1]
-					values[len(values)-1] = nil
-					s.rtree.Put(k, values[:len(values)-1])
+					values = nil
+					break
 				}
+				values[i] = values[len(values)-1]
+				values[len(values)-1] = nil
+				values = values[:len(values)-1]
+				continue
 			}
+			i++
+		}
+		if len(values) == 0 {
+			deletes = append(deletes, k)
+		} else {
+			s.rtree.Put(k, values)
 		}
 		return false
 	})

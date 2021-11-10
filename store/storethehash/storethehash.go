@@ -106,12 +106,112 @@ func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 }
 
 func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
-	// NOTE: There is no straightforward way of implementing this
-	// batch remove. We can either regenerate the index from
-	// the original data, or iterate through the whole the whole primary storage
-	// inspecting all values for the provider in multihashes.
-	// Deferring to the future
-	panic("not implemented")
+	s.Flush()
+	iter, err := s.primary.Iter()
+	if err != nil {
+		return err
+	}
+
+	uniqKeys := map[string]struct{}{}
+	valsToDel := map[string]struct{}{}
+
+	s.mdLock.Lock()
+	defer s.mdLock.Unlock()
+
+	for {
+		key, _, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		// Decode the key and see if it is key.
+		dm, err := multihash.Decode(key)
+		if err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(dm.Digest, indexKeyPrefix) {
+			// Key does not have index prefix, so is not an index key.
+			continue
+		}
+
+		origMultihash := multihash.Multihash(dm.Digest[len(indexKeyPrefix):])
+		k := string(origMultihash)
+		_, found := uniqKeys[k]
+		if found {
+			continue
+		}
+		uniqKeys[k] = struct{}{}
+
+		valueData, found, err := s.store.Get(multihash.Multihash(key))
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		values, err := indexer.UnmarshalValues(valueData)
+		if err != nil {
+			return err
+		}
+
+		// Separate values into those to remove and those to keep.
+		var vdel, vkeep []indexer.Value
+		for i := range values {
+			if values[i].ProviderID == providerID {
+				vdel = append(vdel, values[i])
+			} else {
+				vkeep = append(vkeep, values[i])
+			}
+		}
+
+		if len(vdel) == 0 {
+			continue
+		}
+
+		// If there are no values to keep, then remove the index.  Otherwise,
+		// update the index to have the remaining values.
+		if len(vkeep) == 0 {
+			_, err = s.store.Remove(key)
+			if err != nil {
+				return err
+			}
+		} else {
+			// store the list of value keys for the multihash
+			b, err := indexer.MarshalValues(vkeep)
+			if err != nil {
+				return err
+			}
+			err = s.store.Put(key, b)
+			if err != nil {
+				return err
+			}
+		}
+
+		for i := range vdel {
+			valsToDel[string(vdel[i].ContextID)] = struct{}{}
+		}
+	}
+
+	// Delete the metadata for each value.
+	var buf bytes.Buffer
+	for ctxid := range valsToDel {
+		buf.WriteString(ctxid)
+		mdKey := makeMetadataKey(indexer.Value{
+			ProviderID: providerID,
+			ContextID:  buf.Bytes(),
+		})
+		// Remove metadata.
+		_, err = s.store.Remove(mdKey)
+		if err != nil {
+			return err
+		}
+		buf.Reset()
+	}
+
+	return nil
 }
 
 func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
