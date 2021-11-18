@@ -28,7 +28,7 @@ var _ indexer.Interface = &Engine{}
 // given result cache and value store
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
 	var cfg config
-	err := cfg.apply(options...)
+	err := cfg.apply(options)
 	if err != nil {
 		panic(err.Error())
 	}

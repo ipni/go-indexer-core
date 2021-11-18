@@ -67,7 +67,9 @@ func TestPeriodicFlush(t *testing.T) {
 	// Init storage
 	tmpDir := t.TempDir()
 
-	s, err := storethehash.New(tmpDir)
+	syncInterval := 200 * time.Millisecond
+
+	s, err := storethehash.New(tmpDir, storethehash.SyncInterval(syncInterval))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +92,7 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 
 	// Sleep for 2 sync Intervals to ensure that data is flushed
-	time.Sleep(2 * storethehash.DefaultSyncInterval)
+	time.Sleep(2 * syncInterval)
 
 	// Regenerate new storage
 	s2, err := storethehash.New(tmpDir)
