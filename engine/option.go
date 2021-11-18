@@ -10,10 +10,10 @@ type config struct {
 type Option func(*config) error
 
 // apply applies the given options to this config.
-func (c *config) apply(opts ...Option) error {
+func (c *config) apply(opts []Option) error {
 	for i, opt := range opts {
 		if err := opt(c); err != nil {
-			return fmt.Errorf("httpserver option %d failed: %s", i, err)
+			return fmt.Errorf("option %d failed: %s", i, err)
 		}
 	}
 	return nil

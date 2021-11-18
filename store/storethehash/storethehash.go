@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/ipld/go-storethehash/store/primary"
@@ -19,13 +18,6 @@ import (
 	"github.com/gammazero/keymutex"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p-core/peer"
-)
-
-// TODO: Benchmark and fine-tune for better performance.
-const (
-	DefaultIndexSizeBits = uint8(24)
-	DefaultBurstRate     = 4 * 1024 * 1024
-	DefaultSyncInterval  = time.Second
 )
 
 var (
@@ -50,7 +42,7 @@ type sthIterator struct {
 
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
-func New(dir string) (indexer.Interface, error) {
+func New(dir string, options ...Option) (indexer.Interface, error) {
 	// NOTE: Using a single file to store index and data.  This may change in
 	// the future, and we may choose to set a max. size to files. Having
 	// several files for storage increases complexity but minimizes the
@@ -62,7 +54,14 @@ func New(dir string) (indexer.Interface, error) {
 		return nil, err
 	}
 
-	s, err := sth.OpenStore(indexPath, primary, DefaultIndexSizeBits, DefaultSyncInterval, DefaultBurstRate)
+	cfg := config{
+		indexSizeBits: defaultIndexSizeBits,
+		syncInterval:  defaultSyncInterval,
+		burstRate:     defaultBurstRate,
+	}
+	cfg.apply(options)
+
+	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.syncInterval, cfg.burstRate)
 	if err != nil {
 		return nil, err
 	}
