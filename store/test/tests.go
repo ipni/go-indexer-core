@@ -142,6 +142,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if indexCount != len(batch)+1 {
 		t.Errorf("Wrong iteration count: expected %d, got %d", len(batch)+1, indexCount)
 	}
+	for i := range batch {
+		b58 := batch[i].B58String()
+		_, ok := seen[b58]
+		if !ok {
+			t.Fatalf("Did not iterate multihash %s", b58)
+		}
+	}
 
 	_, _, err = iter.Next()
 	if err != io.EOF {
