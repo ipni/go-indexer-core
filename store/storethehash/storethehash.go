@@ -137,7 +137,12 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
+		var code uint64
+		suffixPos := len(dm.Digest) - len(indexKeySuffix)
+		codePos := suffixPos - binary.Size(code)
+		code = binary.BigEndian.Uint64(dm.Digest[codePos:suffixPos])
+		origDigest := dm.Digest[:codePos]
+		origMultihash, _ := multihash.Encode(origDigest, code)
 		k := string(origMultihash)
 		_, found := uniqKeys[k]
 		if found {
@@ -292,8 +297,10 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		}
 
 		var code uint64
-		code = binary.BigEndian.Uint64(dm.Digest[len(dm.Digest)-binary.Size(code)-len(indexKeySuffix) : len(dm.Digest)-len(indexKeySuffix)])
-		origDigest := dm.Digest[:len(dm.Digest)-len(indexKeySuffix)-binary.Size(code)]
+		suffixPos := len(dm.Digest) - len(indexKeySuffix)
+		codePos := suffixPos - binary.Size(code)
+		code = binary.BigEndian.Uint64(dm.Digest[codePos:suffixPos])
+		origDigest := dm.Digest[:codePos]
 		origMultihash, _ := multihash.Encode(origDigest, code)
 		k := string(origMultihash)
 		_, found := it.uniqKeys[k]
