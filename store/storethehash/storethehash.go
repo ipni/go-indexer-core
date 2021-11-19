@@ -21,8 +21,8 @@ import (
 )
 
 var (
-	indexKeyPrefix = []byte("I")
-	mdKeyPrefix    = []byte("M")
+	indexKeySuffix = []byte("I")
+	mdKeySuffix    = []byte("M")
 )
 
 type sthStorage struct {
@@ -131,12 +131,12 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 		if err != nil {
 			return err
 		}
-		if !bytes.HasPrefix(dm.Digest, indexKeyPrefix) {
+		if !bytes.HasSuffix(dm.Digest, indexKeySuffix) {
 			// Key does not have index prefix, so is not an index key.
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[len(indexKeyPrefix):])
+		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
 		k := string(origMultihash)
 		_, found := uniqKeys[k]
 		if found {
@@ -285,12 +285,12 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		if !bytes.HasPrefix(dm.Digest, indexKeyPrefix) {
+		if !bytes.HasSuffix(dm.Digest, indexKeySuffix) {
 			// Key does not have index prefix, so is not an index key.
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[len(indexKeyPrefix):])
+		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
 		k := string(origMultihash)
 		_, found := it.uniqKeys[k]
 		if found {
@@ -546,9 +546,9 @@ func (s *sthStorage) populateMetadata(key []byte, values []indexer.Value) ([]ind
 func makeIndexKey(m multihash.Multihash) multihash.Multihash {
 	mhb := []byte(m)
 	var b bytes.Buffer
-	b.Grow(len(indexKeyPrefix) + len(mhb))
-	b.Write(indexKeyPrefix)
+	b.Grow(len(mhb) + len(indexKeySuffix))
 	b.Write(mhb)
+	b.Write(indexKeySuffix)
 	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
 	return mh
 }
@@ -561,9 +561,9 @@ func makeMetadataKey(value indexer.Value) multihash.Multihash {
 	h.Write(value.ContextID)
 
 	var b bytes.Buffer
-	b.Grow(len(mdKeyPrefix) + sha1.Size)
-	b.Write(mdKeyPrefix)
+	b.Grow(sha1.Size + len(mdKeySuffix))
 	b.Write(h.Sum(nil))
+	b.Write(mdKeySuffix)
 	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
 	return mh
 }
