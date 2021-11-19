@@ -136,7 +136,10 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
+		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
+		copy(mhb, dm.Digest)
+		reverseBytes(mhb)
+		origMultihash := multihash.Multihash(mhb)
 		k := string(origMultihash)
 		_, found := uniqKeys[k]
 		if found {
@@ -290,7 +293,10 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
+		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
+		copy(mhb, dm.Digest)
+		reverseBytes(mhb)
+		origMultihash := multihash.Multihash(mhb)
 		k := string(origMultihash)
 		_, found := it.uniqKeys[k]
 		if found {
@@ -549,8 +555,22 @@ func makeIndexKey(m multihash.Multihash) multihash.Multihash {
 	b.Grow(len(mhb) + len(indexKeySuffix))
 	b.Write(mhb)
 	b.Write(indexKeySuffix)
-	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
+	data := b.Bytes()
+	// Reverse the bytes in the identity-wrapped multihash so that the hash
+	// portion of the data is first.
+	reverseBytes(data[:len(data)-len(indexKeySuffix)])
+	mh, _ := multihash.Encode(data, multihash.IDENTITY)
 	return mh
+}
+
+func reverseBytes(b []byte) {
+	i := 0
+	j := len(b) - 1
+	for i < j {
+		b[i], b[j] = b[j], b[i]
+		i++
+		j--
+	}
 }
 
 func makeMetadataKey(value indexer.Value) multihash.Multihash {
