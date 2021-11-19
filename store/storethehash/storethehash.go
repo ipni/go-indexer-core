@@ -3,6 +3,7 @@ package storethehash
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -290,7 +291,10 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		origMultihash := multihash.Multihash(dm.Digest[:len(dm.Digest)-len(indexKeySuffix)])
+		var code uint64
+		code = binary.BigEndian.Uint64(dm.Digest[len(dm.Digest)-binary.Size(code)-len(indexKeySuffix) : len(dm.Digest)-len(indexKeySuffix)])
+		origDigest := dm.Digest[:len(dm.Digest)-len(indexKeySuffix)-binary.Size(code)]
+		origMultihash, _ := multihash.Encode(origDigest, code)
 		k := string(origMultihash)
 		_, found := it.uniqKeys[k]
 		if found {
@@ -545,9 +549,13 @@ func (s *sthStorage) populateMetadata(key []byte, values []indexer.Value) ([]ind
 
 func makeIndexKey(m multihash.Multihash) multihash.Multihash {
 	mhb := []byte(m)
+	decoded, _ := multihash.Decode(mhb)
+	encodedCode := make([]byte, binary.Size(decoded.Code))
+	binary.BigEndian.PutUint64(encodedCode, decoded.Code)
 	var b bytes.Buffer
-	b.Grow(len(mhb) + len(indexKeySuffix))
-	b.Write(mhb)
+	b.Grow(len(decoded.Digest) + binary.Size(decoded.Code) + len(indexKeySuffix))
+	b.Write(decoded.Digest)
+	b.Write(encodedCode)
 	b.Write(indexKeySuffix)
 	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)
 	return mh
