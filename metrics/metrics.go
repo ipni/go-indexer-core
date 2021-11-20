@@ -24,6 +24,7 @@ var (
 
 	GetIndexLatency   = stats.Float64("core/get_index_latency", "Time to retrieve an index", stats.UnitMilliseconds)
 	IngestMultihashes = stats.Int64("core/ingest_multihashes", "Number of multihashes put into the indexer", stats.UnitDimensionless)
+	IngestValues      = stats.Int64("core/ingest_values", "Number of values put into the indexer", stats.UnitDimensionless)
 	StoreSize         = stats.Int64("core/storage_size", "Bytes of storage used to store the indexed content", stats.UnitBytes)
 )
 
@@ -62,6 +63,10 @@ var (
 		Measure:     IngestMultihashes,
 		Aggregation: view.Sum(),
 	}
+	ingestValuesView = &view.View{
+		Measure:     IngestValues,
+		Aggregation: view.Count(),
+	}
 
 	storeSizeView = &view.View{
 		Measure:     StoreSize,
@@ -79,6 +84,7 @@ var DefaultViews = []*view.View{
 	cacheMisuseView,
 	getIndexLatencyView,
 	ingestMultihashesView,
+	ingestValuesView,
 	storeSizeView,
 }
 

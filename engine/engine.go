@@ -127,7 +127,7 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))), metrics.IngestValues.M(1))
 	return nil
 }
 
