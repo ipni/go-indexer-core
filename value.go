@@ -11,9 +11,9 @@ import (
 // the indexer.
 type Value struct {
 	// PrividerID is the peer ID of the provider of the multihash.
-	ProviderID peer.ID
+	ProviderID peer.ID `json:"p"`
 	// ContextID identifies the metadata that is part of this value.
-	ContextID []byte
+	ContextID []byte `json:"c"`
 	// MetadataBytes is serialized metadata.  The is kept serialized, because
 	// the indexer only uses the serialized form of this data.
 	MetadataBytes []byte `json:",omitempty"`
