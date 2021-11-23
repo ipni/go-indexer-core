@@ -16,7 +16,7 @@ type Value struct {
 	ContextID []byte `json:"c"`
 	// MetadataBytes is serialized metadata.  The is kept serialized, because
 	// the indexer only uses the serialized form of this data.
-	MetadataBytes []byte `json:",omitempty"`
+	MetadataBytes []byte `json:"m,omitempty"`
 }
 
 // Match return true if both values have the same ProviderID and ContextID.
@@ -55,13 +55,13 @@ func UnmarshalValue(b []byte) (Value, error) {
 //
 // TODO: Switch from JSON to a more efficient serialization
 // format once we figure out the right data structure?
-func MarshalValues(vals []Value) ([]byte, error) {
-	return json.Marshal(&vals)
+func MarshalValueKeys(valKeys [][]byte) ([]byte, error) {
+	return json.Marshal(&valKeys)
 }
 
-// Unmarshal serialized Value list
-func UnmarshalValues(b []byte) ([]Value, error) {
-	vals := []Value{}
-	err := json.Unmarshal(b, &vals)
-	return vals, err
+// Unmarshal serialized value keys list
+func UnmarshalValueKeys(b []byte) ([][]byte, error) {
+	var valKeys [][]byte
+	err := json.Unmarshal(b, &valKeys)
+	return valKeys, err
 }
