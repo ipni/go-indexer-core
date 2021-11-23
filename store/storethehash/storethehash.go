@@ -81,13 +81,13 @@ func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	valKey, err := s.updateValue(value, len(mhs) != 0)
 	if err != nil {
-		return fmt.Errorf("cannot update stored value: %w", err)
+		return fmt.Errorf("cannot store value: %s", err)
 	}
 
 	for i := range mhs {
 		err = s.putIndex(mhs[i], valKey)
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot store index: %s", err)
 		}
 	}
 	return nil
@@ -261,7 +261,7 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		// Get the value for each value key
 		values, err := it.storage.getValues(key, valueKeys)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("cannot get values for multihash: %s", err)
 		}
 
 		if len(values) == 0 {
@@ -275,7 +275,7 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 func (s *sthStorage) getValueKeys(k []byte) ([][]byte, error) {
 	valueKeysData, found, err := s.store.Get(k)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot get multihash from store: %w", err)
+		return nil, fmt.Errorf("cannot get multihash from store: %s", err)
 	}
 	if !found {
 		return nil, nil
@@ -296,7 +296,7 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	// Get the value for each value key.
 	values, err := s.getValues(k, valueKeys)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("cannot get values for multihash: %s", err)
 	}
 
 	if len(values) == 0 {
@@ -314,7 +314,7 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 
 	existingValKeys, err := s.getValueKeys(k)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot get value keys for multihash: %s", err)
 	}
 	// If found it means there is already a value there.  Check if we are
 	// trying to put a duplicate value.
@@ -329,12 +329,12 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	// Store the new list of value keys for the multihash
 	b, err := indexer.MarshalValueKeys(valKeys)
 	if err != nil {
-		return fmt.Errorf("cannot encode value keys for index: %w", err)
+		return err
 	}
 
 	err = s.store.Put(k, b)
 	if err != nil {
-		return fmt.Errorf("cannot put multihash: %w", err)
+		return fmt.Errorf("cannot put multihash: %s", err)
 	}
 
 	return nil
@@ -366,7 +366,7 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 			}
 			err = s.store.Put(valKey, valData)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("cannot save new value: %s", err)
 			}
 		}
 		return valKey, nil
@@ -379,7 +379,7 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 	}
 	if !bytes.Equal(newValData, valData) {
 		if err = s.store.Put(valKey, newValData); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot update existing value: %s", err)
 		}
 	}
 
@@ -436,7 +436,7 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 		valData, found, err := s.store.Get(valueKeys[i])
 		if err != nil {
 			s.valLock.RUnlock()
-			return nil, err
+			return nil, fmt.Errorf("cannot get value: %s", err)
 		}
 		if !found {
 			// If value not in datastore, this means it has been
@@ -463,7 +463,10 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 
 		if len(valueKeys) == 0 {
 			_, err := s.store.Remove(key)
-			return nil, err
+			if err != nil {
+				return nil, fmt.Errorf("cannot delete multihash: %s", err)
+			}
+			return nil, nil
 		}
 
 		// Update the values this mmultihash maps to.
@@ -472,7 +475,7 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 			return nil, err
 		}
 		if err = s.store.Put(key, b); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot update value keys for multihash: %s", err)
 		}
 	}
 
