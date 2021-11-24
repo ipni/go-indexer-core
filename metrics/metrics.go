@@ -17,7 +17,7 @@ var (
 var (
 	CacheHits        = stats.Int64("core/cache/hits", "Number of retireval cache hits", stats.UnitDimensionless)
 	CacheMisses      = stats.Int64("core/cache/misses", "Number of retireval cache misses", stats.UnitDimensionless)
-	CacheMultihashes = stats.Int64("core/cache/items", "Number of cached multihashes", stats.UnitDimensionless)
+	CacheMultihashes = stats.Int64("core/cache/multihashes", "Number of cached multihashes", stats.UnitDimensionless)
 	CacheValues      = stats.Int64("core/cache/values", "Number of cached values", stats.UnitDimensionless)
 	CacheEvictions   = stats.Int64("core/cache/evictions", "Number of indexes evicted from cache", stats.UnitDimensionless)
 	CacheMisuse      = stats.Int64("core/cache/misuse", "Cache clears due to high value to multihash ratio (indexer misuse)", stats.UnitDimensionless)
