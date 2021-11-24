@@ -4,7 +4,11 @@
 [![Coverage Status](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main/graph/badge.svg)](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main)
 > Storage specialized for indexing provider content
 
-This is a storage system for storing and retrieving the mapping of content multihashes to provider data.  It is optimized for storing large numbers of multihashes mapping to relatively few provider data objects.  Provider data describes the providers of content referenced by a multihash and information on how to retrieve that content from the providers.  The data to store is given as a provider value object and a set of multihashes that are provided by that provider using that value object.  Data is retrieved by using a multihash to lookup the provider value objects.  Provider data can be updated and removed independent of the multihashes that map to it.
+The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects.  A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
+
+Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored withing that deal. Data is retrieved by looking up a multihash key to lookup the provider value(s) it maps to.  Provider data can be updated and removed independent of the multihashes that map to it.
+
+This indexer-core is the key-value store that is used within an indexer.  An indexer using this indexer-core must also supply all the service functionality necessary to create an indexing service.
 
 ### Configurable Cache
 An integrated cache is included to aid in fast index lookups.  The cache can be optionally disabled, and its size is configurable. The cache interface allows other cache implementations to be used.
