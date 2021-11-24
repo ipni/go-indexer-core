@@ -26,6 +26,10 @@ import (
 
 const DefaultSyncInterval = time.Second
 
+// valueKeySize is the number of bytes of hash(providerID + contextID) used as
+// key to lookup values.
+const valueKeySize = 20
+
 var (
 	indexKeyPrefix = []byte("idx")
 	valueKeyPrefix = []byte("md")
@@ -445,7 +449,7 @@ func makeValueKey(value indexer.Value) []byte {
 	// Create a hash of the ProviderID and ContextID so that the key length is
 	// fixed.  This hash is used to look up the Value, which contains
 	// ProviderID, ContextID, and Metadata.
-	h, err := blake2b.New256(nil)
+	h, err := blake2b.New(valueKeySize, nil)
 	if err != nil {
 		panic(err)
 	}
