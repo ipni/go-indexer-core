@@ -8,7 +8,6 @@ package pogreb
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +21,7 @@ import (
 	"github.com/gammazero/keymutex"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
+	"golang.org/x/crypto/blake2b"
 )
 
 const DefaultSyncInterval = time.Second
@@ -163,7 +163,15 @@ func (s *pStorage) Flush() error {
 }
 
 func (s *pStorage) Close() error {
-	return s.store.Close()
+	s.valLock.Lock()
+	defer s.valLock.Unlock()
+	if s.store == nil {
+		// Already closed
+		return nil
+	}
+	err := s.store.Close()
+	s.store = nil
+	return err
 }
 
 func (s *pStorage) Iter() (indexer.Iterator, error) {
@@ -261,10 +269,8 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 		}
 	}
 
-	valKeys := append(existingValKeys, valKey)
-
-	// Store the list of value keys for the multihash.
-	b, err := indexer.MarshalValueKeys(valKeys)
+	// Store the new list of value keys for the multihash.
+	b, err := indexer.MarshalValueKeys(append(existingValKeys, valKey))
 	if err != nil {
 		return err
 	}
@@ -272,7 +278,6 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	err = s.store.Put(k, b)
 	if err != nil {
 		return fmt.Errorf("cannot put multihash: %s", err)
-
 	}
 
 	return nil
@@ -432,12 +437,15 @@ func makeIndexKey(m multihash.Multihash) []byte {
 func makeValueKey(value indexer.Value) []byte {
 	// Create a sha1 hash of the ProviderID and ContextID so that the key
 	// length is fixed.  Note: a faster non-crypto hash could be used here.
-	h := sha1.New()
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
 	_, _ = io.WriteString(h, string(value.ProviderID))
 	h.Write(value.ContextID)
 
 	var b bytes.Buffer
-	b.Grow(len(valueKeyPrefix) + sha1.Size)
+	b.Grow(len(valueKeyPrefix) + h.Size())
 	b.Write(valueKeyPrefix)
 	b.Write(h.Sum(nil))
 	return b.Bytes()

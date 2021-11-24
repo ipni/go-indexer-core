@@ -70,6 +70,20 @@ func TestRemoveProvider(t *testing.T) {
 	test.RemoveProviderTest(t, s)
 }
 
+func TestClose(t *testing.T) {
+	skipIf32bit(t)
+
+	s := initPogreb(t)
+	err := s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func skipIf32bit(t *testing.T) {
 	if runtime.GOARCH == "386" {
 		t.Skip("Pogreb cannot use GOARCH=386")

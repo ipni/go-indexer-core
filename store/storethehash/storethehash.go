@@ -2,7 +2,6 @@ package storethehash
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"github.com/ipld/go-storethehash/store/primary"
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	"github.com/multiformats/go-multihash"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/gammazero/keymutex"
 	sth "github.com/ipld/go-storethehash/store"
@@ -172,24 +172,23 @@ func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte)
 }
 
 func (s *sthStorage) Size() (int64, error) {
-	size := int64(0)
+	var size int64
 	fi, err := os.Stat(filepath.Join(s.dir, "storethehash.data"))
 	if err != nil {
-		return size, err
+		return 0, err
 	}
 	size += fi.Size()
 	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index"))
 	if err != nil {
-		return size, err
+		return 0, err
 	}
 	size += fi.Size()
 	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index.free"))
 	if err != nil {
-		return size, err
+		return 0, err
 	}
 	size += fi.Size()
 	return size, nil
-
 }
 
 func (s *sthStorage) Flush() error {
@@ -324,10 +323,8 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 		}
 	}
 
-	valKeys := append(existingValKeys, valKey)
-
-	// Store the new list of value keys for the multihash
-	b, err := indexer.MarshalValueKeys(valKeys)
+	// Store the new list of value keys for the multihash.
+	b, err := indexer.MarshalValueKeys(append(existingValKeys, valKey))
 	if err != nil {
 		return err
 	}
@@ -509,12 +506,15 @@ func reverseBytes(b []byte) {
 func makeValueKey(value indexer.Value) multihash.Multihash {
 	// Create a sha1 hash of the ProviderID and ContextID so that the key
 	// length is fixed.  Note: a faster non-crypto hash could be used here.
-	h := sha1.New()
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
 	_, _ = io.WriteString(h, string(value.ProviderID))
 	h.Write(value.ContextID)
 
 	var b bytes.Buffer
-	b.Grow(sha1.Size + len(valueKeySuffix))
+	b.Grow(h.Size() + len(valueKeySuffix))
 	b.Write(h.Sum(nil))
 	b.Write(valueKeySuffix)
 	mh, _ := multihash.Encode(b.Bytes(), multihash.IDENTITY)

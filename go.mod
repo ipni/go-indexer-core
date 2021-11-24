@@ -12,4 +12,5 @@ require (
 	github.com/libp2p/go-libp2p-core v0.9.0
 	github.com/multiformats/go-multihash v0.0.16
 	go.opencensus.io v0.23.0
+	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 )
