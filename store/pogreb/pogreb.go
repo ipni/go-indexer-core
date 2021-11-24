@@ -66,13 +66,13 @@ func (s *pStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 func (s *pStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	valKey, err := s.updateValue(value, len(mhs) != 0)
 	if err != nil {
-		return fmt.Errorf("cannot store value: %s", err)
+		return fmt.Errorf("cannot store value: %w", err)
 	}
 
 	for i := range mhs {
 		err = s.putIndex(mhs[i], valKey)
 		if err != nil {
-			return fmt.Errorf("cannot store index: %s", err)
+			return fmt.Errorf("cannot store index: %w", err)
 		}
 	}
 	return nil
@@ -99,6 +99,8 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 	defer s.valLock.Unlock()
 
 	for {
+		// Iterate through all stored items, examining values and skipping
+		// multihashes.
 		key, valueData, err := iter.Next()
 		if err != nil {
 			if err == pogreb.ErrIterationDone {
@@ -106,12 +108,13 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 			}
 			return err
 		}
-
 		if !bytes.HasPrefix(key, valueKeyPrefix) {
 			// Key does not have value prefix, so is not an value key.
 			continue
 		}
 
+		// If a value was found, skip it if the provider is different than the
+		// one being removed.
 		if valueData != nil {
 			value, err := indexer.UnmarshalValue(valueData)
 			if err != nil {
@@ -123,6 +126,7 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 			}
 		}
 
+		// Delete the value of the provider being removed.
 		if err = s.store.Delete(key); err != nil {
 			return err
 		}
@@ -132,7 +136,7 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 }
 
 func (s *pStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
-	mdKey := makeValueKey(indexer.Value{
+	valKey := makeValueKey(indexer.Value{
 		ProviderID: providerID,
 		ContextID:  contextID,
 	})
@@ -141,7 +145,7 @@ func (s *pStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) e
 	defer s.valLock.Unlock()
 
 	// Remove any previous value.
-	return s.store.Delete(mdKey)
+	return s.store.Delete(valKey)
 }
 
 func (s *pStorage) Size() (int64, error) {
@@ -207,7 +211,7 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 		// Get the value for each value key
 		values, err := it.s.getValues(key, valueKeys)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot get values for multihash: %s", err)
+			return nil, nil, fmt.Errorf("cannot get values for multihash: %w", err)
 		}
 		if len(values) == 0 {
 			continue
@@ -220,7 +224,7 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 func (s *pStorage) getValueKeys(k []byte) ([][]byte, error) {
 	valueKeysData, err := s.store.Get(k)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get multihash from store: %s", err)
+		return nil, fmt.Errorf("cannot get multihash from store: %w", err)
 	}
 	if valueKeysData == nil {
 		return nil, nil
@@ -241,7 +245,7 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	// Get the value for each value key.
 	values, err := s.getValues(k, valueKeys)
 	if err != nil {
-		return nil, false, fmt.Errorf("cannot get values for multihash: %s", err)
+		return nil, false, fmt.Errorf("cannot get values for multihash: %w", err)
 	}
 
 	if len(values) == 0 {
@@ -259,7 +263,7 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 
 	existingValKeys, err := s.getValueKeys(k)
 	if err != nil {
-		return fmt.Errorf("cannot get value keys for multihash: %s", err)
+		return fmt.Errorf("cannot get value keys for multihash: %w", err)
 	}
 	// If found it means there is already a value there.  Check if we are
 	// trying to put a duplicate value.
@@ -277,7 +281,7 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 
 	err = s.store.Put(k, b)
 	if err != nil {
-		return fmt.Errorf("cannot put multihash: %s", err)
+		return fmt.Errorf("cannot put multihash: %w", err)
 	}
 
 	return nil
@@ -301,9 +305,11 @@ func (s *pStorage) removeIndex(m multihash.Multihash, value indexer.Value) error
 			if len(valueKeys) == 1 {
 				return s.store.Delete(k)
 			}
+			// Remove the value-key from the list of value-keys.
 			valueKeys[i] = valueKeys[len(valueKeys)-1]
 			valueKeys[len(valueKeys)-1] = nil
 			valueKeys = valueKeys[:len(valueKeys)-1]
+			// Update the list of value-keys that the multihash maps to.
 			b, err := indexer.MarshalValueKeys(valueKeys)
 			if err != nil {
 				return err
@@ -340,7 +346,7 @@ func (s *pStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error
 			}
 			err = s.store.Put(valKey, valData)
 			if err != nil {
-				return nil, fmt.Errorf("cannot save new value: %s", err)
+				return nil, fmt.Errorf("cannot save new value: %w", err)
 			}
 		}
 		return valKey, nil
@@ -354,7 +360,7 @@ func (s *pStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error
 	if !bytes.Equal(newValData, valData) {
 		err = s.store.Put(valKey, newValData)
 		if err != nil {
-			return nil, fmt.Errorf("cannot update existing value: %s", err)
+			return nil, fmt.Errorf("cannot update existing value: %w", err)
 		}
 	}
 
@@ -370,8 +376,7 @@ func (s *pStorage) unlock(k []byte) {
 }
 
 func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, error) {
-	startLen := len(valueKeys)
-	var values []indexer.Value
+	values := make([]indexer.Value, 0, len(valueKeys))
 
 	s.valLock.RLock()
 	for i := 0; i < len(valueKeys); {
@@ -379,7 +384,7 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 		valData, err := s.store.Get(valueKeys[i])
 		if err != nil {
 			s.valLock.RUnlock()
-			return nil, fmt.Errorf("cannot get value: %s", err)
+			return nil, fmt.Errorf("cannot get value: %w", err)
 		}
 		if valData == nil {
 			// If value not in datastore, this means it has been
@@ -400,14 +405,16 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 	}
 	s.valLock.RUnlock()
 
-	if len(valueKeys) < startLen {
+	// If some of the values were removed, then update the value-key list for
+	// the multihash.
+	if len(valueKeys) < cap(values) {
 		s.lock(key)
 		defer s.unlock(key)
 
 		if len(valueKeys) == 0 {
 			err := s.store.Delete(key)
 			if err != nil {
-				return nil, fmt.Errorf("cannot delete multihash: %s", err)
+				return nil, fmt.Errorf("cannot delete multihash: %w", err)
 			}
 			return nil, nil
 		}
@@ -418,7 +425,7 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 			return nil, err
 		}
 		if err = s.store.Put(key, b); err != nil {
-			return nil, fmt.Errorf("cannot update value keys for multihash: %s", err)
+			return nil, fmt.Errorf("cannot update value keys for multihash: %w", err)
 		}
 	}
 
@@ -435,8 +442,9 @@ func makeIndexKey(m multihash.Multihash) []byte {
 }
 
 func makeValueKey(value indexer.Value) []byte {
-	// Create a sha1 hash of the ProviderID and ContextID so that the key
-	// length is fixed.  Note: a faster non-crypto hash could be used here.
+	// Create a hash of the ProviderID and ContextID so that the key length is
+	// fixed.  This hash is used to look up the Value, which contains
+	// ProviderID, ContextID, and Metadata.
 	h, err := blake2b.New256(nil)
 	if err != nil {
 		panic(err)

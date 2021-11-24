@@ -15,15 +15,16 @@ var (
 
 // Measures
 var (
-	CacheHits      = stats.Int64("core/cache/hits", "Number of retireval cache hits", stats.UnitDimensionless)
-	CacheMisses    = stats.Int64("core/cache/misses", "Number of retireval cache misses", stats.UnitDimensionless)
-	CacheItems     = stats.Int64("core/cache/items", "Number of indexes in cache", stats.UnitDimensionless)
-	CacheValues    = stats.Int64("core/cache/values", "Number of values in cache", stats.UnitDimensionless)
-	CacheEvictions = stats.Int64("core/cache/evictions", "Number of indexes evicted from cache", stats.UnitDimensionless)
-	CacheMisuse    = stats.Int64("core/cache/misuse", "Cache clears due to high value to multihash ratio (indexer misuse)", stats.UnitDimensionless)
+	CacheHits        = stats.Int64("core/cache/hits", "Number of retireval cache hits", stats.UnitDimensionless)
+	CacheMisses      = stats.Int64("core/cache/misses", "Number of retireval cache misses", stats.UnitDimensionless)
+	CacheMultihashes = stats.Int64("core/cache/items", "Number of cached multihashes", stats.UnitDimensionless)
+	CacheValues      = stats.Int64("core/cache/values", "Number of cached values", stats.UnitDimensionless)
+	CacheEvictions   = stats.Int64("core/cache/evictions", "Number of indexes evicted from cache", stats.UnitDimensionless)
+	CacheMisuse      = stats.Int64("core/cache/misuse", "Cache clears due to high value to multihash ratio (indexer misuse)", stats.UnitDimensionless)
 
 	GetIndexLatency   = stats.Float64("core/get_index_latency", "Time to retrieve an index", stats.UnitMilliseconds)
 	IngestMultihashes = stats.Int64("core/ingest_multihashes", "Number of multihashes put into the indexer", stats.UnitDimensionless)
+	RemovedProviders  = stats.Int64("core/removed_providers", "Number of providers removed from indexer", stats.UnitDimensionless)
 	StoreSize         = stats.Int64("core/storage_size", "Bytes of storage used to store the indexed content", stats.UnitBytes)
 )
 
@@ -37,8 +38,8 @@ var (
 		Measure:     CacheMisses,
 		Aggregation: view.Count(),
 	}
-	cacheItemsView = &view.View{
-		Measure:     CacheItems,
+	cacheMultihashesView = &view.View{
+		Measure:     CacheMultihashes,
 		Aggregation: view.LastValue(),
 	}
 	cacheValuesView = &view.View{
@@ -62,6 +63,10 @@ var (
 		Measure:     IngestMultihashes,
 		Aggregation: view.Sum(),
 	}
+	removedProvidersView = &view.View{
+		Measure:     RemovedProviders,
+		Aggregation: view.Sum(),
+	}
 
 	storeSizeView = &view.View{
 		Measure:     StoreSize,
@@ -73,12 +78,13 @@ var (
 var DefaultViews = []*view.View{
 	cacheHitsView,
 	cacheMissesView,
-	cacheItemsView,
+	cacheMultihashesView,
 	cacheValuesView,
 	cacheEvictionsView,
 	cacheMisuseView,
 	getIndexLatencyView,
 	ingestMultihashesView,
+	removedProvidersView,
 	storeSizeView,
 }
 

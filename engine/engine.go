@@ -160,6 +160,7 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 
 	e.resultCache.RemoveProvider(providerID)
 	e.updateCacheStats()
+	stats.Record(context.Background(), metrics.RemovedProviders.M(1))
 	return nil
 }
 
@@ -200,7 +201,7 @@ func (e *Engine) updateCacheStats() {
 	st := e.resultCache.Stats()
 	var ms []stats.Measurement
 	if st.Indexes != e.prevCacheStats.Indexes {
-		ms = append(ms, metrics.CacheItems.M(int64(st.Indexes)))
+		ms = append(ms, metrics.CacheMultihashes.M(int64(st.Indexes)))
 	}
 	if st.Values != e.prevCacheStats.Values {
 		ms = append(ms, metrics.CacheValues.M(int64(st.Values)))
