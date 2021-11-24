@@ -58,6 +58,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatalf("Error putting single multihash: %s", err)
 	}
 
+	// Put same value again.
+	t.Log("Put/Get single multihash again")
+	err = s.Put(value1, single)
+	if err != nil {
+		t.Fatalf("Error putting single multihash again: %s", err)
+	}
+
 	vals, found, err := s.Get(single)
 	if err != nil {
 		t.Fatal(err)

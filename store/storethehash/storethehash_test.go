@@ -112,3 +112,15 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Errorf("Got wrong value for single multihash")
 	}
 }
+
+func TestClose(t *testing.T) {
+	s := initSth(t)
+	err := s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
