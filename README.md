@@ -6,12 +6,14 @@
 
 The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects.  A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
 
-Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored withing that deal. Data is retrieved by looking up a multihash key to lookup the provider value(s) it maps to.  Provider data can be updated and removed independent of the multihashes that map to it.
+Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored within that deal. The retrieve a provider value, the indexer-core is given a multihash key to lookup the provider value(s) it maps to.
 
-This indexer-core is the key-value store that is used within an indexer.  An indexer using this indexer-core must also supply all the service functionality necessary to create an indexing service.
+Provider data can be updated and removed independent of the multihashes that map to it. Provider data is uniquely identitied by the provider ID and a context ID.  The context ID is given to the indexer core as part of the provider data value.  When a provider data object is up updated, all subsequent multihash queries will return the new value for that data whether the queries are cached or not.
+
+This indexer-core is the component of an indexer that provides data storage and retrieval for content index data.  An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
 
 ### Configurable Cache
-An integrated cache is included to aid in fast index lookups.  The cache can be optionally disabled, and its size is configurable. The cache interface allows other cache implementations to be used.
+An integrated cache is included to aid in fast index lookups.  By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data.  The cache can be optionally disabled, and its size is configurable. The cache interface allows various cache implementations to be used, should one other than what is provided be useful.
 
 See Usage Example for details.
 
