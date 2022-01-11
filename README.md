@@ -8,7 +8,7 @@ The indexer-core is a key-value store that is optimized for storing large number
 
 Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored within that deal. To subsequently retrieve a provider value, the indexer-core is given a multihash key to lookup.
 
-Provider data can be updated and removed independent of the multihashes that map to it. Provider data is uniquely identitied by the provider ID and a context ID.  The context ID is given to the indexer core as part of the provider data value.  When a provider data object is up updated, all subsequent multihash queries will return the new value for that data whether the queries are cached or not.
+Provider data can be updated and removed independently from the multihashes that map to it. Provider data is uniquely identified by a provider ID and a context ID.  The context ID is given to the indexer core as part of the provider data value.  When a provider data object is updated, all subsequent multihash queries will return the new value for that data whether the queries are cached or not.
 
 This indexer-core is the component of an indexer that provides data storage and retrieval for content index data.  An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
 
