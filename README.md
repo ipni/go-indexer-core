@@ -13,7 +13,7 @@ Provider data can be updated and removed independently from the multihashes that
 This indexer-core is the component of an indexer that provides data storage and retrieval for content index data.  An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
 
 ### Configurable Cache
-An integrated cache is included to aid in fast index lookups.  By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data.  The cache can be optionally disabled, and its size is configurable. The cache interface allows various cache implementations to be used, should one other than what is provided be useful.
+An integrated cache is included to aid in fast index lookups.  By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data.  The cache can be optionally disabled, and its size is configurable. The cache interface allows alternative cache implementations to be used if desired.
 
 See Usage Example for details.
 
