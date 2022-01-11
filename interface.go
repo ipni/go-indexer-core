@@ -6,7 +6,7 @@ import (
 )
 
 type Interface interface {
-	// Get retrieves a slice of Value for a multihash
+	// Get retrieves a slice of Value for a multihash.
 	Get(multihash.Multihash) ([]Value, bool, error)
 
 	// Put stores a Value and adds a mapping from each of the given multihashs
@@ -35,21 +35,21 @@ type Interface interface {
 	// amount of data stored by the indexer.
 	Size() (int64, error)
 
-	// Flush commits any changes to the value storage
+	// Flush commits any changes to the value storage,
 	Flush() error
 
-	// Close gracefully closes the store flushing all pending data from memory
+	// Close gracefully closes the store flushing all pending data from memory,
 	Close() error
 
-	// Iter creates a new value store iterator
+	// Iter creates a new value store iterator.
 	Iter() (Iterator, error)
 }
 
-// Iterator iterates multihashes and values in the value store
+// Iterator iterates multihashes and values in the value store.
 //
-// It should be assumed that any write operation invalidates the iterator
+// It should be assumed that any write operation invalidates the iterator,
 type Iterator interface {
-	// Next returns the next multihash and the value it indexex.  Returns
+	// Next returns the next multihash and the value it indexer.  Returns
 	// io.EOF when finished iterating.
 	Next() (multihash.Multihash, []Value, error)
 }

@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"io/ioutil"
-	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -14,17 +12,7 @@ import (
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
-	var tmpDir string
-	var err error
-	if runtime.GOOS == "windows" {
-		tmpDir, err = ioutil.TempDir("", "sth")
-		if err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		tmpDir = t.TempDir()
-	}
-	valueStore, err := storethehash.New(tmpDir)
+	valueStore, err := storethehash.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +149,11 @@ func TestPassthrough(t *testing.T) {
 	if found {
 		t.Fatal("remove many did not remove value from result cache")
 	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemoveProvider(t *testing.T) {
@@ -280,6 +273,11 @@ func TestRemoveProvider(t *testing.T) {
 	if stats.Values != 0 {
 		t.Fatalf("Wrong number of values; expected 0, got %d", stats.Values)
 	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCacheOnPut(t *testing.T) {
@@ -330,6 +328,11 @@ func TestCacheOnPut(t *testing.T) {
 	values, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
 		t.Fatal("values not updated in resutl cache")
+	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -500,14 +503,27 @@ func TestRemoveProviderContext(t *testing.T) {
 	if found {
 		t.Fatal("multihash should not have been found")
 	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestOnlyValueStore(t *testing.T) {
-	e2e(t, initEngine(t, false, false))
+	eng := initEngine(t, false, false)
+	e2e(t, eng)
+	if err := eng.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestBoth(t *testing.T) {
-	e2e(t, initEngine(t, true, false))
+	eng := initEngine(t, true, false)
+	e2e(t, eng)
+	if err := eng.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func e2e(t *testing.T, eng *Engine) {
@@ -664,5 +680,10 @@ func SizeTest(t *testing.T) {
 	}
 	if size == int64(0) {
 		t.Error("failed to compute storage size")
+	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

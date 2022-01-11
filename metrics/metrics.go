@@ -15,14 +15,14 @@ var (
 
 // Measures
 var (
-	CacheHits        = stats.Int64("core/cache/hits", "Number of retireval cache hits", stats.UnitDimensionless)
-	CacheMisses      = stats.Int64("core/cache/misses", "Number of retireval cache misses", stats.UnitDimensionless)
+	CacheHits        = stats.Int64("core/cache/hits", "Number of retrieval cache hits", stats.UnitDimensionless)
+	CacheMisses      = stats.Int64("core/cache/misses", "Number of retrieval cache misses", stats.UnitDimensionless)
 	CacheMultihashes = stats.Int64("core/cache/multihashes", "Number of cached multihashes", stats.UnitDimensionless)
 	CacheValues      = stats.Int64("core/cache/values", "Number of cached values", stats.UnitDimensionless)
 	CacheEvictions   = stats.Int64("core/cache/evictions", "Number of indexes evicted from cache", stats.UnitDimensionless)
 	CacheMisuse      = stats.Int64("core/cache/misuse", "Cache clears due to high value to multihash ratio (indexer misuse)", stats.UnitDimensionless)
 
-	GetIndexLatency   = stats.Float64("core/get_index_latency", "Time to retrieve an index", stats.UnitMilliseconds)
+	GetIndexLatency   = stats.Float64("core/get_index_latency", "Internal lookup time for a single index", stats.UnitMilliseconds)
 	IngestMultihashes = stats.Int64("core/ingest_multihashes", "Number of multihashes put into the indexer", stats.UnitDimensionless)
 	RemovedProviders  = stats.Int64("core/removed_providers", "Number of providers removed from indexer", stats.UnitDimensionless)
 	StoreSize         = stats.Int64("core/storage_size", "Bytes of storage used to store the indexed content", stats.UnitBytes)

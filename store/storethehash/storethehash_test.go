@@ -1,8 +1,6 @@
 package storethehash_test
 
 import (
-	"io/ioutil"
-	"runtime"
 	"testing"
 	"time"
 
@@ -13,17 +11,7 @@ import (
 )
 
 func initSth(t *testing.T) indexer.Interface {
-	var tmpDir string
-	var err error
-	if runtime.GOOS == "windows" {
-		tmpDir, err = ioutil.TempDir("", "sth")
-		if err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		tmpDir = t.TempDir()
-	}
-	s, err := storethehash.New(tmpDir)
+	s, err := storethehash.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,37 +21,52 @@ func initSth(t *testing.T) indexer.Interface {
 func TestE2E(t *testing.T) {
 	s := initSth(t)
 	test.E2ETest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSize(t *testing.T) {
 	s := initSth(t)
 	test.SizeTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMany(t *testing.T) {
 	s := initSth(t)
 	test.RemoveTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemoveProviderContext(t *testing.T) {
 	s := initSth(t)
 	test.RemoveProviderContextTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemoveProvider(t *testing.T) {
 	s := initSth(t)
 	test.RemoveProviderTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestParallel(t *testing.T) {
 	s := initSth(t)
 	test.ParallelUpdateTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPeriodicFlush(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.SkipNow()
-	}
 	// Init storage
 	tmpDir := t.TempDir()
 
@@ -110,6 +113,13 @@ func TestPeriodicFlush(t *testing.T) {
 	}
 	if !i[0].Equal(value) {
 		t.Errorf("Got wrong value for single multihash")
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = s2.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

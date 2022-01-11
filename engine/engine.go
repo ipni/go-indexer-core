@@ -13,7 +13,7 @@ import (
 )
 
 // Engine is an implementation of indexer.Interface that combines a result
-// cache and a value store
+// cache and a value store.
 type Engine struct {
 	resultCache cache.Interface
 	valueStore  indexer.Interface
@@ -25,7 +25,7 @@ type Engine struct {
 var _ indexer.Interface = &Engine{}
 
 // New implements the indexer.Interface.  It creates a new Engine with the
-// given result cache and value store
+// given result cache and value store.
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
 	var cfg config
 	err := cfg.apply(options)

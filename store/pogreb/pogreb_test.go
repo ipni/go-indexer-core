@@ -1,7 +1,6 @@
 package pogreb_test
 
 import (
-	"io/ioutil"
 	"runtime"
 	"testing"
 
@@ -11,17 +10,7 @@ import (
 )
 
 func initPogreb(t *testing.T) indexer.Interface {
-	var tmpDir string
-	var err error
-	if runtime.GOOS == "windows" {
-		tmpDir, err = ioutil.TempDir("", "sth")
-		if err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		tmpDir = t.TempDir()
-	}
-	s, err := pogreb.New(tmpDir)
+	s, err := pogreb.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +22,9 @@ func TestE2E(t *testing.T) {
 
 	s := initPogreb(t)
 	test.E2ETest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestParallel(t *testing.T) {
@@ -40,6 +32,9 @@ func TestParallel(t *testing.T) {
 
 	s := initPogreb(t)
 	test.ParallelUpdateTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSize(t *testing.T) {
@@ -47,6 +42,9 @@ func TestSize(t *testing.T) {
 
 	s := initPogreb(t)
 	test.SizeTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemove(t *testing.T) {
@@ -54,6 +52,9 @@ func TestRemove(t *testing.T) {
 
 	s := initPogreb(t)
 	test.RemoveTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemoveProviderContext(t *testing.T) {
@@ -61,6 +62,9 @@ func TestRemoveProviderContext(t *testing.T) {
 
 	s := initPogreb(t)
 	test.RemoveProviderContextTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRemoveProvider(t *testing.T) {
@@ -68,6 +72,9 @@ func TestRemoveProvider(t *testing.T) {
 
 	s := initPogreb(t)
 	test.RemoveProviderTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestClose(t *testing.T) {
