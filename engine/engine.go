@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -20,6 +21,7 @@ type Engine struct {
 	cacheOnPut  bool
 
 	prevCacheStats cache.Stats
+	statsMutex     sync.Mutex
 }
 
 var _ indexer.Interface = &Engine{}
@@ -200,6 +202,7 @@ func (e *Engine) updateCacheStats() {
 	// Only record stats that have changed.
 	st := e.resultCache.Stats()
 	var ms []stats.Measurement
+	e.statsMutex.Lock()
 	if st.Indexes != e.prevCacheStats.Indexes {
 		ms = append(ms, metrics.CacheMultihashes.M(int64(st.Indexes)))
 	}
@@ -213,4 +216,5 @@ func (e *Engine) updateCacheStats() {
 		stats.Record(context.Background(), ms...)
 		e.prevCacheStats = st
 	}
+	e.statsMutex.Unlock()
 }
