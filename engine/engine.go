@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -19,7 +20,7 @@ type Engine struct {
 	valueStore  indexer.Interface
 	cacheOnPut  bool
 
-	prevCacheStats cache.Stats
+	prevCacheStats atomic.Value
 }
 
 var _ indexer.Interface = &Engine{}
@@ -197,20 +198,30 @@ func (e *Engine) Iter() (indexer.Iterator, error) {
 }
 
 func (e *Engine) updateCacheStats() {
-	// Only record stats that have changed.
 	st := e.resultCache.Stats()
+	var prevStats *cache.Stats
+
+	prevStatsI := e.prevCacheStats.Load()
+	if prevStatsI == nil {
+		prevStats = &cache.Stats{}
+	} else {
+		prevStats = prevStatsI.(*cache.Stats)
+	}
+
+	// Only record stats that have changed.
 	var ms []stats.Measurement
-	if st.Indexes != e.prevCacheStats.Indexes {
+	if st.Indexes != prevStats.Indexes {
 		ms = append(ms, metrics.CacheMultihashes.M(int64(st.Indexes)))
 	}
-	if st.Values != e.prevCacheStats.Values {
+	if st.Values != prevStats.Values {
 		ms = append(ms, metrics.CacheValues.M(int64(st.Values)))
 	}
-	if st.Evictions != e.prevCacheStats.Evictions {
+	if st.Evictions != prevStats.Evictions {
 		ms = append(ms, metrics.CacheEvictions.M(int64(st.Evictions)))
 	}
+
 	if len(ms) != 0 {
+		e.prevCacheStats.Store(&st)
 		stats.Record(context.Background(), ms...)
-		e.prevCacheStats = st
 	}
 }
