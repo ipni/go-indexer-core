@@ -41,6 +41,10 @@ type Interface interface {
 	// Close gracefully closes the store flushing all pending data from memory,
 	Close() error
 
+	// GC performs garbage collection by removing all multihashes that do not
+	// map to any values.
+	GC() (int, error)
+
 	// Iter creates a new value store iterator.
 	Iter() (Iterator, error)
 }

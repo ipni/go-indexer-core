@@ -43,8 +43,9 @@ type pStorage struct {
 }
 
 type pogrebIter struct {
-	iter *pogreb.ItemIterator
-	s    *pStorage
+	iter    *pogreb.ItemIterator
+	s       *pStorage
+	removed int
 }
 
 // New creates a new indexer.Interface implemented by a pogreb-based value
@@ -182,6 +183,51 @@ func (s *pStorage) Close() error {
 	return err
 }
 
+func (s *pStorage) GC() (int, error) {
+	if err := s.store.Sync(); err != nil {
+		return 0, err
+	}
+
+	var removed int
+	iter := s.store.Items()
+	for {
+		key, valKeysData, err := iter.Next()
+		if err != nil {
+			if err == pogreb.ErrIterationDone {
+				break
+			}
+			return removed, err
+		}
+
+		if !bytes.HasPrefix(key, indexKeyPrefix) {
+			continue
+		}
+
+		valueKeys, err := indexer.UnmarshalValueKeys(valKeysData)
+		if err != nil || len(valueKeys) == 0 {
+			err = s.store.Delete(key)
+			if err != nil {
+				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+			}
+			removed++
+			continue
+		}
+
+		// Get the value for each value key
+		values, err := s.getValues(key, valueKeys)
+		if err != nil {
+			return removed, fmt.Errorf("cannot get values for multihash: %w", err)
+		}
+		if len(values) == 0 {
+			removed++
+		}
+	}
+	if removed != 0 {
+		return removed, s.store.Sync()
+	}
+	return removed, nil
+}
+
 func (s *pStorage) Iter() (indexer.Iterator, error) {
 	err := s.store.Sync()
 	if err != nil {
@@ -218,6 +264,7 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, fmt.Errorf("cannot get values for multihash: %w", err)
 		}
 		if len(values) == 0 {
+			it.removed++
 			continue
 		}
 

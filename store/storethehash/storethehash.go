@@ -208,6 +208,84 @@ func (s *sthStorage) Close() error {
 	return s.store.Close()
 }
 
+func (s *sthStorage) GC() (int, error) {
+	s.Flush()
+	iter, err := s.primary.Iter()
+	if err != nil {
+		return 0, err
+	}
+	uniqKeys := map[string]struct{}{}
+
+	var removed int
+	for {
+		key, _, err := iter.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return removed, err
+		}
+
+		// Decode the key and see if it is an index key.
+		dm, err := multihash.Decode(key)
+		if err != nil {
+			return removed, err
+		}
+		if !bytes.HasSuffix(dm.Digest, indexKeySuffix) {
+			// Key does not have index prefix, so is not an index key.
+			continue
+		}
+
+		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
+		copy(mhb, dm.Digest)
+		reverseBytes(mhb)
+		origMultihash := multihash.Multihash(mhb)
+		k := string(origMultihash)
+		_, found := uniqKeys[k]
+		if found {
+			continue
+		}
+		uniqKeys[k] = struct{}{}
+
+		valueKeysData, found, err := s.store.Get(multihash.Multihash(key))
+		if err != nil {
+			_, err := s.store.Remove(key)
+			if err != nil {
+				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+			}
+			removed++
+			continue
+		}
+		if !found {
+			continue
+		}
+
+		valueKeys, err := indexer.UnmarshalValueKeys(valueKeysData)
+		if err != nil || len(valueKeys) == 0 {
+			_, err := s.store.Remove(key)
+			if err != nil {
+				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+			}
+			removed++
+			continue
+		}
+
+		// Get the value for each value key
+		values, err := s.getValues(key, valueKeys)
+		if err != nil {
+			return removed, fmt.Errorf("cannot get values for multihash: %w", err)
+		}
+
+		if len(values) == 0 {
+			removed++
+		}
+	}
+	if removed != 0 {
+		s.Flush()
+	}
+	return removed, nil
+}
+
 func (s *sthStorage) Iter() (indexer.Iterator, error) {
 	s.Flush()
 	iter, err := s.primary.Iter()

@@ -437,7 +437,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		t.Fatal("multihash should have been found")
 	}
 	if len(vals) != 1 {
-		t.Fatalf("wrong number of multihashes removed for bathc2, expected 2 got %d", len(vals))
+		t.Fatalf("wrong number of multihashes removed for batch2, expected 2 got %d", len(vals))
 	}
 	if !vals[0].Equal(value2) {
 		t.Fatal("Wrong value removed")
@@ -663,5 +663,99 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 	}
 	if len(x) != 1 {
 		t.Error("Value has not been removed by routines correctly", len(x))
+	}
+}
+
+func GCTest(t *testing.T, s indexer.Interface) {
+	// Create new valid peer.ID
+	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov2, err := peer.Decode("12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mhs := RandomMultihashes(2)
+
+	ctx1id := []byte(mhs[0])
+	ctx2id := []byte(mhs[1])
+	value1 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx1-metadata"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    prov1,
+		ContextID:     ctx2id,
+		MetadataBytes: []byte("ctx2-metadata"),
+	}
+	value3 := indexer.Value{
+		ProviderID:    prov2,
+		ContextID:     ctx1id,
+		MetadataBytes: []byte("ctx3-metadata"),
+	}
+
+	mhs = RandomMultihashes(15)
+
+	batch1 := mhs[:5]
+	batch2 := mhs[5:11]
+	batch3 := mhs[11:15]
+
+	// Put a batches of multihashes
+	t.Log("Put batch1 value (provider1 context1)")
+	if err = s.Put(value1, batch1...); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Put batch2 values (provider1 context1), (provider1 context2)")
+	if err = s.Put(value1, batch2...); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Put(value2, batch2...); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Put batch3 values (provider1 context2), (provider2 context1)")
+	if err = s.Put(value2, batch3...); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Put(value3, batch3...); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Removing provider1 context1")
+	// This only deltes multihashes from batch1, because the batch2
+	// multihatches still point to value2.
+	if err = s.RemoveProviderContext(prov1, ctx1id); err != nil {
+		t.Fatalf("Error removing provider context: %s", err)
+	}
+
+	removed, err := s.GC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != len(batch1) {
+		t.Logf("GC removed %d multihashes, expected %d", removed, len(batch1))
+	}
+
+	removed, err = s.GC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 0 {
+		t.Logf("GC removed %d multihashes, expected 0", removed)
+	}
+
+	t.Log("Removing provider1 context2")
+	if err = s.RemoveProviderContext(prov1, ctx2id); err != nil {
+		t.Fatalf("Error removing provider context: %s", err)
+	}
+
+	removed, err = s.GC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != len(batch2) {
+		t.Logf("GC removed %d multihashes, expected %d", removed, len(batch2))
 	}
 }

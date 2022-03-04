@@ -134,3 +134,11 @@ func TestClose(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGC(t *testing.T) {
+	s := initSth(t)
+	test.GCTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
