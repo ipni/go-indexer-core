@@ -1,6 +1,8 @@
 package indexer
 
 import (
+	"context"
+
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
@@ -43,7 +45,7 @@ type Interface interface {
 
 	// GC performs garbage collection by removing all multihashes that do not
 	// map to any values.
-	GC() (int, error)
+	GC(context.Context) (int, error)
 
 	// Iter creates a new value store iterator.
 	Iter() (Iterator, error)

@@ -10,6 +10,7 @@ package memory
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -184,7 +185,7 @@ func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
-func (s *memoryStore) GC() (int, error) { return 0, nil }
+func (s *memoryStore) GC(_ context.Context) (int, error) { return 0, nil }
 
 func (s *memoryStore) Iter() (indexer.Iterator, error) {
 	return &memoryIter{

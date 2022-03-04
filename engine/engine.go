@@ -193,8 +193,8 @@ func (e *Engine) Close() error {
 	return e.valueStore.Close()
 }
 
-func (e *Engine) GC() (int, error) {
-	return e.valueStore.GC()
+func (e *Engine) GC(ctx context.Context) (int, error) {
+	return e.valueStore.GC(ctx)
 }
 
 func (e *Engine) Iter() (indexer.Iterator, error) {

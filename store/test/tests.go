@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -730,7 +731,9 @@ func GCTest(t *testing.T, s indexer.Interface) {
 		t.Fatalf("Error removing provider context: %s", err)
 	}
 
-	removed, err := s.GC()
+	ctx := context.Background()
+
+	removed, err := s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -738,7 +741,7 @@ func GCTest(t *testing.T, s indexer.Interface) {
 		t.Logf("GC removed %d multihashes, expected %d", removed, len(batch1))
 	}
 
-	removed, err = s.GC()
+	removed, err = s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,7 +754,7 @@ func GCTest(t *testing.T, s indexer.Interface) {
 		t.Fatalf("Error removing provider context: %s", err)
 	}
 
-	removed, err = s.GC()
+	removed, err = s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

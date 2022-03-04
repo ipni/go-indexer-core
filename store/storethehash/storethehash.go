@@ -2,6 +2,7 @@ package storethehash
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -208,7 +209,7 @@ func (s *sthStorage) Close() error {
 	return s.store.Close()
 }
 
-func (s *sthStorage) GC() (int, error) {
+func (s *sthStorage) GC(ctx context.Context) (int, error) {
 	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
@@ -218,6 +219,10 @@ func (s *sthStorage) GC() (int, error) {
 
 	var removed int
 	for {
+		if ctx.Err() != nil {
+			return removed, ctx.Err()
+		}
+
 		key, _, err := iter.Next()
 		if err != nil {
 			if err == io.EOF {

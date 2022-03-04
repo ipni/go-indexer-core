@@ -8,6 +8,7 @@ package pogreb
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -183,7 +184,7 @@ func (s *pStorage) Close() error {
 	return err
 }
 
-func (s *pStorage) GC() (int, error) {
+func (s *pStorage) GC(ctx context.Context) (int, error) {
 	if err := s.store.Sync(); err != nil {
 		return 0, err
 	}
@@ -191,6 +192,10 @@ func (s *pStorage) GC() (int, error) {
 	var removed int
 	iter := s.store.Items()
 	for {
+		if ctx.Err() != nil {
+			return removed, ctx.Err()
+		}
+
 		key, valKeysData, err := iter.Next()
 		if err != nil {
 			if err == pogreb.ErrIterationDone {
