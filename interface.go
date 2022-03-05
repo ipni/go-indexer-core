@@ -44,8 +44,9 @@ type Interface interface {
 	Close() error
 
 	// GC performs garbage collection by removing all multihashes that do not
-	// map to any values.
-	GC(context.Context) (int, error)
+	// map to any values.  Returns the number of multihash-value mapping
+	// removed and remaining.
+	GC(context.Context) (int, int, error)
 
 	// Iter creates a new value store iterator.
 	Iter() (Iterator, error)

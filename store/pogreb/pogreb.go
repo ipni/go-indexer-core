@@ -184,16 +184,16 @@ func (s *pStorage) Close() error {
 	return err
 }
 
-func (s *pStorage) GC(ctx context.Context) (int, error) {
+func (s *pStorage) GC(ctx context.Context) (int, int, error) {
 	if err := s.store.Sync(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
-	var removed int
+	var removed, remaining int
 	iter := s.store.Items()
 	for {
 		if ctx.Err() != nil {
-			return removed, ctx.Err()
+			return 0, 0, ctx.Err()
 		}
 
 		key, valKeysData, err := iter.Next()
@@ -201,7 +201,7 @@ func (s *pStorage) GC(ctx context.Context) (int, error) {
 			if err == pogreb.ErrIterationDone {
 				break
 			}
-			return removed, err
+			return 0, 0, err
 		}
 
 		if !bytes.HasPrefix(key, indexKeyPrefix) {
@@ -212,7 +212,7 @@ func (s *pStorage) GC(ctx context.Context) (int, error) {
 		if err != nil || len(valueKeys) == 0 {
 			err = s.store.Delete(key)
 			if err != nil {
-				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+				return 0, 0, fmt.Errorf("cannot delete multihash: %w", err)
 			}
 			removed++
 			continue
@@ -221,16 +221,18 @@ func (s *pStorage) GC(ctx context.Context) (int, error) {
 		// Get the value for each value key
 		values, err := s.getValues(key, valueKeys)
 		if err != nil {
-			return removed, fmt.Errorf("cannot get values for multihash: %w", err)
+			return 0, 0, fmt.Errorf("cannot get values for multihash: %w", err)
 		}
-		if len(values) == 0 {
-			removed++
-		}
+
+		removed += (len(valueKeys) - len(values))
+		remaining += len(values)
 	}
 	if removed != 0 {
-		return removed, s.store.Sync()
+		if err := s.store.Sync(); err != nil {
+			return 0, 0, err
+		}
 	}
-	return removed, nil
+	return removed, remaining, nil
 }
 
 func (s *pStorage) Iter() (indexer.Iterator, error) {

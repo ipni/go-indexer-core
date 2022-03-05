@@ -209,18 +209,18 @@ func (s *sthStorage) Close() error {
 	return s.store.Close()
 }
 
-func (s *sthStorage) GC(ctx context.Context) (int, error) {
+func (s *sthStorage) GC(ctx context.Context) (int, int, error) {
 	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	uniqKeys := map[string]struct{}{}
 
-	var removed int
+	var removed, remaining int
 	for {
 		if ctx.Err() != nil {
-			return removed, ctx.Err()
+			return 0, 0, ctx.Err()
 		}
 
 		key, _, err := iter.Next()
@@ -228,13 +228,13 @@ func (s *sthStorage) GC(ctx context.Context) (int, error) {
 			if err == io.EOF {
 				break
 			}
-			return removed, err
+			return 0, 0, err
 		}
 
 		// Decode the key and see if it is an index key.
 		dm, err := multihash.Decode(key)
 		if err != nil {
-			return removed, err
+			return 0, 0, err
 		}
 		if !bytes.HasSuffix(dm.Digest, indexKeySuffix) {
 			// Key does not have index prefix, so is not an index key.
@@ -256,7 +256,7 @@ func (s *sthStorage) GC(ctx context.Context) (int, error) {
 		if err != nil {
 			_, err := s.store.Remove(key)
 			if err != nil {
-				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+				return 0, 0, fmt.Errorf("cannot delete multihash: %w", err)
 			}
 			removed++
 			continue
@@ -269,7 +269,7 @@ func (s *sthStorage) GC(ctx context.Context) (int, error) {
 		if err != nil || len(valueKeys) == 0 {
 			_, err := s.store.Remove(key)
 			if err != nil {
-				return removed, fmt.Errorf("cannot delete multihash: %w", err)
+				return 0, 0, fmt.Errorf("cannot delete multihash: %w", err)
 			}
 			removed++
 			continue
@@ -278,17 +278,16 @@ func (s *sthStorage) GC(ctx context.Context) (int, error) {
 		// Get the value for each value key
 		values, err := s.getValues(key, valueKeys)
 		if err != nil {
-			return removed, fmt.Errorf("cannot get values for multihash: %w", err)
+			return 0, 0, fmt.Errorf("cannot get values for multihash: %w", err)
 		}
 
-		if len(values) == 0 {
-			removed++
-		}
+		removed += (len(valueKeys) - len(values))
+		remaining += len(values)
 	}
 	if removed != 0 {
 		s.Flush()
 	}
-	return removed, nil
+	return removed, remaining, nil
 }
 
 func (s *sthStorage) Iter() (indexer.Iterator, error) {

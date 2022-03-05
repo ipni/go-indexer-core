@@ -724,41 +724,44 @@ func GCTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
+	ctx := context.Background()
+
 	t.Log("Removing provider1 context1")
 	// This only deltes multihashes from batch1, because the batch2
 	// multihatches still point to value2.
 	if err = s.RemoveProviderContext(prov1, ctx1id); err != nil {
 		t.Fatalf("Error removing provider context: %s", err)
 	}
-
-	ctx := context.Background()
-
-	removed, err := s.GC(ctx)
+	removed, remaining, err := s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if removed != len(batch1) {
-		t.Logf("GC removed %d multihashes, expected %d", removed, len(batch1))
+	// Both batch1 and batch2 mapped to the value with prov1/ctxid1.
+	if removed != len(batch1)+len(batch2) {
+		t.Fatalf("GC removed %d multihashes, expected %d", removed, len(batch1)+len(batch2))
 	}
+	t.Logf("GC removed=%d, remaining=%d", removed, remaining)
 
-	removed, err = s.GC(ctx)
+	removed, remaining, err = s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if removed != 0 {
-		t.Logf("GC removed %d multihashes, expected 0", removed)
+		t.Fatalf("GC removed %d multihashes, expected 0", removed)
 	}
+	t.Logf("GC removed=%d, remaining=%d", removed, remaining)
 
 	t.Log("Removing provider1 context2")
 	if err = s.RemoveProviderContext(prov1, ctx2id); err != nil {
 		t.Fatalf("Error removing provider context: %s", err)
 	}
-
-	removed, err = s.GC(ctx)
+	removed, remaining, err = s.GC(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if removed != len(batch2) {
-		t.Logf("GC removed %d multihashes, expected %d", removed, len(batch2))
+	// Both batch2 and batch3 mapped to the value with prov1/ctxid1.
+	if removed != len(batch2)+len(batch3) {
+		t.Fatalf("GC removed %d multihashes, expected %d", removed, len(batch2)+len(batch3))
 	}
+	t.Logf("GC removed=%d, remaining=%d", removed, remaining)
 }

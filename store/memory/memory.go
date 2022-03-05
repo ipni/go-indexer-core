@@ -185,7 +185,7 @@ func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
-func (s *memoryStore) GC(_ context.Context) (int, error) { return 0, nil }
+func (s *memoryStore) GC(_ context.Context) (int, int, error) { return 0, s.rtree.Len(), nil }
 
 func (s *memoryStore) Iter() (indexer.Iterator, error) {
 	return &memoryIter{

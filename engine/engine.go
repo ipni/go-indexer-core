@@ -193,7 +193,7 @@ func (e *Engine) Close() error {
 	return e.valueStore.Close()
 }
 
-func (e *Engine) GC(ctx context.Context) (int, error) {
+func (e *Engine) GC(ctx context.Context) (int, int, error) {
 	return e.valueStore.GC(ctx)
 }
 
