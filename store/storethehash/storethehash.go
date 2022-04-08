@@ -61,10 +61,11 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 		indexSizeBits: defaultIndexSizeBits,
 		syncInterval:  defaultSyncInterval,
 		burstRate:     defaultBurstRate,
+		gcInterval:    defaultGCInterval,
 	}
 	cfg.apply(options)
 
-	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.syncInterval, cfg.burstRate)
+	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.syncInterval, cfg.burstRate, cfg.gcInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -180,22 +181,17 @@ func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte)
 }
 
 func (s *sthStorage) Size() (int64, error) {
-	var size int64
+	size, err := s.store.IndexStorageSize()
+	if err != nil {
+		return 0, err
+	}
+
 	fi, err := os.Stat(filepath.Join(s.dir, "storethehash.data"))
 	if err != nil {
 		return 0, err
 	}
 	size += fi.Size()
-	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index"))
-	if err != nil {
-		return 0, err
-	}
-	size += fi.Size()
-	fi, err = os.Stat(filepath.Join(s.dir, "storethehash.index.free"))
-	if err != nil {
-		return 0, err
-	}
-	size += fi.Size()
+
 	return size, nil
 }
 

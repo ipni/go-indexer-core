@@ -11,6 +11,7 @@ const (
 	defaultBurstRate     = 4 * 1024 * 1024
 	defaultIndexSizeBits = uint8(24)
 	defaultSyncInterval  = time.Second
+	defaultGCInterval    = 30 * time.Minute
 )
 
 // config contains all options for configuring storethehash valuestore.
@@ -44,6 +45,11 @@ func SyncInterval(syncInterval time.Duration) Option {
 func BurstRate(burstRate uint64) Option {
 	return func(cfg *config) {
 		cfg.burstRate = sthtypes.Work(burstRate)
+	}
+}
 
+func GCInterval(gcInterval time.Duration) Option {
+	return func(cfg *config) {
+		cfg.gcInterval = gcInterval
 	}
 }
