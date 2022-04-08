@@ -54,7 +54,7 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 	dataPath := filepath.Join(dir, "storethehash.data")
 	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error opening storethehash primary: %w", err)
 	}
 
 	cfg := config{
@@ -67,7 +67,7 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 
 	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.syncInterval, cfg.burstRate, cfg.gcInterval)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
 	s.Start()
 	return &sthStorage{
