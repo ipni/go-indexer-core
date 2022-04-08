@@ -19,6 +19,7 @@ type config struct {
 	burstRate     sthtypes.Work
 	indexSizeBits uint8
 	syncInterval  time.Duration
+	gcInterval    time.Duration
 }
 
 type Option func(*config)
