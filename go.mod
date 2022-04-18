@@ -8,7 +8,7 @@ require (
 	github.com/gammazero/radixtree v0.2.5
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipld/go-storethehash v0.1.3
+	github.com/ipld/go-storethehash v0.1.4
 	github.com/libp2p/go-libp2p-core v0.14.0
 	github.com/multiformats/go-multihash v0.1.0
 	go.opencensus.io v0.23.0
@@ -17,7 +17,7 @@ require (
 
 require (
 	github.com/btcsuite/btcd v0.20.1-beta // indirect
-	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
 	github.com/libp2p/go-openssl v0.0.7 // indirect
