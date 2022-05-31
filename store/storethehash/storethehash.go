@@ -205,7 +205,10 @@ func (s *sthStorage) Close() error {
 }
 
 func (s *sthStorage) Iter() (indexer.Iterator, error) {
-	s.Flush()
+	err := s.Flush()
+	if err != nil {
+		return nil, err
+	}
 	iter, err := s.primary.Iter()
 	if err != nil {
 		return nil, err
