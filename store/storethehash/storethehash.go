@@ -59,13 +59,14 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 
 	cfg := config{
 		indexSizeBits: defaultIndexSizeBits,
+		indexFileSize: defaultIndexFileSize,
 		syncInterval:  defaultSyncInterval,
 		burstRate:     defaultBurstRate,
 		gcInterval:    defaultGCInterval,
 	}
 	cfg.apply(options)
 
-	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.syncInterval, cfg.burstRate, cfg.gcInterval)
+	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
