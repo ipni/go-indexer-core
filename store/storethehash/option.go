@@ -10,6 +10,7 @@ import (
 const (
 	defaultBurstRate     = 4 * 1024 * 1024
 	defaultIndexSizeBits = uint8(24)
+	defaultIndexFileSize = uint32(1024 * 1024 * 1024)
 	defaultSyncInterval  = time.Second
 	defaultGCInterval    = 30 * time.Minute
 )
@@ -18,6 +19,7 @@ const (
 type config struct {
 	burstRate     sthtypes.Work
 	indexSizeBits uint8
+	indexFileSize uint32
 	syncInterval  time.Duration
 	gcInterval    time.Duration
 }
@@ -34,6 +36,12 @@ func (c *config) apply(opts []Option) {
 func IndexBitSize(indexBitSize uint8) Option {
 	return func(cfg *config) {
 		cfg.indexSizeBits = indexBitSize
+	}
+}
+
+func IndexFileSize(indexFileSize uint32) Option {
+	return func(cfg *config) {
+		cfg.indexFileSize = indexFileSize
 	}
 }
 
