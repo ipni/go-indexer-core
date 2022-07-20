@@ -2,6 +2,7 @@ package storethehash
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -45,7 +46,7 @@ type sthIterator struct {
 
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
-func New(dir string, options ...Option) (indexer.Interface, error) {
+func New(ctx context.Context, dir string, options ...Option) (indexer.Interface, error) {
 	// NOTE: Using a single file to store index and data.  This may change in
 	// the future, and we may choose to set a max. size to files. Having
 	// several files for storage increases complexity but minimizes the
@@ -66,7 +67,7 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 	}
 	cfg.apply(options)
 
-	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
+	s, err := sth.OpenStore(ctx, indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
