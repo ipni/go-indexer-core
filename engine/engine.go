@@ -149,9 +149,9 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-func (e *Engine) RemoveProvider(providerID peer.ID) error {
+func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	// Remove first from valueStore.
-	err := e.valueStore.RemoveProvider(providerID)
+	err := e.valueStore.RemoveProvider(ctx, providerID)
 	if err != nil {
 		return err
 	}

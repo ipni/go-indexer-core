@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -547,7 +548,7 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 	}
 
 	t.Log("Removing provider1")
-	if err = s.RemoveProvider(prov1); err != nil {
+	if err = s.RemoveProvider(context.Background(), prov1); err != nil {
 		t.Fatalf("Error removing provider: %s", err)
 	}
 	_, found, err := s.Get(mhs[0])
@@ -583,7 +584,7 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 	}
 
 	t.Log("Removing provider2")
-	if err = s.RemoveProvider(prov2); err != nil {
+	if err = s.RemoveProvider(context.Background(), prov2); err != nil {
 		t.Fatalf("Error removing provider: %s", err)
 	}
 	_, found, err = s.Get(mhs[10])

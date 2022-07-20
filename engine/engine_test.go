@@ -218,7 +218,7 @@ func TestRemoveProvider(t *testing.T) {
 	}
 
 	t.Log("Removing provider1")
-	if err = eng.RemoveProvider(prov1); err != nil {
+	if err = eng.RemoveProvider(context.Background(), prov1); err != nil {
 		t.Fatalf("Error removing provider: %s", err)
 	}
 	_, found, err := eng.Get(mhs[0])
@@ -259,7 +259,7 @@ func TestRemoveProvider(t *testing.T) {
 	}
 
 	t.Log("Removing provider2")
-	if err = eng.RemoveProvider(prov2); err != nil {
+	if err = eng.RemoveProvider(context.Background(), prov2); err != nil {
 		t.Fatalf("Error removing provider: %s", err)
 	}
 	_, found, err = eng.Get(mhs[10])

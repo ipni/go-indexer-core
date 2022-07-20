@@ -1,6 +1,8 @@
 package indexer
 
 import (
+	"context"
+
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 )
@@ -21,7 +23,7 @@ type Interface interface {
 
 	// RemoveProvider removes all values for specified provider. This is used
 	// when a provider is no longer indexed by the indexer.
-	RemoveProvider(peer.ID) error
+	RemoveProvider(context.Context, peer.ID) error
 
 	// RemoveProviderContext removes all values for specified provider that
 	// have the specified contextID. This is used when a provider no longer

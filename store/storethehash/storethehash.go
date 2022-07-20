@@ -109,7 +109,7 @@ func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 	return nil
 }
 
-func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
+func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
@@ -119,7 +119,13 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 	s.valLock.Lock()
 	defer s.valLock.Unlock()
 
+	var count int
 	for {
+		if count%1024 == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		count++
+
 		// Iterate through all stored items, examining values and skipping
 		// multihashes.
 		key, _, err := iter.Next()
