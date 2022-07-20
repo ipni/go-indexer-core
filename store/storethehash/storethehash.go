@@ -47,10 +47,10 @@ type sthIterator struct {
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
 func New(ctx context.Context, dir string, options ...Option) (indexer.Interface, error) {
-	// NOTE: Using a single file to store index and data.  This may change in
-	// the future, and we may choose to set a max. size to files. Having
-	// several files for storage increases complexity but minimizes the
-	// overhead of compaction (once we have it)
+	// Using a single file to store index and data. This may change in the
+	// future, and we may choose to set a max. size to files. Having several
+	// files for storage increases complexity but minimizes the overhead of
+	// compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
 	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
@@ -130,13 +130,13 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 			return err
 		}
 
-		// Decode the key and see if it is key.
+		// Decode the key and see if it is a value key.
 		dm, err := multihash.Decode(key)
 		if err != nil {
 			return err
 		}
 		if !bytes.HasSuffix(dm.Digest, valueKeySuffix) {
-			// Key does not have value suffix, so is not an value key.
+			// Key does not have value suffix, so not a value key.
 			continue
 		}
 
@@ -324,8 +324,8 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	if err != nil {
 		return fmt.Errorf("cannot get value keys for multihash: %w", err)
 	}
-	// If found it means there is already a value there.  Check if we are
-	// trying to put a duplicate value.
+	// If found it means there is already a value there. Check if we are trying
+	// to put a duplicate value.
 	for _, existing := range existingValKeys {
 		if bytes.Equal(valKey, existing) {
 			return nil
@@ -446,9 +446,9 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 			return nil, fmt.Errorf("cannot get value: %w", err)
 		}
 		if !found {
-			// If value not in datastore, this means it has been
-			// deleted, and the mapping from the multihash to that value
-			// should also be removed.
+			// If value not in datastore, this means it has been deleted, and
+			// the mapping from the multihash to that value should also be
+			// removed.
 			valueKeys[i] = valueKeys[len(valueKeys)-1]
 			valueKeys[len(valueKeys)-1] = nil
 			valueKeys = valueKeys[:len(valueKeys)-1]
@@ -517,7 +517,7 @@ func reverseBytes(b []byte) {
 
 func makeValueKey(value indexer.Value) multihash.Multihash {
 	// Create a hash of the ProviderID and ContextID so that the key length is
-	// fixed.  This hash is used to look up the Value, which contains
+	// fixed. This hash is used to look up the Value, which contains
 	// ProviderID, ContextID, and Metadata.
 	h, err := blake2b.New(valueKeySize, nil)
 	if err != nil {

@@ -87,7 +87,7 @@ keysLoop:
 				// There is no need to match and replace any existing value,
 				// because the existing values with the same ProviderID and
 				// ContextID would already have had their metadata updaed by
-				// internValue().  This is true for items that only existed in
+				// internValue(). This is true for items that only existed in
 				// old cache, since the interning process would have brought
 				// their value pointers forward into the new cache.
 			}
@@ -124,8 +124,8 @@ keysLoop:
 		if c.curEnts.Len() > (c.rotateSize << 1) {
 			// If there are still too many values, this means that there are
 			// more values than multihashes, and probably indicates a misuse of
-			// the indexer.  Dump the cache as an emergency mechanism to
-			// prevent unbounded memory growth.
+			// the indexer. Dump the cache as an emergency mechanism to prevent
+			// unbounded memory growth.
 			log.Error("Too many values indexed by multihashes (indexer misuse), clearing cache.",
 				"values", c.curEnts.Len, "multihashes", c.current.Len())
 			c.rotate()
@@ -216,7 +216,7 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 			hasPrevValues = removeProviderInterns(c.prevEnts, providerID)
 		}
 		// There may not be any previous interns if they were all pulled
-		// forward, but there could still be previous indexes.  So, walk the
+		// forward, but there could still be previous indexes. So, walk the
 		// previous cache if there are any current or previous values.
 		if hasPrevValues || hasCurValues {
 			deletes = deletes[:0]
@@ -328,14 +328,14 @@ func (c *radixCache) Stats() cache.Stats {
 }
 
 func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
-	// Search current cache
+	// Search current cache.
 	v, found := c.current.Get(k)
 	if !found {
 		if c.previous == nil {
 			return nil, false
 		}
 
-		// Search previous if not found in current
+		// Search previous if not found in current.
 		v, found = c.previous.Get(k)
 		if !found {
 			return nil, false
@@ -376,11 +376,11 @@ func (c *radixCache) rotate() {
 // existing value, the existing value's metadata is updated.
 //
 // A set of multihahses and a metadata, for a particular (providerID,
-// contextID) can only be set once.  This means that for any (providerID,
+// contextID) can only be set once. This means that for any (providerID,
 // contextID) there will only ever be one instance of a particular metadata
-// value.  So, two different Values cannot have the same provider ID and
-// context ID, but different metadata.  Therefore, metadata is not needed as
-// part of the unique key for a value.
+// value. So, two different Values cannot have the same provider ID and context
+// ID, but different metadata. Therefore, metadata is not needed as part of the
+// unique key for a value.
 func (c *radixCache) internValue(value *indexer.Value, updateMeta, saveNew bool) *indexer.Value {
 	k, v, found := c.findInternValue(value)
 	if found {
@@ -410,14 +410,14 @@ func (c *radixCache) findInternValue(value *indexer.Value) (string, *indexer.Val
 	k := b.String()
 	v, found := c.curEnts.Get(k)
 	if found {
-		// Found existing interned value
+		// Found existing interned value.
 		return k, v.(*indexer.Value), true
 	}
 
 	if c.prevEnts != nil {
 		v, found = c.prevEnts.Get(k)
 		if found {
-			// Pull interned value forward from previous cache
+			// Pull interned value forward from previous cache.
 			c.curEnts.Put(k, v)
 			c.prevEnts.Delete(k)
 			return k, v.(*indexer.Value), true
@@ -428,7 +428,7 @@ func (c *radixCache) findInternValue(value *indexer.Value) (string, *indexer.Val
 }
 
 func removeIndex(tree *radixtree.Bytes, k string, value *indexer.Value) bool {
-	// Get from current cache
+	// Get from current cache.
 	v, found := tree.Get(k)
 	if !found {
 		return false
