@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -12,7 +13,7 @@ import (
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
-	valueStore, err := storethehash.New(t.TempDir())
+	valueStore, err := storethehash.New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
