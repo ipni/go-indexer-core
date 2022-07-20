@@ -6,19 +6,14 @@
 
 The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects. A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
 
+Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys identify content stored within that deal. To subsequently retrieve a provider value, the indexer-core is given a multihash key to lookup.
+
+[Data Storage](doc/data-storage.md) provides more detail on how data is stored by the indexer-core.
+
 This indexer-core is the component of an indexer that provides data storage and retrieval for content index data. An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
 
-### Data Storage
-
-Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored within that deal. To subsequently retrieve a provider value, the indexer-core is given a multihash key to lookup.
-
-Provider data can be updated and removed independently from the multihashes that map to it. Provider data is uniquely identified by a provider ID and a context ID. The context ID is given to the indexer core as part of the provider data value. When a provider data object is updated, all subsequent multihash queries will return the new value for that data whether the queries are cached or not.
-
-Unique provider records are looked up by a provider key, which is a hash of the provider ID and the record's context ID. A multihash can map to multiple provider records, since the same content may be stored by different provider and be part of separate deals at the same provider. To provider this functionality, the indexer core maps each multihash to a list of provider keys, and maps each provider key to a provider record.
-
-![indexer-core-data](doc/indexer-core-data.png)
-
 ### Configurable Cache
+
 An integrated cache is included to aid in fast index lookups. By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data. The cache can be optionally disabled, and its size is configurable. The cache interface allows alternative cache implementations to be used if desired.
 
 See Usage Example for details.
