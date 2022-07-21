@@ -14,7 +14,7 @@ type Value struct {
 	ProviderID peer.ID `json:"p"`
 	// ContextID identifies the metadata that is part of this value.
 	ContextID []byte `json:"c"`
-	// MetadataBytes is serialized metadata.  The is kept serialized, because
+	// MetadataBytes is serialized metadata. The is kept serialized, because
 	// the indexer only uses the serialized form of this data.
 	MetadataBytes []byte `json:"m,omitempty"`
 }
@@ -24,7 +24,7 @@ func (v Value) Match(other Value) bool {
 	return v.ProviderID == other.ProviderID && bytes.Equal(v.ContextID, other.ContextID)
 }
 
-// Equal returns true if two Value instances are identical
+// Equal returns true if two Value instances are identical.
 func (v Value) Equal(other Value) bool {
 	return v.Match(other) && bytes.Equal(v.MetadataBytes, other.MetadataBytes)
 }
@@ -53,13 +53,13 @@ func UnmarshalValue(b []byte) (Value, error) {
 
 // MarshalValues serializes a Value list for storage.
 //
-// TODO: Switch from JSON to a more efficient serialization
-// format once we figure out the right data structure?
+// TODO: Switch from JSON to a more efficient serialization format once we
+// figure out the right data structure?
 func MarshalValueKeys(valKeys [][]byte) ([]byte, error) {
 	return json.Marshal(&valKeys)
 }
 
-// Unmarshal serialized value keys list
+// Unmarshal serialized value keys list.
 func UnmarshalValueKeys(b []byte) ([][]byte, error) {
 	var valKeys [][]byte
 	err := json.Unmarshal(b, &valKeys)

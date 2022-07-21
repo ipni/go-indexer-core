@@ -25,8 +25,8 @@ type Engine struct {
 
 var _ indexer.Interface = &Engine{}
 
-// New implements the indexer.Interface.  It creates a new Engine with the
-// given result cache and value store.
+// New implements the indexer.Interface. It creates a new Engine with the given
+// result cache and value store.
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
 	var cfg config
 	err := cfg.apply(options)
@@ -52,11 +52,11 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	}()
 
 	if e.resultCache == nil {
-		// If no result cache, get from value store
+		// If no result cache, get from value store.
 		return e.valueStore.Get(m)
 	}
 
-	// Check if multihash in resultCache
+	// Check if multihash in resultCache.
 	v, found := e.resultCache.Get(m)
 	if !found {
 		stats.Record(ctx, metrics.CacheMisses.M(1))
@@ -84,9 +84,9 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		for i := 0; i < len(mhs); {
 			v, found := e.resultCache.Get(mhs[i])
 
-			// If multihash found, check if value already exists in
-			// cache. Values in cache must already be in the value store, in
-			// which case there is no need to store anything new.
+			// If multihash found, check if value already exists in cache.
+			// Values in cache must already be in the value store, in which
+			// case there is no need to store anything new.
 			if found {
 				found = false
 				for j := range v {
@@ -97,7 +97,7 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 				}
 				if found {
 					// The multihash was found and is already mapped to this
-					// value, so do not try to put it in the value store.  The
+					// value, so do not try to put it in the value store. The
 					// value store will handle this, but at a higher cost
 					// requiring reading from disk.
 					if mhsCopy == nil {
@@ -120,7 +120,8 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 			i++
 		}
 
-		// Update value for existing multihashes, or add new index entries to cache if cacheOnPut is set.
+		// Update value for existing multihashes, or add new index entries to
+		// cache if cacheOnPut is set.
 		e.resultCache.Put(value, addToCache...)
 		e.updateCacheStats()
 	}
@@ -133,7 +134,7 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 }
 
 func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
-	// Remove first from valueStore
+	// Remove first from valueStore.
 	err := e.valueStore.Remove(value, mhs...)
 	if err != nil {
 		return err
@@ -148,9 +149,9 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-func (e *Engine) RemoveProvider(providerID peer.ID) error {
-	// Remove first from valueStore
-	err := e.valueStore.RemoveProvider(providerID)
+func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
+	// Remove first from valueStore.
+	err := e.valueStore.RemoveProvider(ctx, providerID)
 	if err != nil {
 		return err
 	}
@@ -166,7 +167,7 @@ func (e *Engine) RemoveProvider(providerID peer.ID) error {
 }
 
 func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
-	// Remove first from valueStore
+	// Remove first from valueStore.
 	err := e.valueStore.RemoveProviderContext(providerID, contextID)
 	if err != nil {
 		return err

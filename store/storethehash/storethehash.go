@@ -2,6 +2,7 @@ package storethehash
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -45,11 +46,11 @@ type sthIterator struct {
 
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
-func New(dir string, options ...Option) (indexer.Interface, error) {
-	// NOTE: Using a single file to store index and data.  This may change in
-	// the future, and we may choose to set a max. size to files. Having
-	// several files for storage increases complexity but minimizes the
-	// overhead of compaction (once we have it)
+func New(ctx context.Context, dir string, options ...Option) (indexer.Interface, error) {
+	// Using a single file to store index and data. This may change in the
+	// future, and we may choose to set a max. size to files. Having several
+	// files for storage increases complexity but minimizes the overhead of
+	// compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
 	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
@@ -66,7 +67,7 @@ func New(dir string, options ...Option) (indexer.Interface, error) {
 	}
 	cfg.apply(options)
 
-	s, err := sth.OpenStore(indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
+	s, err := sth.OpenStore(ctx, indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
@@ -108,7 +109,7 @@ func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 	return nil
 }
 
-func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
+func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
@@ -118,7 +119,13 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 	s.valLock.Lock()
 	defer s.valLock.Unlock()
 
+	var count int
 	for {
+		if count%1024 == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		count++
+
 		// Iterate through all stored items, examining values and skipping
 		// multihashes.
 		key, _, err := iter.Next()
@@ -129,13 +136,13 @@ func (s *sthStorage) RemoveProvider(providerID peer.ID) error {
 			return err
 		}
 
-		// Decode the key and see if it is key.
+		// Decode the key and see if it is a value key.
 		dm, err := multihash.Decode(key)
 		if err != nil {
 			return err
 		}
 		if !bytes.HasSuffix(dm.Digest, valueKeySuffix) {
-			// Key does not have value suffix, so is not an value key.
+			// Key does not have value suffix, so not a value key.
 			continue
 		}
 
@@ -323,8 +330,8 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	if err != nil {
 		return fmt.Errorf("cannot get value keys for multihash: %w", err)
 	}
-	// If found it means there is already a value there.  Check if we are
-	// trying to put a duplicate value.
+	// If found it means there is already a value there. Check if we are trying
+	// to put a duplicate value.
 	for _, existing := range existingValKeys {
 		if bytes.Equal(valKey, existing) {
 			return nil
@@ -445,9 +452,9 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 			return nil, fmt.Errorf("cannot get value: %w", err)
 		}
 		if !found {
-			// If value not in datastore, this means it has been
-			// deleted, and the mapping from the multihash to that value
-			// should also be removed.
+			// If value not in datastore, this means it has been deleted, and
+			// the mapping from the multihash to that value should also be
+			// removed.
 			valueKeys[i] = valueKeys[len(valueKeys)-1]
 			valueKeys[len(valueKeys)-1] = nil
 			valueKeys = valueKeys[:len(valueKeys)-1]
@@ -516,7 +523,7 @@ func reverseBytes(b []byte) {
 
 func makeValueKey(value indexer.Value) multihash.Multihash {
 	// Create a hash of the ProviderID and ContextID so that the key length is
-	// fixed.  This hash is used to look up the Value, which contains
+	// fixed. This hash is used to look up the Value, which contains
 	// ProviderID, ContextID, and Metadata.
 	h, err := blake2b.New(valueKeySize, nil)
 	if err != nil {

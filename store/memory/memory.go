@@ -10,6 +10,7 @@ package memory
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -116,10 +117,13 @@ func (s *memoryStore) Remove(value indexer.Value, mhs ...multihash.Multihash) er
 	return nil
 }
 
-func (s *memoryStore) RemoveProvider(providerID peer.ID) error {
+func (s *memoryStore) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	s.removeProviderValues(providerID)
 	s.removeProviderInterns(providerID)
 	return nil

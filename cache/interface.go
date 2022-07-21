@@ -14,9 +14,9 @@ type Interface interface {
 	Get(multihash.Multihash) ([]indexer.Value, bool)
 
 	// Put stores a Value and adds a mapping from each of the given multihashs
-	// to that Value.  If the Value has the same ProviderID and ContextID as a
+	// to that Value. If the Value has the same ProviderID and ContextID as a
 	// previously stored Value, then update the metadata in the stored Value
-	// with the metadata from the provided Value.  Call Put without any
+	// with the metadata from the provided Value. Call Put without any
 	// multihashes to only update existing values.
 	Put(indexer.Value, ...multihash.Multihash) int
 
@@ -25,13 +25,13 @@ type Interface interface {
 	Remove(indexer.Value, ...multihash.Multihash) int
 
 	// RemoveProvider removes all values for the specified provider, and all
-	// indexes that map to those values.  This is used when a provider is no
-	// longer indexed by the indexer.  Returns the number of indexes that were
+	// indexes that map to those values. This is used when a provider is no
+	// longer indexed by the indexer. Returns the number of indexes that were
 	// mapped to removed values.
 	RemoveProvider(peer.ID) int
 
 	// RemoveProviderContext removes the value that has the specified
-	// providerID and contextID, and all indexes mapped to that value.  This is
+	// providerID and contextID, and all indexes mapped to that value. This is
 	// used when a provider no longer provides values for a particular context.
 	// Returns the number of indexes that were mapped to the value.
 	RemoveProviderContext(providerID peer.ID, contextID []byte) int

@@ -4,21 +4,23 @@
 [![Coverage Status](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main/graph/badge.svg)](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main)
 > Storage specialized for indexing provider content
 
-The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects.  A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
+The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects. A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
 
-Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys are content stored within that deal. To subsequently retrieve a provider value, the indexer-core is given a multihash key to lookup.
+Content is indexed by giving a provider data object (the value) and a set of multihashes (keys) that map to that value. Typically, the provider value represents a storage deal and the multihash keys identify content stored within that deal. To subsequently retrieve a provider value, the indexer-core is given a multihash key to lookup.
 
-Provider data can be updated and removed independently from the multihashes that map to it. Provider data is uniquely identified by a provider ID and a context ID.  The context ID is given to the indexer core as part of the provider data value.  When a provider data object is updated, all subsequent multihash queries will return the new value for that data whether the queries are cached or not.
+[Data Storage](doc/data-storage.md) provides more detail on how data is stored by the indexer-core.
 
-This indexer-core is the component of an indexer that provides data storage and retrieval for content index data.  An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
+This indexer-core is the component of an indexer that provides data storage and retrieval for content index data. An indexer must also supply all the service functionality necessary to create an indexing service, which is not included in the indexer-core component.
 
 ### Configurable Cache
-An integrated cache is included to aid in fast index lookups.  By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data.  The cache can be optionally disabled, and its size is configurable. The cache interface allows alternative cache implementations to be used if desired.
+
+An integrated cache is included to aid in fast index lookups. By default the cache is configured as a retrieval cache, meaning that items are only stored in the cache when index data is looked up, and will speed up repeated lookups of the same data. The cache can be optionally disabled, and its size is configurable. The cache interface allows alternative cache implementations to be used if desired.
 
 See Usage Example for details.
 
 ### Choice of Persistent Storage
-The persistent storage is provided by a choice of storage systems that include [storethehash](https://github.com/ipld/go-storethehash), [pogrep](https://github.com/akrylysov/pogreb#readme), and an in-memory implementation.  The storage interface allows any other storage system solution to be adapted.
+
+The persistent storage is provided by a choice of storage systems that include [storethehash](https://github.com/ipld/go-storethehash), [pogrep](https://github.com/akrylysov/pogreb#readme), and an in-memory implementation. The storage interface allows any other storage system solution to be adapted.
 
 See Usage Example for details.
 

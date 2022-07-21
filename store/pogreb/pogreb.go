@@ -8,6 +8,7 @@ package pogreb
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -92,7 +93,7 @@ func (s *pStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error
 	return nil
 }
 
-func (s *pStorage) RemoveProvider(providerID peer.ID) error {
+func (s *pStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	err := s.store.Sync()
 	if err != nil {
 		return err
@@ -102,7 +103,13 @@ func (s *pStorage) RemoveProvider(providerID peer.ID) error {
 	s.valLock.Lock()
 	defer s.valLock.Unlock()
 
+	var count int
 	for {
+		if count%1024 == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		count++
+
 		// Iterate through all stored items, examining values and skipping
 		// multihashes.
 		key, valueData, err := iter.Next()
