@@ -25,14 +25,14 @@ import (
 
 type memoryStore struct {
 	// multihash -> indexer.Value
-	rtree *radixtree.Bytes
+	rtree *radixtree.Tree
 	// IndexEntery interning
-	interns *radixtree.Bytes
+	interns *radixtree.Tree
 	mutex   sync.Mutex
 }
 
 type memoryIter struct {
-	iter   radixtree.Iterator
+	iter   *radixtree.Iterator
 	values []indexer.Value
 }
 
@@ -190,7 +190,7 @@ func (s *memoryStore) Close() error { return nil }
 
 func (s *memoryStore) Iter() (indexer.Iterator, error) {
 	return &memoryIter{
-		iter: s.rtree.Iter(),
+		iter: s.rtree.NewIterator(),
 	}, nil
 }
 
@@ -283,7 +283,7 @@ func (s *memoryStore) deleteInternValue(providerID peer.ID, contextID []byte) bo
 	return s.interns.Delete(b.String())
 }
 
-func removeIndex(tree *radixtree.Bytes, k string, value *indexer.Value) bool {
+func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
 	v, found := tree.Get(k)
 	if !found {
 		return false

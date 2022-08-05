@@ -21,12 +21,12 @@ var log = logging.Logger("indexer-core/cache")
 // radixCache is a rotatable cache with value deduplication.
 type radixCache struct {
 	// multihash -> indexer.Value
-	current  *radixtree.Bytes
-	previous *radixtree.Bytes
+	current  *radixtree.Tree
+	previous *radixtree.Tree
 
 	// IndexEntery interning
-	curEnts  *radixtree.Bytes
-	prevEnts *radixtree.Bytes
+	curEnts  *radixtree.Tree
+	prevEnts *radixtree.Tree
 
 	mutex      sync.Mutex
 	evictions  int
@@ -173,7 +173,7 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 
 	var count int
 	var deletes []string
-	var tree *radixtree.Bytes
+	var tree *radixtree.Tree
 
 	walkFunc := func(k string, v interface{}) bool {
 		values := v.([]*indexer.Value)
@@ -245,7 +245,7 @@ func (c *radixCache) RemoveProviderContext(providerID peer.ID, contextID []byte)
 
 	var deletes []string
 	var count int
-	var tree *radixtree.Bytes
+	var tree *radixtree.Tree
 
 	walkFunc := func(k string, v interface{}) bool {
 		values := v.([]*indexer.Value)
@@ -427,7 +427,7 @@ func (c *radixCache) findInternValue(value *indexer.Value) (string, *indexer.Val
 	return k, nil, false
 }
 
-func removeIndex(tree *radixtree.Bytes, k string, value *indexer.Value) bool {
+func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
 	// Get from current cache.
 	v, found := tree.Get(k)
 	if !found {
@@ -451,7 +451,7 @@ func removeIndex(tree *radixtree.Bytes, k string, value *indexer.Value) bool {
 	return false
 }
 
-func removeProviderInterns(tree *radixtree.Bytes, providerID peer.ID) bool {
+func removeProviderInterns(tree *radixtree.Tree, providerID peer.ID) bool {
 	var deletes []string
 	tree.Walk(string(providerID), func(k string, v interface{}) bool {
 		deletes = append(deletes, k)
