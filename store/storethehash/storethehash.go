@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -44,6 +43,8 @@ type sthIterator struct {
 	uniqKeys map[string]struct{}
 }
 
+type Option = sth.Option
+
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
 func New(ctx context.Context, dir string, options ...Option) (indexer.Interface, error) {
@@ -53,21 +54,12 @@ func New(ctx context.Context, dir string, options ...Option) (indexer.Interface,
 	// compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
-	primary, err := mhprimary.OpenMultihashPrimary(dataPath)
+	primary, err := mhprimary.Open(dataPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash primary: %w", err)
 	}
 
-	cfg := config{
-		indexSizeBits: defaultIndexSizeBits,
-		indexFileSize: defaultIndexFileSize,
-		syncInterval:  defaultSyncInterval,
-		burstRate:     defaultBurstRate,
-		gcInterval:    defaultGCInterval,
-	}
-	cfg.apply(options)
-
-	s, err := sth.OpenStore(ctx, indexPath, primary, cfg.indexSizeBits, cfg.indexFileSize, cfg.syncInterval, cfg.burstRate, cfg.gcInterval, false)
+	s, err := sth.OpenStore(ctx, indexPath, primary, false, options...)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
@@ -189,18 +181,7 @@ func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte)
 }
 
 func (s *sthStorage) Size() (int64, error) {
-	size, err := s.store.IndexStorageSize()
-	if err != nil {
-		return 0, err
-	}
-
-	fi, err := os.Stat(filepath.Join(s.dir, "storethehash.data"))
-	if err != nil {
-		return 0, err
-	}
-	size += fi.Size()
-
-	return size, nil
+	return s.store.StorageSize()
 }
 
 func (s *sthStorage) Flush() error {

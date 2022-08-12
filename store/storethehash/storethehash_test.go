@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
+	sth "github.com/ipld/go-storethehash/store"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -73,7 +74,7 @@ func TestPeriodicFlush(t *testing.T) {
 
 	syncInterval := 200 * time.Millisecond
 
-	s, err := storethehash.New(context.Background(), tmpDir, storethehash.SyncInterval(syncInterval))
+	s, err := storethehash.New(context.Background(), tmpDir, sth.SyncInterval(syncInterval))
 	if err != nil {
 		t.Fatal(err)
 	}
