@@ -102,8 +102,8 @@ github.com/ipfs/go-log v0.0.1/go.mod h1:kL1d2/hzSpI0thNYjiKfjanbVNU+IIGA/WnNESY9
 github.com/ipfs/go-log/v2 v2.5.1 h1:1XdUzF7048prq4aBjDQQ4SL5RxftpRGdXhNRwKSAlcY=
 github.com/ipfs/go-log/v2 v2.5.1/go.mod h1:prSpmC1Gpllc9UYWxDiZDreBYw7zp4Iqp1kOLU9U5UI=
 github.com/ipfs/go-metrics-interface v0.0.1/go.mod h1:6s6euYU4zowdslK0GKHmqaIZ3j/b/tL7HTWtJ4VPgWY=
-github.com/ipld/go-storethehash v0.1.12-0.20220815230444-9ce18ca39136 h1:K0CiXGA04yLj8kq4eg4dWE0m7t6/NdTYWV3PrQ+VkUM=
-github.com/ipld/go-storethehash v0.1.12-0.20220815230444-9ce18ca39136/go.mod h1:Gh52e3JFIbzULuRAP6oPBbJ5jJCNlOakihQ5DVtCv14=
+github.com/ipld/go-storethehash v0.2.0 h1:vAKXXddj46/uAz1zivdniiNEjeBLoGsPLNb+bcvTGhk=
+github.com/ipld/go-storethehash v0.2.0/go.mod h1:Gh52e3JFIbzULuRAP6oPBbJ5jJCNlOakihQ5DVtCv14=
 github.com/jbenet/go-cienv v0.1.0/go.mod h1:TqNnHUmJgXau0nCzC7kXWeotg3J9W34CUv5Djy1+FlA=
 github.com/jbenet/goprocess v0.1.4/go.mod h1:5yspPrukOVuOLORacaBi858NqyClJPQxYZlqdZVfqY4=
 github.com/jessevdk/go-flags v0.0.0-20141203071132-1679536dcc89/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
