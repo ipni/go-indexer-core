@@ -43,11 +43,9 @@ type sthIterator struct {
 	uniqKeys map[string]struct{}
 }
 
-type Option = sth.Option
-
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
-func New(ctx context.Context, dir string, options ...Option) (indexer.Interface, error) {
+func New(ctx context.Context, dir string, options ...sth.Option) (indexer.Interface, error) {
 	// Using a single file to store index and data. This may change in the
 	// future, and we may choose to set a max. size to files. Having several
 	// files for storage increases complexity but minimizes the overhead of
