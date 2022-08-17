@@ -11,6 +11,7 @@ require (
 	github.com/ipld/go-storethehash v0.2.0
 	github.com/libp2p/go-libp2p-core v0.16.1
 	github.com/multiformats/go-multihash v0.1.0
+	github.com/multiformats/go-varint v0.0.6
 	go.opencensus.io v0.23.0
 	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 )
@@ -33,7 +34,6 @@ require (
 	github.com/multiformats/go-multiaddr v0.4.1 // indirect
 	github.com/multiformats/go-multibase v0.0.3 // indirect
 	github.com/multiformats/go-multicodec v0.4.1 // indirect
-	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/spacemonkeygo/spacelog v0.0.0-20180420211403-2296661a0572 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect

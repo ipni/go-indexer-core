@@ -13,7 +13,7 @@ import (
 )
 
 func initSth(t *testing.T) indexer.Interface {
-	s, err := storethehash.New(context.Background(), t.TempDir())
+	s, err := storethehash.New(context.Background(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestPeriodicFlush(t *testing.T) {
 
 	syncInterval := 200 * time.Millisecond
 
-	s, err := storethehash.New(context.Background(), tmpDir, sth.SyncInterval(syncInterval))
+	s, err := storethehash.New(context.Background(), tmpDir, nil, sth.SyncInterval(syncInterval))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestPeriodicFlush(t *testing.T) {
 	time.Sleep(2 * syncInterval)
 
 	// Regenerate new storage
-	s2, err := storethehash.New(context.Background(), tmpDir)
+	s2, err := storethehash.New(context.Background(), tmpDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

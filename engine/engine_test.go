@@ -13,7 +13,7 @@ import (
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
-	valueStore, err := storethehash.New(context.Background(), t.TempDir())
+	valueStore, err := storethehash.New(context.Background(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
