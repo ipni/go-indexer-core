@@ -10,7 +10,7 @@ import (
 )
 
 func initBenchStore(b *testing.B) indexer.Interface {
-	s, err := storethehash.New(context.Background(), b.TempDir())
+	s, err := storethehash.New(context.Background(), b.TempDir(), nil)
 	if err != nil {
 		b.Fatal(err)
 	}

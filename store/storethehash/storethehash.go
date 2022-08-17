@@ -35,6 +35,7 @@ type sthStorage struct {
 	valLock sync.RWMutex
 
 	primary *mhprimary.MultihashPrimary
+	vserde  indexer.ValueSerde
 }
 
 type sthIterator struct {
@@ -45,7 +46,10 @@ type sthIterator struct {
 
 // New creates a new indexer.Interface implemented by a storethehash-based
 // value store.
-func New(ctx context.Context, dir string, options ...sth.Option) (indexer.Interface, error) {
+//
+// The given indexer.ValueSerde is used to serialize and deserialize values.
+// If it is set to nil, indexer.JsonValueSerde is used.
+func New(ctx context.Context, dir string, vserde indexer.ValueSerde, options ...sth.Option) (indexer.Interface, error) {
 	// Using a single file to store index and data. This may change in the
 	// future, and we may choose to set a max. size to files. Having several
 	// files for storage increases complexity but minimizes the overhead of
@@ -61,12 +65,16 @@ func New(ctx context.Context, dir string, options ...sth.Option) (indexer.Interf
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
+	if vserde == nil {
+		vserde = indexer.JsonValueSerde{}
+	}
 	s.Start()
 	return &sthStorage{
 		dir:     dir,
 		store:   s,
 		mlk:     keymutex.New(0),
 		primary: primary,
+		vserde:  vserde,
 	}, nil
 }
 
@@ -144,7 +152,7 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 		// If a value was found, skip it if the provider is different than the
 		// one being removed.
 		if found {
-			value, err := indexer.UnmarshalValue(valueData)
+			value, err := s.vserde.UnmarshalValue(valueData)
 			if err != nil {
 				return err
 			}
@@ -246,7 +254,7 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		valueKeys, err := indexer.UnmarshalValueKeys(valueKeysData)
+		valueKeys, err := it.storage.vserde.UnmarshalValueKeys(valueKeysData)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -274,7 +282,7 @@ func (s *sthStorage) getValueKeys(k []byte) ([][]byte, error) {
 		return nil, nil
 	}
 
-	return indexer.UnmarshalValueKeys(valueKeysData)
+	return s.vserde.UnmarshalValueKeys(valueKeysData)
 }
 
 func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -318,7 +326,7 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	}
 
 	// Store the new list of value keys for the multihash.
-	b, err := indexer.MarshalValueKeys(append(existingValKeys, valKey))
+	b, err := s.vserde.MarshalValueKeys(append(existingValKeys, valKey))
 	if err != nil {
 		return err
 	}
@@ -351,7 +359,7 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 	if !found {
 		if saveNew {
 			// Store the new value.
-			valData, err := indexer.MarshalValue(value)
+			valData, err := s.vserde.MarshalValue(value)
 			if err != nil {
 				return nil, err
 			}
@@ -364,7 +372,7 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 	}
 
 	// Found previous value.  If it is different, then update it.
-	newValData, err := indexer.MarshalValue(value)
+	newValData, err := s.vserde.MarshalValue(value)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +409,7 @@ func (s *sthStorage) removeIndex(m multihash.Multihash, value indexer.Value) err
 			valueKeys[len(valueKeys)-1] = nil
 			valueKeys = valueKeys[:len(valueKeys)-1]
 			// Update the list of value-keys that the multihash maps to.
-			b, err := indexer.MarshalValueKeys(valueKeys)
+			b, err := s.vserde.MarshalValueKeys(valueKeys)
 			if err != nil {
 				return err
 			}
@@ -439,7 +447,7 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 			valueKeys = valueKeys[:len(valueKeys)-1]
 			continue
 		}
-		val, err := indexer.UnmarshalValue(valData)
+		val, err := s.vserde.UnmarshalValue(valData)
 		if err != nil {
 			s.valLock.RUnlock()
 			return nil, err
@@ -463,8 +471,8 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 			return nil, nil
 		}
 
-		// Update the values this mmultihash maps to.
-		b, err := indexer.MarshalValueKeys(valueKeys)
+		// Update the values this multihash maps to.
+		b, err := s.vserde.MarshalValueKeys(valueKeys)
 		if err != nil {
 			return nil, err
 		}

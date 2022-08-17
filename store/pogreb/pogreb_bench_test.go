@@ -10,7 +10,7 @@ import (
 )
 
 func initBenchStore(b *testing.B) indexer.Interface {
-	s, err := pogreb.New(b.TempDir())
+	s, err := pogreb.New(b.TempDir(), nil)
 	if err != nil {
 		b.Fatal(err)
 	}
