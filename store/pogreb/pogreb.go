@@ -41,7 +41,7 @@ type pStorage struct {
 	store   *pogreb.DB
 	mlk     *keymutex.KeyMutex
 	valLock sync.RWMutex
-	vserde  indexer.ValueSerde
+	vcodec  indexer.ValueCodec
 }
 
 type pogrebIter struct {
@@ -52,12 +52,12 @@ type pogrebIter struct {
 // New creates a new indexer.Interface implemented by a pogreb-based value
 // store.
 //
-// The given indexer.ValueSerde is used to serialize and deserialize values.
-// If it is set to nil, indexer.JsonValueSerde is used.
-func New(dir string, vserde indexer.ValueSerde) (indexer.Interface, error) {
+// The given indexer.ValueCodec is used to serialize and deserialize values.
+// If it is set to nil, indexer.JsonValueCodec is used.
+func New(dir string, vcodec indexer.ValueCodec) (indexer.Interface, error) {
 	opts := pogreb.Options{BackgroundSyncInterval: DefaultSyncInterval}
-	if vserde == nil {
-		vserde = indexer.JsonValueSerde{}
+	if vcodec == nil {
+		vcodec = indexer.JsonValueCodec{}
 	}
 	s, err := pogreb.Open(dir, &opts)
 	if err != nil {
@@ -67,7 +67,7 @@ func New(dir string, vserde indexer.ValueSerde) (indexer.Interface, error) {
 		dir:    dir,
 		store:  s,
 		mlk:    keymutex.New(0),
-		vserde: vserde,
+		vcodec: vcodec,
 	}, nil
 }
 
@@ -134,7 +134,7 @@ func (s *pStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error
 		// If a value was found, skip it if the provider is different than the
 		// one being removed.
 		if valueData != nil {
-			value, err := s.vserde.UnmarshalValue(valueData)
+			value, err := s.vcodec.UnmarshalValue(valueData)
 			if err != nil {
 				return err
 			}
@@ -221,7 +221,7 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		valueKeys, err := it.s.vserde.UnmarshalValueKeys(valKeysData)
+		valueKeys, err := it.s.vcodec.UnmarshalValueKeys(valKeysData)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -248,7 +248,7 @@ func (s *pStorage) getValueKeys(k []byte) ([][]byte, error) {
 		return nil, nil
 	}
 
-	return s.vserde.UnmarshalValueKeys(valueKeysData)
+	return s.vcodec.UnmarshalValueKeys(valueKeysData)
 }
 
 func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
@@ -292,7 +292,7 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	}
 
 	// Store the new list of value keys for the multihash.
-	b, err := s.vserde.MarshalValueKeys(append(existingValKeys, valKey))
+	b, err := s.vcodec.MarshalValueKeys(append(existingValKeys, valKey))
 	if err != nil {
 		return err
 	}
@@ -328,7 +328,7 @@ func (s *pStorage) removeIndex(m multihash.Multihash, value indexer.Value) error
 			valueKeys[len(valueKeys)-1] = nil
 			valueKeys = valueKeys[:len(valueKeys)-1]
 			// Update the list of value-keys that the multihash maps to.
-			b, err := s.vserde.MarshalValueKeys(valueKeys)
+			b, err := s.vcodec.MarshalValueKeys(valueKeys)
 			if err != nil {
 				return err
 			}
@@ -358,7 +358,7 @@ func (s *pStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error
 	if valData == nil {
 		if saveNew {
 			// Store the new value.
-			valData, err := s.vserde.MarshalValue(value)
+			valData, err := s.vcodec.MarshalValue(value)
 			if err != nil {
 				return nil, err
 			}
@@ -371,7 +371,7 @@ func (s *pStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error
 	}
 
 	// Found previous value.  If it is different, then update it.
-	newValData, err := s.vserde.MarshalValue(value)
+	newValData, err := s.vcodec.MarshalValue(value)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +413,7 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 			valueKeys = valueKeys[:len(valueKeys)-1]
 			continue
 		}
-		val, err := s.vserde.UnmarshalValue(valData)
+		val, err := s.vcodec.UnmarshalValue(valData)
 		if err != nil {
 			s.valLock.RUnlock()
 			return nil, err
@@ -438,7 +438,7 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 		}
 
 		// Update the values this multihash maps to.
-		b, err := s.vserde.MarshalValueKeys(valueKeys)
+		b, err := s.vcodec.MarshalValueKeys(valueKeys)
 		if err != nil {
 			return nil, err
 		}

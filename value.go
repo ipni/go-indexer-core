@@ -11,12 +11,12 @@ import (
 )
 
 var (
-	_ ValueSerde = (*JsonValueSerde)(nil)
-	_ ValueSerde = (*BinaryValueSerde)(nil)
+	_ ValueCodec = (*JsonValueCodec)(nil)
+	_ ValueCodec = (*BinaryValueCodec)(nil)
 
-	// ErrSerdeOverflow signals that unexpected size was encountered while
+	// ErrCodecOverflow signals that unexpected size was encountered while
 	// unmarshalling bytes to Value.
-	ErrSerdeOverflow = errors.New("overflow")
+	ErrCodecOverflow = errors.New("overflow")
 )
 
 type (
@@ -32,8 +32,8 @@ type (
 		MetadataBytes []byte `json:"m,omitempty"`
 	}
 
-	// ValueSerde represents Value serializer and deserializer to/from bytes.
-	ValueSerde interface {
+	// ValueCodec represents Value serializer and deserializer to/from bytes.
+	ValueCodec interface {
 		// MarshalValue serializes a single value.
 		MarshalValue(Value) ([]byte, error)
 		// UnmarshalValue deserializes a single value.
@@ -44,13 +44,13 @@ type (
 		UnmarshalValueKeys([]byte) ([][]byte, error)
 	}
 
-	// JsonValueSerde serializes and deserializes Value as JSON.
+	// JsonValueCodec serializes and deserializes Value as JSON.
 	// See: json.Marshal, json.Unmarshal
-	JsonValueSerde struct{}
+	JsonValueCodec struct{}
 
-	// BinaryValueSerde serializes and deserializes Value as binary sections
+	// BinaryValueCodec serializes and deserializes Value as binary sections
 	// prepended with byte length as varint.
-	BinaryValueSerde struct{}
+	BinaryValueCodec struct{}
 )
 
 // Match return true if both values have the same ProviderID and ContextID.
@@ -74,25 +74,25 @@ func (v Value) MatchEqual(other Value) (isMatch bool, isEqual bool) {
 	return
 }
 
-func (JsonValueSerde) MarshalValue(v Value) ([]byte, error) {
+func (JsonValueCodec) MarshalValue(v Value) ([]byte, error) {
 	return json.Marshal(&v)
 }
 
-func (JsonValueSerde) UnmarshalValue(b []byte) (v Value, err error) {
+func (JsonValueCodec) UnmarshalValue(b []byte) (v Value, err error) {
 	err = json.Unmarshal(b, &v)
 	return
 }
 
-func (JsonValueSerde) MarshalValueKeys(vk [][]byte) ([]byte, error) {
+func (JsonValueCodec) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 	return json.Marshal(&vk)
 }
 
-func (JsonValueSerde) UnmarshalValueKeys(b []byte) (vk [][]byte, err error) {
+func (JsonValueCodec) UnmarshalValueKeys(b []byte) (vk [][]byte, err error) {
 	err = json.Unmarshal(b, &vk)
 	return
 }
 
-func (BinaryValueSerde) MarshalValue(v Value) ([]byte, error) {
+func (BinaryValueCodec) MarshalValue(v Value) ([]byte, error) {
 	pid := []byte(v.ProviderID)
 	pl := len(pid)
 	upl := uint64(pl)
@@ -120,7 +120,7 @@ func (BinaryValueSerde) MarshalValue(v Value) ([]byte, error) {
 // If a failure occurs during serialization an error is returned along with
 // the partially deserialized value keys. Only nil error means complete and
 // successful deserialization.
-func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
+func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	var v Value
 	buf := bytes.NewBuffer(b)
 
@@ -131,7 +131,7 @@ func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
 	}
 	size := int(usize)
 	if size < 0 || size > buf.Len() {
-		return Value{}, ErrSerdeOverflow
+		return Value{}, ErrCodecOverflow
 	}
 	v.ProviderID = peer.ID(buf.Next(size))
 
@@ -142,7 +142,7 @@ func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
 	}
 	size = int(usize)
 	if size < 0 || size > buf.Len() {
-		return v, ErrSerdeOverflow
+		return v, ErrCodecOverflow
 	}
 	v.ContextID = buf.Next(size)
 
@@ -153,7 +153,7 @@ func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
 	}
 	size = int(usize)
 	if size < 0 || size > buf.Len() {
-		return v, ErrSerdeOverflow
+		return v, ErrCodecOverflow
 	}
 	v.MetadataBytes = buf.Next(size)
 	if buf.Len() != 0 {
@@ -162,7 +162,7 @@ func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
 	return v, nil
 }
 
-func (BinaryValueSerde) MarshalValueKeys(vk [][]byte) ([]byte, error) {
+func (BinaryValueCodec) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, v := range vk {
 		vl := len(v)
@@ -179,7 +179,7 @@ func (BinaryValueSerde) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 // If a failure occurs during serialization an error is returned along with
 // the partially deserialized value keys. Only nil error means complete and
 // successful deserialization.
-func (BinaryValueSerde) UnmarshalValueKeys(b []byte) ([][]byte, error) {
+func (BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 	var vk [][]byte
 	buf := bytes.NewBuffer(b)
 	// Decode each value key.
@@ -190,7 +190,7 @@ func (BinaryValueSerde) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 		}
 		size := int(usize)
 		if size < 0 || size > buf.Len() {
-			return vk, ErrSerdeOverflow
+			return vk, ErrCodecOverflow
 		}
 		vk = append(vk, buf.Next(size))
 	}

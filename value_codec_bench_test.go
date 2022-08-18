@@ -15,23 +15,23 @@ const (
 	valuesPerProvider = 1_000
 )
 
-func BenchmarkBinaryValueSerde_MarshalValue(b *testing.B) {
-	benchmarkMarshalValue(b, indexer.BinaryValueSerde{})
+func BenchmarkBinaryValueCodec_MarshalValue(b *testing.B) {
+	benchmarkMarshalValue(b, indexer.BinaryValueCodec{})
 }
 
-func BenchmarkJsonValueSerde_MarshalValue(b *testing.B) {
-	benchmarkMarshalValue(b, indexer.JsonValueSerde{})
+func BenchmarkJsonValueCodec_MarshalValue(b *testing.B) {
+	benchmarkMarshalValue(b, indexer.JsonValueCodec{})
 }
 
-func BenchmarkBinaryValueSerde_UnmarshalValue(b *testing.B) {
-	benchmarkUnmarshalValue(b, indexer.BinaryValueSerde{})
+func BenchmarkBinaryValueCodec_UnmarshalValue(b *testing.B) {
+	benchmarkUnmarshalValue(b, indexer.BinaryValueCodec{})
 }
 
-func BenchmarkJsonValueSerde_UnmarshalValue(b *testing.B) {
-	benchmarkUnmarshalValue(b, indexer.JsonValueSerde{})
+func BenchmarkJsonValueCodec_UnmarshalValue(b *testing.B) {
+	benchmarkUnmarshalValue(b, indexer.JsonValueCodec{})
 }
 
-func benchmarkMarshalValue(b *testing.B, subject indexer.ValueSerde) {
+func benchmarkMarshalValue(b *testing.B, subject indexer.ValueCodec) {
 	values, size := generateRandomValues(b, providerCount, valuesPerProvider)
 	b.SetBytes(int64(size))
 	b.ReportAllocs()
@@ -47,7 +47,7 @@ func benchmarkMarshalValue(b *testing.B, subject indexer.ValueSerde) {
 	})
 }
 
-func benchmarkUnmarshalValue(b *testing.B, subject indexer.ValueSerde) {
+func benchmarkUnmarshalValue(b *testing.B, subject indexer.ValueCodec) {
 	values, size := generateRandomValues(b, providerCount, valuesPerProvider)
 	var svalues [][]byte
 	for _, v := range values {

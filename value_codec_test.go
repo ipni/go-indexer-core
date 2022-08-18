@@ -11,21 +11,21 @@ import (
 	"github.com/multiformats/go-varint"
 )
 
-func TestValueSerde_MarshalUnmarshal(t *testing.T) {
+func TestValueCodec_MarshalUnmarshal(t *testing.T) {
 	wantValues, _ := generateRandomValues(t, 14, 13)
 	wantValueKeys := generateRandomValueKeys(43)
 
 	tests := []struct {
 		name    string
-		subject indexer.ValueSerde
+		subject indexer.ValueCodec
 	}{
 		{
 			name:    "json",
-			subject: indexer.JsonValueSerde{},
+			subject: indexer.JsonValueCodec{},
 		},
 		{
 			name:    "binary",
-			subject: indexer.BinaryValueSerde{},
+			subject: indexer.BinaryValueCodec{},
 		},
 	}
 	for _, test := range tests {
@@ -58,7 +58,7 @@ func TestValueSerde_MarshalUnmarshal(t *testing.T) {
 	}
 }
 
-func TestBinaryValueSerde_MarshalValueMalformedBytes(t *testing.T) {
+func TestBinaryValueCodec_MarshalValueMalformedBytes(t *testing.T) {
 	tests := []struct {
 		name    string
 		value   func(buf *bytes.Buffer)
@@ -117,7 +117,7 @@ func TestBinaryValueSerde_MarshalValueMalformedBytes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 
-			subject := indexer.BinaryValueSerde{}
+			subject := indexer.BinaryValueCodec{}
 			buf := bytes.Buffer{}
 			test.value(&buf)
 			_, err := subject.UnmarshalValue(buf.Bytes())
@@ -131,8 +131,8 @@ func TestBinaryValueSerde_MarshalValueMalformedBytes(t *testing.T) {
 	}
 }
 
-func TestBinaryValueSerde_MarshalUnmarshalEmptyValues(t *testing.T) {
-	subject := indexer.BinaryValueSerde{}
+func TestBinaryValueCodec_MarshalUnmarshalEmptyValues(t *testing.T) {
+	subject := indexer.BinaryValueCodec{}
 	sv, err := subject.MarshalValue(indexer.Value{})
 	if err != nil {
 		t.Fatal(err)
