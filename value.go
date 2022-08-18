@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-varint"
@@ -165,7 +164,6 @@ func (BinaryValueSerde) UnmarshalValue(b []byte) (Value, error) {
 
 func (BinaryValueSerde) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 	var buf bytes.Buffer
-	buf.Write(varint.ToUvarint(uint64(len(vk))))
 	for _, v := range vk {
 		vl := len(v)
 		uvl := uint64(vl)
@@ -184,24 +182,8 @@ func (BinaryValueSerde) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 func (BinaryValueSerde) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 	var vk [][]byte
 	buf := bytes.NewBuffer(b)
-
-	// Decode vk length.
-	ulen, err := varint.ReadUvarint(buf)
-	if err != nil {
-		return vk, err
-	}
-	if ulen > math.MaxUint32 {
-		return vk, ErrSerdeOverflow
-	}
-	l := int(ulen)
-	// There should at least be l number of bytes since length of each inner byte slice length
-	// should have been written, even if it was zero, and minimum size of a uvarint is a byte.
-	if l < 0 || l > buf.Len() {
-		return vk, ErrSerdeOverflow
-	}
-
 	// Decode each value key.
-	for i := 0; i < l; i++ {
+	for buf.Len() != 0 {
 		usize, err := varint.ReadUvarint(buf)
 		if err != nil {
 			return vk, err
@@ -211,9 +193,6 @@ func (BinaryValueSerde) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 			return vk, ErrSerdeOverflow
 		}
 		vk = append(vk, buf.Next(size))
-	}
-	if buf.Len() != 0 {
-		return vk, fmt.Errorf("too many bytes; %d remain unread", buf.Len())
 	}
 	return vk, nil
 }
