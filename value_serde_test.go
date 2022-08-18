@@ -145,7 +145,7 @@ func TestBinaryValueSerde_MarshalUnmarshalEmptyValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(svk, []byte{0}) {
+	if len(svk) != 0 {
 		t.Fatal()
 	}
 
@@ -154,7 +154,7 @@ func TestBinaryValueSerde_MarshalUnmarshalEmptyValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(svk, []byte{1, 0}) {
+	if !reflect.DeepEqual(svk, []byte{0}) {
 		t.Fatal()
 	}
 }
