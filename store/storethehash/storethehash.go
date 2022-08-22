@@ -13,6 +13,7 @@ import (
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
+	freelist "github.com/ipld/go-storethehash/store/freelist"
 	"github.com/ipld/go-storethehash/store/primary"
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -68,12 +69,17 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 	// compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
-	primary, err := mhprimary.Open(dataPath)
+
+	freeList, err := freelist.Open(indexPath + ".free")
+	if err != nil {
+		return nil, err
+	}
+	primary, err := mhprimary.Open(dataPath, freeList)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash primary: %w", err)
 	}
 
-	s, err := sth.OpenStore(ctx, indexPath, primary, false, options...)
+	s, err := sth.OpenStore(ctx, indexPath, primary, freeList, false, options...)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
