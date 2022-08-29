@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/akrylysov/pogreb v0.10.1
-	github.com/gammazero/keymutex v0.0.2
+	github.com/gammazero/keymutex v0.1.0
 	github.com/gammazero/radixtree v0.3.0
 	github.com/ipfs/go-cid v0.2.0
 	github.com/ipfs/go-log/v2 v2.5.1
