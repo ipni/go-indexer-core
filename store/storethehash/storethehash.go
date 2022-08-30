@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/gammazero/keymutex"
@@ -29,10 +28,17 @@ var (
 )
 
 type sthStorage struct {
-	dir     string
-	store   *sth.Store
-	mlk     *keymutex.KeyMutex
-	valLock sync.RWMutex
+	dir   string
+	store *sth.Store
+
+	// mlk protects against concurrent changes to the array of value keys that
+	// a multihash maps to.
+	mlk *keymutex.KeyMutex
+	// vlk protects against concurrent changes to the same provider value.
+	//
+	// TODO: Determine the necessity of this. Fixes to underlying valuestore
+	// may make this unnecessary.
+	vlk *keymutex.KeyRWMutex
 
 	primary *mhprimary.MultihashPrimary
 	vcodec  indexer.ValueCodec
@@ -73,6 +79,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, options ...
 		dir:     dir,
 		store:   s,
 		mlk:     keymutex.New(0),
+		vlk:     keymutex.NewRW(0),
 		primary: primary,
 		vcodec:  vcodec,
 	}, nil
@@ -114,9 +121,6 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 		return err
 	}
 
-	s.valLock.Lock()
-	defer s.valLock.Unlock()
-
 	var count int
 	for {
 		if count%1024 == 0 && ctx.Err() != nil {
@@ -144,7 +148,9 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 			continue
 		}
 
+		s.vlk.RLockBytes(key)
 		valueData, found, err := s.store.Get(multihash.Multihash(key))
+		s.vlk.RUnlockBytes(key)
 		if err != nil {
 			return err
 		}
@@ -162,9 +168,11 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 			}
 		}
 
+		s.vlk.LockBytes(key)
+		defer s.vlk.UnlockBytes(key)
+
 		// Delete the value of the provider being removed.
-		_, err = s.store.Remove(key)
-		if err != nil {
+		if _, err = s.store.Remove(key); err != nil {
 			return err
 		}
 	}
@@ -178,8 +186,8 @@ func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte)
 		ContextID:  contextID,
 	})
 
-	s.valLock.Lock()
-	defer s.valLock.Unlock()
+	s.vlk.LockBytes(valKey)
+	defer s.vlk.UnlockBytes(valKey)
 
 	// Remove any previous value.
 	_, err := s.store.Remove(valKey)
@@ -310,8 +318,8 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	k := makeIndexKey(m)
 
-	s.lock(k)
-	defer s.unlock(k)
+	s.mlk.LockBytes(k)
+	defer s.mlk.UnlockBytes(k)
 
 	existingValKeys, err := s.getValueKeys(k)
 	if err != nil {
@@ -348,8 +356,8 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 
 	valKey := makeValueKey(value)
 
-	s.valLock.Lock()
-	defer s.valLock.Unlock()
+	s.vlk.LockBytes(valKey)
+	defer s.vlk.UnlockBytes(valKey)
 
 	// See if there is a previous value.
 	valData, found, err := s.store.Get(valKey)
@@ -388,8 +396,8 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 func (s *sthStorage) removeIndex(m multihash.Multihash, value indexer.Value) error {
 	k := makeIndexKey(m)
 
-	s.lock(k)
-	defer s.unlock(k)
+	s.mlk.LockBytes(k)
+	defer s.mlk.UnlockBytes(k)
 
 	valueKeys, err := s.getValueKeys(k)
 	if err != nil {
@@ -419,23 +427,15 @@ func (s *sthStorage) removeIndex(m multihash.Multihash, value indexer.Value) err
 	return nil
 }
 
-func (s *sthStorage) lock(k []byte) {
-	s.mlk.LockBytes(k)
-}
-
-func (s *sthStorage) unlock(k []byte) {
-	s.mlk.UnlockBytes(k)
-}
-
 func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, error) {
 	values := make([]indexer.Value, 0, len(valueKeys))
 
-	s.valLock.RLock()
 	for i := 0; i < len(valueKeys); {
+		s.vlk.RLockBytes(valueKeys[i])
 		// Fetch value from datastore.
 		valData, found, err := s.store.Get(valueKeys[i])
+		s.vlk.RUnlockBytes(valueKeys[i])
 		if err != nil {
-			s.valLock.RUnlock()
 			return nil, fmt.Errorf("cannot get value: %w", err)
 		}
 		if !found {
@@ -449,19 +449,17 @@ func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 		}
 		val, err := s.vcodec.UnmarshalValue(valData)
 		if err != nil {
-			s.valLock.RUnlock()
 			return nil, err
 		}
 		values = append(values, val)
 		i++
 	}
-	s.valLock.RUnlock()
 
 	// If some of the values were removed, then update the value-key list for
 	// the multihash.
 	if len(valueKeys) < cap(values) {
-		s.lock(key)
-		defer s.unlock(key)
+		s.mlk.LockBytes(key)
+		defer s.mlk.UnlockBytes(key)
 
 		if len(valueKeys) == 0 {
 			_, err := s.store.Remove(key)
