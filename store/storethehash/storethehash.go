@@ -31,9 +31,13 @@ type sthStorage struct {
 	dir   string
 	store *sth.Store
 
-	// TODO: Determine the necessity of these. Fixes to underlying valuestore
-	// may make these unnecessary.
+	// mlk protects against concurrent changes to the array of value keys that
+	// a multihash maps to.
 	mlk *keymutex.KeyMutex
+	// vlk protects against concurrent changes to the same provider value.
+	//
+	// TODO: Determine the necessity of this. Fixes to underlying valuestore
+	// may make this unnecessary.
 	vlk *keymutex.KeyRWMutex
 
 	primary *mhprimary.MultihashPrimary
@@ -164,11 +168,11 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 			}
 		}
 
-		// Delete the value of the provider being removed.
 		s.vlk.LockBytes(key)
-		_, err = s.store.Remove(key)
-		s.vlk.UnlockBytes(key)
-		if err != nil {
+		defer s.vlk.UnlockBytes(key)
+
+		// Delete the value of the provider being removed.
+		if _, err = s.store.Remove(key); err != nil {
 			return err
 		}
 	}
