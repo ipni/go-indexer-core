@@ -8,7 +8,7 @@ require (
 	github.com/gammazero/radixtree v0.3.0
 	github.com/ipfs/go-cid v0.2.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipld/go-storethehash v0.2.6-0.20220830055254-5359217edae7
+	github.com/ipld/go-storethehash v0.2.6
 	github.com/libp2p/go-libp2p-core v0.16.1
 	github.com/multiformats/go-multihash v0.1.0
 	github.com/multiformats/go-varint v0.0.6
