@@ -214,6 +214,8 @@ func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
 	return m, it.values, nil
 }
 
+func (it *memoryIter) Close() error { return nil }
+
 func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
 	// Search current cache
 	v, found := s.rtree.Get(k)

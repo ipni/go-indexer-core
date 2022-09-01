@@ -7,12 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filecoin-project/go-indexer-core/bench"
+
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/multiformats/go-varint"
 )
 
 func TestValueCodec_MarshalUnmarshal(t *testing.T) {
-	wantValues, _ := generateRandomValues(t, 14, 13)
+	rng := rand.New(rand.NewSource(1413))
+	wantValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
 	wantValueKeys := generateRandomValueKeys(43)
 
 	tests := []struct {
@@ -31,7 +34,7 @@ func TestValueCodec_MarshalUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, wantValue := range wantValues {
-				gotSer, err := test.subject.MarshalValue(wantValue)
+				gotSer, err := test.subject.MarshalValue(wantValue.Value)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -39,8 +42,8 @@ func TestValueCodec_MarshalUnmarshal(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(wantValue, gotValue) {
-					t.Fatalf("value mismatch; wanted %v but got %v", wantValue, gotValue)
+				if !reflect.DeepEqual(wantValue.Value, gotValue) {
+					t.Fatalf("value mismatch; wanted %v but got %v", wantValue.Value, gotValue)
 				}
 			}
 			gotSer, err := test.subject.MarshalValueKeys(wantValueKeys)

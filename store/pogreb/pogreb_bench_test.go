@@ -1,7 +1,6 @@
 package pogreb_test
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -18,11 +17,11 @@ func initBenchStore(b *testing.B) indexer.Interface {
 }
 
 func BenchmarkGet(b *testing.B) {
-	skipBenchIf32bit(b)
+	skipIf32bit(b)
 	test.BenchMultihashGet(initBenchStore(b), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
-	skipBenchIf32bit(b)
+	skipIf32bit(b)
 	test.BenchParallelMultihashGet(initBenchStore(b), b)
 }
 
@@ -44,10 +43,4 @@ func TestBenchSingle1GB(t *testing.T) {
 	skipIf32bit(t)
 	test.SkipStorage(t)
 	test.BenchReadAll(initPogreb(t), "1GB", t)
-}
-
-func skipBenchIf32bit(b *testing.B) {
-	if runtime.GOARCH == "386" {
-		b.Skip("Pogreb cannot use GOARCH=386")
-	}
 }

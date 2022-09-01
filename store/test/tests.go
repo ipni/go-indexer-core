@@ -11,6 +11,9 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
+// TODO: rewrite these tests with test-runner so that they are individually re-runnable
+// TODO: use bench.GenerateRandomValues in testing.
+
 func E2ETest(t *testing.T, s indexer.Interface) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -119,13 +122,14 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	}
 
 	// Iterate values
-	t.Log("Itertaing values")
+	t.Log("Iterating values")
 	var indexCount int
 	seen := make(map[string]struct{})
 	iter, err := s.Iter()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer iter.Close()
 
 	for {
 		m, _, err := iter.Next()
@@ -270,6 +274,11 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	// Flush out all changes to assure the size returned is reprenstative of persisted data.
+	if err := s.Flush(); err != nil {
+		t.Fatal(err)
 	}
 
 	size, err := s.Size()

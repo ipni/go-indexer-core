@@ -344,6 +344,8 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 	}
 }
 
+func (it *sthIterator) Close() error { return nil }
+
 func (s *sthStorage) getValueKeys(k []byte) ([][]byte, error) {
 	valueKeysData, found, err := s.store.Get(k)
 	if err != nil {
