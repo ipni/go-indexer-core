@@ -9,8 +9,8 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initBenchStore(b *testing.B) indexer.Interface {
-	s, err := storethehash.New(context.Background(), b.TempDir(), nil)
+func initBenchStore(b *testing.B, putConcurrency int) indexer.Interface {
+	s, err := storethehash.New(context.Background(), b.TempDir(), nil, putConcurrency)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -18,10 +18,17 @@ func initBenchStore(b *testing.B) indexer.Interface {
 }
 
 func BenchmarkGet(b *testing.B) {
-	test.BenchMultihashGet(initBenchStore(b), b)
+	test.BenchMultihashGet(initBenchStore(b, 1), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
-	test.BenchParallelMultihashGet(initBenchStore(b), b)
+	test.BenchParallelMultihashGet(initBenchStore(b, 1), b)
+}
+
+func BenchmarkGetConcurrent(b *testing.B) {
+	test.BenchMultihashGet(initBenchStore(b, 64), b)
+}
+func BenchmarkParallelGetConcurrent(b *testing.B) {
+	test.BenchParallelMultihashGet(initBenchStore(b, 64), b)
 }
 
 // To run this storage benchmarks run:
@@ -39,4 +46,19 @@ func TestBenchSingle100MB(t *testing.T) {
 func TestBenchSingle1GB(t *testing.T) {
 	test.SkipStorage(t)
 	test.BenchReadAll(initSth(t), "1GB", t)
+}
+
+func TestBenchSingle10MBConcurren(t *testing.T) {
+	test.SkipStorage(t)
+	test.BenchReadAll(initSth(t, 64), "10MB", t)
+}
+
+func TestBenchSingle100MBConcurren(t *testing.T) {
+	test.SkipStorage(t)
+	test.BenchReadAll(initSth(t, 64), "100MB", t)
+}
+
+func TestBenchSingle1GBConcurren(t *testing.T) {
+	test.SkipStorage(t)
+	test.BenchReadAll(initSth(t, 64), "1GB", t)
 }
