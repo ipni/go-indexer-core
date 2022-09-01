@@ -18,6 +18,11 @@ const (
 	testDataExt = ".data"
 )
 
+// TODO: consider retiring these benchmarks in favour of the ones in bench package, because
+//       the benchmarks here are fixed to use a single provider, are non-deterministic, and
+//       do not offer flexibility over the benchmark values distribution.
+//       See bench.GenerateRandomValues
+
 // prepare reads a multihash list and imports it into the value store getting it
 // ready for benchmarking.
 func prepare(s indexer.Interface, size string, t *testing.T) {

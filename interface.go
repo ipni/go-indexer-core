@@ -53,4 +53,9 @@ type Iterator interface {
 	// Next returns the next multihash and the value it indexer. Returns io.EOF
 	// when finished iterating.
 	Next() (multihash.Multihash, []Value, error)
+
+	// Close closes the iterator releasing any resources that may be occupied by it.
+	// The iterator will no longer be usable after a call to this function and is
+	// discarded.
+	Close() error
 }

@@ -1,16 +1,16 @@
-package pogreb_test
+//go:build !386
+
+package pebble
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initPogreb(t *testing.T) indexer.Interface {
-	s, err := pogreb.New(t.TempDir(), nil)
+func initPebble(t *testing.T) indexer.Interface {
+	s, err := New(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,39 +18,23 @@ func initPogreb(t *testing.T) indexer.Interface {
 }
 
 func TestE2E(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
+	s := initPebble(t)
 	test.E2ETest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestParallel(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
-	test.ParallelUpdateTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSize(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
+	s := initPebble(t)
 	test.SizeTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestRemove(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
+func TestMany(t *testing.T) {
+	s := initPebble(t)
 	test.RemoveTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -58,9 +42,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
+	s := initPebble(t)
 	test.RemoveProviderContextTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -68,19 +50,23 @@ func TestRemoveProviderContext(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	skipIf32bit(t)
-
-	s := initPogreb(t)
+	s := initPebble(t)
 	test.RemoveProviderTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestClose(t *testing.T) {
-	skipIf32bit(t)
+func TestParallel(t *testing.T) {
+	s := initPebble(t)
+	test.ParallelUpdateTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
-	s := initPogreb(t)
+func TestClose(t *testing.T) {
+	s := initPebble(t)
 	err := s.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -88,11 +74,5 @@ func TestClose(t *testing.T) {
 
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func skipIf32bit(t testing.TB) {
-	if runtime.GOARCH == "386" {
-		t.Skip("Pogreb cannot use GOARCH=386")
 	}
 }

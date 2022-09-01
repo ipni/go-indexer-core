@@ -239,6 +239,8 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 	}
 }
 
+func (it *pogrebIter) Close() error { return nil }
+
 func (s *pStorage) getValueKeys(k []byte) ([][]byte, error) {
 	valueKeysData, err := s.store.Get(k)
 	if err != nil {
