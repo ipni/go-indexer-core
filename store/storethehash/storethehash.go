@@ -264,6 +264,9 @@ func (s *sthStorage) Flush() error {
 }
 
 func (s *sthStorage) Close() error {
+	if s.wp != nil {
+		s.wp.Stop()
+	}
 	return s.store.Close()
 }
 
