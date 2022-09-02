@@ -41,8 +41,7 @@ func sthWithPutConcurrency(b *testing.B, c int) func() (indexer.Interface, error
 		return storethehash.New(context.Background(), b.TempDir(),
 			indexer.BinaryValueCodec{},
 			c,
-			sth.GCInterval(30*time.Minute),
-			sth.GCTimeLimit(5*time.Minute),
+			sth.GCInterval(0),
 			sth.SyncInterval(3*time.Second),
 			sth.IndexBitSize(24),
 		)

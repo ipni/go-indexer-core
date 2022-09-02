@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/store/memory"
 	"github.com/filecoin-project/go-indexer-core/store/pebble"
+	"github.com/filecoin-project/go-indexer-core/store/pogreb"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	sth "github.com/ipld/go-storethehash/store"
 )
@@ -46,6 +47,38 @@ func BenchmarkStore_PebblePut_W3(b *testing.B) {
 
 func BenchmarkStore_PebbleGet_W3(b *testing.B) {
 	benchmarkStoreGet(b, newPebbleSubject(b), workload3(b))
+}
+
+func BenchmarkStore_PogrebPut_W0(b *testing.B) {
+	benchmarkStorePut(b, newPogrebSubject(b), workload0(b))
+}
+
+func BenchmarkStore_PogrebGet_W0(b *testing.B) {
+	benchmarkStoreGet(b, newPogrebSubject(b), workload0(b))
+}
+
+func BenchmarkStore_PogrebPut_W1(b *testing.B) {
+	benchmarkStorePut(b, newPogrebSubject(b), workload1(b))
+}
+
+func BenchmarkStore_PogrebGet_W1(b *testing.B) {
+	benchmarkStoreGet(b, newPogrebSubject(b), workload1(b))
+}
+
+func BenchmarkStore_PogrebPut_W2(b *testing.B) {
+	benchmarkStorePut(b, newPogrebSubject(b), workload2(b))
+}
+
+func BenchmarkStore_PogrebGet_W2(b *testing.B) {
+	benchmarkStoreGet(b, newPogrebSubject(b), workload2(b))
+}
+
+func BenchmarkStore_PogrebPut_W3(b *testing.B) {
+	benchmarkStorePut(b, newPogrebSubject(b), workload3(b))
+}
+
+func BenchmarkStore_PogrebGet_W3(b *testing.B) {
+	benchmarkStoreGet(b, newPogrebSubject(b), workload3(b))
 }
 
 func BenchmarkStore_StorethehashPut_W0(b *testing.B) {
@@ -152,14 +185,19 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 	}
 }
 
+func newPogrebSubject(b *testing.B) func() (indexer.Interface, error) {
+	return func() (indexer.Interface, error) {
+		return pogreb.New(b.TempDir(), indexer.BinaryValueCodec{})
+	}
+}
+
 func sthSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
 		return storethehash.New(context.Background(), b.TempDir(),
 			indexer.BinaryValueCodec{},
 			64,
-			sth.GCInterval(30*time.Minute),
-			sth.GCTimeLimit(5*time.Minute),
-			sth.SyncInterval(3*time.Second),
+			sth.GCInterval(0),
+			sth.SyncInterval(time.Second),
 			sth.IndexBitSize(24),
 		)
 	}
