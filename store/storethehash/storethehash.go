@@ -87,7 +87,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 	return &sthStorage{
 		dir:     dir,
 		store:   s,
-		mlk:     keymutex.New(0),
+		mlk:     keymutex.New(putConcurrency),
 		vlk:     keymutex.NewRW(0),
 		primary: primary,
 		vcodec:  vcodec,
