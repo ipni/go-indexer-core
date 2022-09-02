@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/gammazero/keymutex"
+	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
 	"github.com/ipld/go-storethehash/store/primary"
 	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
@@ -42,6 +44,8 @@ type sthStorage struct {
 
 	primary *mhprimary.MultihashPrimary
 	vcodec  indexer.ValueCodec
+
+	wp *workerpool.WorkerPool
 }
 
 type sthIterator struct {
@@ -55,7 +59,7 @@ type sthIterator struct {
 //
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.JsonValueCodec is used.
-func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, options ...sth.Option) (indexer.Interface, error) {
+func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (indexer.Interface, error) {
 	// Using a single file to store index and data. This may change in the
 	// future, and we may choose to set a max. size to files. Having several
 	// files for storage increases complexity but minimizes the overhead of
@@ -75,6 +79,11 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, options ...
 		vcodec = indexer.JsonValueCodec{}
 	}
 	s.Start()
+	var wp *workerpool.WorkerPool
+	if putConcurrency > 1 {
+		wp = workerpool.New(putConcurrency)
+	}
+
 	return &sthStorage{
 		dir:     dir,
 		store:   s,
@@ -82,6 +91,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, options ...
 		vlk:     keymutex.NewRW(0),
 		primary: primary,
 		vcodec:  vcodec,
+		wp:      wp,
 	}, nil
 }
 
@@ -95,21 +105,71 @@ func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error 
 		return fmt.Errorf("cannot store value: %w", err)
 	}
 
-	for i := range mhs {
-		err = s.putIndex(mhs[i], valKey)
-		if err != nil {
-			return fmt.Errorf("cannot store index: %w", err)
+	if s.wp == nil || len(mhs) < 2 {
+		for i := range mhs {
+			if err = s.putIndex(mhs[i], valKey); err != nil {
+				return fmt.Errorf("cannot store index: %w", err)
+			}
 		}
+		return nil
+	}
+
+	errCh := make(chan error)
+	var wg sync.WaitGroup
+	wg.Add(len(mhs))
+	for i := range mhs {
+		m := mhs[i]
+		s.wp.Submit(func() {
+			if err := s.putIndex(m, valKey); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+			wg.Done()
+		})
+	}
+	wg.Wait()
+	close(errCh)
+	err = <-errCh
+	if err != nil {
+		return fmt.Errorf("cannot store index: %w", err)
 	}
 	return nil
 }
 
 func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
-	for i := range mhs {
-		err := s.removeIndex(mhs[i], value)
-		if err != nil {
-			return err
+	if s.wp == nil || len(mhs) < 2 {
+		for i := range mhs {
+			if err := s.removeIndex(mhs[i], value); err != nil {
+				return fmt.Errorf("cannot remove index: %w", err)
+			}
 		}
+		return nil
+	}
+
+	errCh := make(chan error)
+	var wg sync.WaitGroup
+	wg.Add(len(mhs))
+
+	for i := range mhs {
+		m := mhs[i]
+		s.wp.Submit(func() {
+			if err := s.removeIndex(m, value); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+			wg.Done()
+		})
+	}
+
+	wg.Wait()
+	close(errCh)
+	err := <-errCh
+	if err != nil {
+		return fmt.Errorf("cannot remove index: %w", err)
 	}
 	return nil
 }
@@ -204,6 +264,9 @@ func (s *sthStorage) Flush() error {
 }
 
 func (s *sthStorage) Close() error {
+	if s.wp != nil {
+		s.wp.Stop()
+	}
 	return s.store.Close()
 }
 
