@@ -104,7 +104,7 @@ func toMiB(size int) float64 {
 	return float64(size) / float64(1<<20)
 }
 
-func TestWorkloads_GenerateWithoutError(t *testing.T) {
+func BenchmarkCheckWorkloads_GenerateWithoutError(t *testing.B) {
 	workload0(t)
 	workload1(t)
 	workload2(t)
