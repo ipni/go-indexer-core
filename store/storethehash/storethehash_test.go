@@ -76,6 +76,9 @@ func TestChangeConcurrency(t *testing.T) {
 	s := initSth(t, 1)
 	test.ParallelUpdateTest(t, s)
 
+	s.SetPutConcurrency(1)
+
+	s.SetPutConcurrency(4)
 	s.SetPutConcurrency(4)
 	test.ParallelUpdateTest(t, s)
 

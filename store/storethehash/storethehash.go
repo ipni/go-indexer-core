@@ -287,6 +287,11 @@ func (s *SthStorage) SetPutConcurrency(n int) {
 	s.wpMutex.Lock()
 	oldWP := s.wp
 	if n > 1 {
+		// If there is already a pool of the requested size, do nothing.
+		if s.wp != nil && s.wp.Size() == n {
+			s.wpMutex.Unlock()
+			return
+		}
 		s.wp = workerpool.New(n)
 	} else {
 		s.wp = nil
