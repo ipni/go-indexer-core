@@ -12,7 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-func initSth(t *testing.T, vals ...int) indexer.Interface {
+func initSth(t *testing.T, vals ...int) *storethehash.SthStorage {
 	var putConcurrency int
 	if len(vals) > 0 {
 		putConcurrency = vals[0]
@@ -66,6 +66,20 @@ func TestRemoveProvider(t *testing.T) {
 
 func TestParallel(t *testing.T) {
 	s := initSth(t)
+	test.ParallelUpdateTest(t, s)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChangeConcurrency(t *testing.T) {
+	s := initSth(t, 1)
+	test.ParallelUpdateTest(t, s)
+
+	s.SetPutConcurrency(4)
+	test.ParallelUpdateTest(t, s)
+
+	s.SetPutConcurrency(8)
 	test.ParallelUpdateTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
