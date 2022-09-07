@@ -29,7 +29,7 @@ var (
 	valueKeySuffix = []byte("M")
 )
 
-type sthStorage struct {
+type SthStorage struct {
 	dir   string
 	store *sth.Store
 
@@ -46,11 +46,13 @@ type sthStorage struct {
 	vcodec  indexer.ValueCodec
 
 	wp *workerpool.WorkerPool
+	// wpMutex protects replacing wp
+	wpMutex sync.Mutex
 }
 
 type sthIterator struct {
 	iter     primary.PrimaryStorageIter
-	storage  *sthStorage
+	storage  *SthStorage
 	uniqKeys map[string]struct{}
 }
 
@@ -59,7 +61,7 @@ type sthIterator struct {
 //
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.JsonValueCodec is used.
-func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (indexer.Interface, error) {
+func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
 	// Using a single file to store index and data. This may change in the
 	// future, and we may choose to set a max. size to files. Having several
 	// files for storage increases complexity but minimizes the overhead of
@@ -84,7 +86,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 		wp = workerpool.New(putConcurrency)
 	}
 
-	return &sthStorage{
+	return &SthStorage{
 		dir:     dir,
 		store:   s,
 		mlk:     keymutex.New(putConcurrency),
@@ -95,17 +97,21 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 	}, nil
 }
 
-func (s *sthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
+func (s *SthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	return s.get(makeIndexKey(m))
 }
 
-func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
+func (s *SthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	valKey, err := s.updateValue(value, len(mhs) != 0)
 	if err != nil {
 		return fmt.Errorf("cannot store value: %w", err)
 	}
 
-	if s.wp == nil || len(mhs) < 2 {
+	s.wpMutex.Lock()
+	wp := s.wp
+	s.wpMutex.Unlock()
+
+	if wp == nil || len(mhs) < 2 {
 		for i := range mhs {
 			if err = s.putIndex(mhs[i], valKey); err != nil {
 				return fmt.Errorf("cannot store index: %w", err)
@@ -119,7 +125,7 @@ func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error 
 	wg.Add(len(mhs))
 	for i := range mhs {
 		m := mhs[i]
-		s.wp.Submit(func() {
+		wp.Submit(func() {
 			if err := s.putIndex(m, valKey); err != nil {
 				select {
 				case errCh <- err:
@@ -138,8 +144,12 @@ func (s *sthStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error 
 	return nil
 }
 
-func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
-	if s.wp == nil || len(mhs) < 2 {
+func (s *SthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
+	s.wpMutex.Lock()
+	wp := s.wp
+	s.wpMutex.Unlock()
+
+	if wp == nil || len(mhs) < 2 {
 		for i := range mhs {
 			if err := s.removeIndex(mhs[i], value); err != nil {
 				return fmt.Errorf("cannot remove index: %w", err)
@@ -154,7 +164,7 @@ func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 
 	for i := range mhs {
 		m := mhs[i]
-		s.wp.Submit(func() {
+		wp.Submit(func() {
 			if err := s.removeIndex(m, value); err != nil {
 				select {
 				case errCh <- err:
@@ -174,7 +184,7 @@ func (s *sthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 	return nil
 }
 
-func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
+func (s *SthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	s.Flush()
 	iter, err := s.primary.Iter()
 	if err != nil {
@@ -240,7 +250,7 @@ func (s *sthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 	return nil
 }
 
-func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
+func (s *SthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
 	valKey := makeValueKey(indexer.Value{
 		ProviderID: providerID,
 		ContextID:  contextID,
@@ -254,23 +264,46 @@ func (s *sthStorage) RemoveProviderContext(providerID peer.ID, contextID []byte)
 	return err
 }
 
-func (s *sthStorage) Size() (int64, error) {
+func (s *SthStorage) Size() (int64, error) {
 	return s.store.StorageSize()
 }
 
-func (s *sthStorage) Flush() error {
+func (s *SthStorage) Flush() error {
 	s.store.Flush()
 	return s.store.Err()
 }
 
-func (s *sthStorage) Close() error {
+func (s *SthStorage) Close() error {
+	s.wpMutex.Lock()
 	if s.wp != nil {
 		s.wp.Stop()
+		s.wp = nil
 	}
+	s.wpMutex.Unlock()
 	return s.store.Close()
 }
 
-func (s *sthStorage) Iter() (indexer.Iterator, error) {
+func (s *SthStorage) SetPutConcurrency(n int) {
+	s.wpMutex.Lock()
+	oldWP := s.wp
+	if n > 1 {
+		// If there is already a pool of the requested size, do nothing.
+		if s.wp != nil && s.wp.Size() == n {
+			s.wpMutex.Unlock()
+			return
+		}
+		s.wp = workerpool.New(n)
+	} else {
+		s.wp = nil
+	}
+	s.wpMutex.Unlock()
+
+	if oldWP != nil {
+		oldWP.StopWait()
+	}
+}
+
+func (s *SthStorage) Iter() (indexer.Iterator, error) {
 	err := s.Flush()
 	if err != nil {
 		return nil, err
@@ -346,7 +379,7 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 
 func (it *sthIterator) Close() error { return nil }
 
-func (s *sthStorage) getValueKeys(k []byte) ([][]byte, error) {
+func (s *SthStorage) getValueKeys(k []byte) ([][]byte, error) {
 	valueKeysData, found, err := s.store.Get(k)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get multihash from store: %w", err)
@@ -358,7 +391,7 @@ func (s *sthStorage) getValueKeys(k []byte) ([][]byte, error) {
 	return s.vcodec.UnmarshalValueKeys(valueKeysData)
 }
 
-func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
+func (s *SthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	valueKeys, err := s.getValueKeys(k)
 	if err != nil {
 		return nil, false, err
@@ -380,7 +413,7 @@ func (s *sthStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	return values, true, nil
 }
 
-func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
+func (s *SthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	k := makeIndexKey(m)
 
 	s.mlk.LockBytes(k)
@@ -412,7 +445,7 @@ func (s *sthStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 	return nil
 }
 
-func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error) {
+func (s *SthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, error) {
 	// All values must have metadata, even if this only consists of the
 	// protocol ID.
 	if len(value.MetadataBytes) == 0 {
@@ -458,7 +491,7 @@ func (s *sthStorage) updateValue(value indexer.Value, saveNew bool) ([]byte, err
 	return valKey, nil
 }
 
-func (s *sthStorage) removeIndex(m multihash.Multihash, value indexer.Value) error {
+func (s *SthStorage) removeIndex(m multihash.Multihash, value indexer.Value) error {
 	k := makeIndexKey(m)
 
 	s.mlk.LockBytes(k)
@@ -492,7 +525,7 @@ func (s *sthStorage) removeIndex(m multihash.Multihash, value indexer.Value) err
 	return nil
 }
 
-func (s *sthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, error) {
+func (s *SthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, error) {
 	values := make([]indexer.Value, 0, len(valueKeys))
 
 	for i := 0; i < len(valueKeys); {

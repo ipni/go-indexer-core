@@ -51,4 +51,9 @@ func TestEqual(t *testing.T) {
 	if !value1.Match(value2) {
 		t.Fatal("values do not match")
 	}
+
+	value2 = Value{p1, nil, metaBytes}
+	if value1.Match(value2) {
+		t.Fatal("values should not match")
+	}
 }
