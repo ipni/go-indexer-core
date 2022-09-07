@@ -140,8 +140,8 @@ github.com/ipfs/go-ipfs-blocksutil v0.0.1 h1:Eh/H4pc1hsvhzsQoMEP3Bke/aW5P5rVM1IW
 github.com/ipfs/go-ipfs-util v0.0.2 h1:59Sswnk1MFaiq+VcaknX7aYEyGyGDAA73ilhEK2POp8=
 github.com/ipfs/go-log/v2 v2.5.1 h1:1XdUzF7048prq4aBjDQQ4SL5RxftpRGdXhNRwKSAlcY=
 github.com/ipfs/go-log/v2 v2.5.1/go.mod h1:prSpmC1Gpllc9UYWxDiZDreBYw7zp4Iqp1kOLU9U5UI=
-github.com/ipld/go-storethehash v0.2.7-0.20220907071047-3e80d40cbb6b h1:5Hoz815p1R+6nZpsCO1cYd2s7qCxW2DsOecIJB5OGuU=
-github.com/ipld/go-storethehash v0.2.7-0.20220907071047-3e80d40cbb6b/go.mod h1:WDeK24//CTUrs4kKxB52qNUf65zCCYHGm3r6fPFKV94=
+github.com/ipld/go-storethehash v0.2.7-0.20220907074626-45aa8601a7f4 h1:pkOyWY25vhTFSthQ9M+5kUJY1tvggAZvTxi/aaL2pnw=
+github.com/ipld/go-storethehash v0.2.7-0.20220907074626-45aa8601a7f4/go.mod h1:WDeK24//CTUrs4kKxB52qNUf65zCCYHGm3r6fPFKV94=
 github.com/iris-contrib/blackfriday v2.0.0+incompatible/go.mod h1:UzZ2bDEoaSGPbkg6SAB4att1aAwTmVIx/5gCVqeyUdI=
 github.com/iris-contrib/go.uuid v2.0.0+incompatible/go.mod h1:iz2lgM/1UnEf1kP0L/+fafWORmlnuysV2EMP8MW+qe0=
 github.com/iris-contrib/i18n v0.0.0-20171121225848-987a633949d0/go.mod h1:pMCz62A0xJL6I+umB2YTlFRwWXaDFA0jy+5HzGiJjqI=
