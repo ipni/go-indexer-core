@@ -283,6 +283,10 @@ func (s *SthStorage) Close() error {
 	return s.store.Close()
 }
 
+func (s *SthStorage) SetFileCacheSize(size int) {
+	s.store.SetFileCacheSize(size)
+}
+
 func (s *SthStorage) SetPutConcurrency(n int) {
 	s.wpMutex.Lock()
 	oldWP := s.wp
