@@ -13,9 +13,7 @@ import (
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
-	freelist "github.com/ipld/go-storethehash/store/freelist"
-	"github.com/ipld/go-storethehash/store/primary"
-	mhprimary "github.com/ipld/go-storethehash/store/primary/multihash"
+	"github.com/ipld/go-storethehash/store/index"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/crypto/blake2b"
@@ -43,8 +41,7 @@ type SthStorage struct {
 	// may make this unnecessary.
 	vlk *keymutex.KeyRWMutex
 
-	primary *mhprimary.MultihashPrimary
-	vcodec  indexer.ValueCodec
+	vcodec indexer.ValueCodec
 
 	wp *workerpool.WorkerPool
 	// wpMutex protects replacing wp
@@ -52,9 +49,9 @@ type SthStorage struct {
 }
 
 type sthIterator struct {
-	iter     primary.PrimaryStorageIter
-	storage  *SthStorage
-	uniqKeys map[string]struct{}
+	index     *index.Index
+	indexIter *index.Iterator
+	storage   *SthStorage
 }
 
 // New creates a new indexer.Interface implemented by a storethehash-based
@@ -63,23 +60,10 @@ type sthIterator struct {
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.JsonValueCodec is used.
 func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
-	// Using a single file to store index and data. This may change in the
-	// future, and we may choose to set a max. size to files. Having several
-	// files for storage increases complexity but minimizes the overhead of
-	// compaction (once we have it)
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
 
-	freeList, err := freelist.Open(indexPath + ".free")
-	if err != nil {
-		return nil, err
-	}
-	primary, err := mhprimary.Open(dataPath, freeList)
-	if err != nil {
-		return nil, fmt.Errorf("error opening storethehash primary: %w", err)
-	}
-
-	s, err := sth.OpenStore(ctx, indexPath, primary, freeList, false, options...)
+	s, err := sth.OpenStore(ctx, sth.MultihashPrimary, dataPath, indexPath, false, options...)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
@@ -93,13 +77,12 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 	}
 
 	return &SthStorage{
-		dir:     dir,
-		store:   s,
-		mlk:     keymutex.New(putConcurrency),
-		vlk:     keymutex.NewRW(0),
-		primary: primary,
-		vcodec:  vcodec,
-		wp:      wp,
+		dir:    dir,
+		store:  s,
+		mlk:    keymutex.New(putConcurrency),
+		vlk:    keymutex.NewRW(0),
+		vcodec: vcodec,
+		wp:     wp,
 	}, nil
 }
 
@@ -192,29 +175,34 @@ func (s *SthStorage) Remove(value indexer.Value, mhs ...multihash.Multihash) err
 
 func (s *SthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	s.Flush()
-	iter, err := s.primary.Iter()
-	if err != nil {
-		return err
-	}
 
+	index := s.store.Index()
+	iter := index.NewIterator()
 	var count int
+
 	for {
 		if count%1024 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		count++
 
-		// Iterate through all stored items, examining values and skipping
-		// multihashes.
-		key, _, err := iter.Next()
+		rec, done, err := iter.Next()
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
 			return err
 		}
+		if done {
+			return nil
+		}
 
-		// Decode the key and see if it is a value key.
+		// Get the key and value stored in primary to see if it is the same (index
+		// only stores prefixes).
+		key, valueData, err := index.Primary.Get(rec.Block)
+		if err != nil {
+			// Record no longer there, skip
+			continue
+		}
+
+		// Decode the key and see if it is an index key.
 		dm, err := multihash.Decode(key)
 		if err != nil {
 			return err
@@ -224,24 +212,13 @@ func (s *SthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 			continue
 		}
 
-		s.vlk.RLockBytes(key)
-		valueData, found, err := s.store.Get(multihash.Multihash(key))
-		s.vlk.RUnlockBytes(key)
+		value, err := s.vcodec.UnmarshalValue(valueData)
 		if err != nil {
 			return err
 		}
 
-		// If a value was found, skip it if the provider is different than the
-		// one being removed.
-		if found {
-			value, err := s.vcodec.UnmarshalValue(valueData)
-			if err != nil {
-				return err
-			}
-
-			if value.ProviderID != providerID {
-				continue
-			}
+		if value.ProviderID != providerID {
+			continue
 		}
 
 		s.vlk.LockBytes(key)
@@ -318,25 +295,30 @@ func (s *SthStorage) Iter() (indexer.Iterator, error) {
 	if err != nil {
 		return nil, err
 	}
-	iter, err := s.primary.Iter()
-	if err != nil {
-		return nil, err
-	}
+	index := s.store.Index()
 	return &sthIterator{
-		iter:     iter,
-		storage:  s,
-		uniqKeys: map[string]struct{}{},
+		index:     index,
+		indexIter: index.NewIterator(),
+		storage:   s,
 	}, nil
 }
 
 func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 	for {
-		key, _, err := it.iter.Next()
+		rec, done, err := it.indexIter.Next()
 		if err != nil {
-			if err == io.EOF {
-				it.uniqKeys = nil
-			}
 			return nil, nil, err
+		}
+		if done {
+			return nil, nil, io.EOF
+		}
+
+		// Get the key and value stored in primary to see if it is the same (index
+		// only stores prefixes).
+		key, valueKeysData, err := it.index.Primary.Get(rec.Block)
+		if err != nil {
+			// Record no longer there, skip.
+			continue
 		}
 
 		// Decode the key and see if it is an index key.
@@ -346,25 +328,6 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		}
 		if !bytes.HasSuffix(dm.Digest, indexKeySuffix) {
 			// Key does not have index prefix, so is not an index key.
-			continue
-		}
-
-		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
-		copy(mhb, dm.Digest)
-		reverseBytes(mhb)
-		origMultihash := multihash.Multihash(mhb)
-		k := string(origMultihash)
-		_, found := it.uniqKeys[k]
-		if found {
-			continue
-		}
-		it.uniqKeys[k] = struct{}{}
-
-		valueKeysData, found, err := it.storage.store.Get(multihash.Multihash(key))
-		if err != nil {
-			return nil, nil, err
-		}
-		if !found {
 			continue
 		}
 
@@ -383,7 +346,11 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		return origMultihash, values, nil
+		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
+		copy(mhb, dm.Digest)
+		reverseBytes(mhb)
+
+		return multihash.Multihash(mhb), values, nil
 	}
 }
 
