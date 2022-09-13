@@ -13,7 +13,6 @@ import (
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
-	"github.com/ipld/go-storethehash/store/index"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/crypto/blake2b"
@@ -49,9 +48,8 @@ type SthStorage struct {
 }
 
 type sthIterator struct {
-	index     *index.Index
-	indexIter *index.Iterator
 	storage   *SthStorage
+	storeIter *sth.Iterator
 }
 
 // New creates a new indexer.Interface implemented by a storethehash-based
@@ -291,34 +289,18 @@ func (s *SthStorage) SetPutConcurrency(n int) {
 }
 
 func (s *SthStorage) Iter() (indexer.Iterator, error) {
-	err := s.Flush()
-	if err != nil {
-		return nil, err
-	}
-	index := s.store.Index()
 	return &sthIterator{
-		index:     index,
-		indexIter: index.NewIterator(),
 		storage:   s,
+		storeIter: s.store.NewIterator(),
 	}, nil
 }
 
 func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 	for {
-		rec, done, err := it.indexIter.Next()
+		// Retruns io.EOF error when done.
+		key, valueData, err := it.storeIter.Next()
 		if err != nil {
 			return nil, nil, err
-		}
-		if done {
-			return nil, nil, io.EOF
-		}
-
-		// Get the key and value stored in primary to see if it is the same (index
-		// only stores prefixes).
-		key, valueKeysData, err := it.index.Primary.Get(rec.Block)
-		if err != nil {
-			// Record no longer there, skip.
-			continue
 		}
 
 		// Decode the key and see if it is an index key.
@@ -331,7 +313,7 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			continue
 		}
 
-		valueKeys, err := it.storage.vcodec.UnmarshalValueKeys(valueKeysData)
+		valueKeys, err := it.storage.vcodec.UnmarshalValueKeys(valueData)
 		if err != nil {
 			return nil, nil, err
 		}
