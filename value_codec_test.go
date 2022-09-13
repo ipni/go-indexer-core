@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/bench"
-
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/bench"
 	"github.com/multiformats/go-varint"
 )
 
@@ -29,6 +28,10 @@ func TestValueCodec_MarshalUnmarshal(t *testing.T) {
 		{
 			name:    "binary",
 			subject: indexer.BinaryValueCodec{},
+		},
+		{
+			name:    "binary-json",
+			subject: indexer.BinaryWithJsonFallbackCodec{},
 		},
 	}
 	for _, test := range tests {
@@ -158,6 +161,77 @@ func TestBinaryValueCodec_MarshalUnmarshalEmptyValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(svk, []byte{0}) {
+		t.Fatal()
+	}
+}
+
+func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
+	rng := rand.New(rand.NewSource(1413))
+	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
+	wantValueKeys := generateRandomValueKeys(43)
+
+	subject := indexer.BinaryWithJsonFallbackCodec{}
+
+	for _, wantGenValue := range wantGenValues {
+		wantValue := wantGenValue.Value
+		gotJson, err := indexer.JsonValueCodec{}.MarshalValue(wantValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotValue, err := subject.UnmarshalValue(gotJson)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(wantValue, gotValue) {
+			t.Fatal()
+		}
+	}
+
+	gotJson, err := indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotValueKeys, err := subject.UnmarshalValueKeys(gotJson)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wantValueKeys, gotValueKeys) {
+		t.Fatal()
+	}
+}
+
+func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
+	rng := rand.New(rand.NewSource(1413))
+	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
+	wantValueKeys := generateRandomValueKeys(43)
+
+	binCodec := indexer.BinaryValueCodec{}
+	subject := indexer.BinaryWithJsonFallbackCodec{}
+
+	for _, wantGenValue := range wantGenValues {
+		wantValue := wantGenValue.Value
+		wantBin, err := binCodec.MarshalValue(wantValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotBin, err := subject.MarshalValue(wantValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(wantBin, gotBin) {
+			t.Fatal()
+		}
+	}
+
+	wantBinVK, err := binCodec.MarshalValueKeys(wantValueKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBinVK, err := subject.MarshalValueKeys(wantValueKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wantBinVK, gotBinVK) {
 		t.Fatal()
 	}
 }

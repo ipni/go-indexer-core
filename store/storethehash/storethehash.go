@@ -60,7 +60,8 @@ type sthIterator struct {
 // value store.
 //
 // The given indexer.ValueCodec is used to serialize and deserialize values.
-// If it is set to nil, indexer.JsonValueCodec is used.
+// If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
+// // will gracefully migrate the codec from JSON to Binary format.
 func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
 	// Using a single file to store index and data. This may change in the
 	// future, and we may choose to set a max. size to files. Having several
@@ -78,7 +79,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 		return nil, fmt.Errorf("error opening storethehash index: %w", err)
 	}
 	if vcodec == nil {
-		vcodec = indexer.JsonValueCodec{}
+		vcodec = indexer.BinaryWithJsonFallbackCodec{}
 	}
 	s.Start()
 	var wp *workerpool.WorkerPool

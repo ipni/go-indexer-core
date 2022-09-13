@@ -13,6 +13,7 @@ import (
 var (
 	_ ValueCodec = (*JsonValueCodec)(nil)
 	_ ValueCodec = (*BinaryValueCodec)(nil)
+	_ ValueCodec = (*BinaryWithJsonFallbackCodec)(nil)
 
 	// ErrCodecOverflow signals that unexpected size was encountered while
 	// unmarshalling bytes to Value.
@@ -51,6 +52,14 @@ type (
 	// BinaryValueCodec serializes and deserializes Value as binary sections
 	// prepended with byte length as varint.
 	BinaryValueCodec struct{}
+
+	// BinaryWithJsonFallbackCodec always serialises values as binary but deserializes
+	// both from binary and JSON, which gracefully and opportunistically migrates codec
+	// from JSON to the more efficient binary format.
+	BinaryWithJsonFallbackCodec struct {
+		BinaryValueCodec
+		JsonValueCodec
+	}
 )
 
 // Match return true if both values have the same ProviderID and ContextID.
@@ -195,4 +204,40 @@ func (BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 		vk = append(vk, buf.Next(size))
 	}
 	return vk, nil
+}
+
+func (bjc BinaryWithJsonFallbackCodec) MarshalValue(v Value) ([]byte, error) {
+	return bjc.BinaryValueCodec.MarshalValue(v)
+}
+
+func (bjc BinaryWithJsonFallbackCodec) UnmarshalValue(b []byte) (Value, error) {
+	v, err := bjc.BinaryValueCodec.UnmarshalValue(b)
+	if err == nil {
+		return v, nil
+	}
+	// If b does not look like JSON, i.e. a JSON object with no whitespace at head or tail,
+	//  return the binary unmarshal error.
+	bl := len(b)
+	if bl < 2 || b[0] != '{' || b[bl-1] != '}' {
+		return Value{}, err
+	}
+	return bjc.JsonValueCodec.UnmarshalValue(b)
+}
+
+func (bjc BinaryWithJsonFallbackCodec) MarshalValueKeys(vk [][]byte) ([]byte, error) {
+	return bjc.BinaryValueCodec.MarshalValueKeys(vk)
+}
+
+func (bjc BinaryWithJsonFallbackCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
+	v, err := bjc.BinaryValueCodec.UnmarshalValueKeys(b)
+	if err == nil {
+		return v, nil
+	}
+	// If b does not look like JSON, i.e. a JSON array with no whitespace at head or tail,
+	//  return the binary unmarshal error.
+	bl := len(b)
+	if bl < 2 || b[0] != '[' || b[bl-1] != ']' {
+		return nil, err
+	}
+	return bjc.JsonValueCodec.UnmarshalValueKeys(b)
 }
