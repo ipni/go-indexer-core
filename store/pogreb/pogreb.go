@@ -53,11 +53,12 @@ type pogrebIter struct {
 // store.
 //
 // The given indexer.ValueCodec is used to serialize and deserialize values.
-// If it is set to nil, indexer.JsonValueCodec is used.
+// If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
+// will gracefully migrate the codec from JSON to Binary format.
 func New(dir string, vcodec indexer.ValueCodec) (indexer.Interface, error) {
 	opts := pogreb.Options{BackgroundSyncInterval: DefaultSyncInterval}
 	if vcodec == nil {
-		vcodec = indexer.JsonValueCodec{}
+		vcodec = indexer.BinaryWithJsonFallbackCodec{}
 	}
 	s, err := pogreb.Open(dir, &opts)
 	if err != nil {
