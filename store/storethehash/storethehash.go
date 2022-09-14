@@ -189,7 +189,7 @@ func (s *SthStorage) RemoveProvider(ctx context.Context, providerID peer.ID) err
 			return err
 		}
 		if done {
-			return nil
+			break
 		}
 
 		// Get the key and value stored in primary to see if it is the same (index
