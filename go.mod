@@ -13,7 +13,7 @@ require (
 	github.com/gammazero/workerpool v1.1.3
 	github.com/ipfs/go-cid v0.2.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipld/go-storethehash v0.2.8
+	github.com/ipld/go-storethehash v0.3.1
 	github.com/libp2p/go-libp2p-core v0.16.1
 	github.com/multiformats/go-multihash v0.1.0
 	github.com/multiformats/go-varint v0.0.6
