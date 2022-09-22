@@ -64,7 +64,7 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 
 	s, err := sth.OpenStore(ctx, sth.MultihashPrimary, dataPath, indexPath, false, options...)
 	if err != nil {
-		return nil, fmt.Errorf("error opening storethehash index: %w", err)
+		return nil, fmt.Errorf("error opening storethehash: %w", err)
 	}
 	if vcodec == nil {
 		vcodec = indexer.BinaryWithJsonFallbackCodec{}
