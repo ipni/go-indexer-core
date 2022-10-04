@@ -69,13 +69,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatalf("Error putting single multihash again: %s", err)
 	}
 
+	s.Flush()
 	vals, found, err := s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Flush()
 	if !found {
-		t.Error("Error finding single multihash")
+		t.Fatal("Error finding single multihash")
 	}
 	if !vals[0].Equal(value1) {
 		t.Error("Got wrong value for single multihash")
@@ -88,13 +88,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatalf("Error putting batch of multihashes: %s", err)
 	}
 
+	s.Flush()
 	vals, found, err = s.Get(mhs[5])
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Flush()
 	if !found {
-		t.Error("Error finding a multihash from the batch")
+		t.Fatal("Error finding a multihash from the batch")
 	}
 	if !vals[0].Equal(value1) {
 		t.Error("Got wrong value for single multihash")
@@ -109,13 +109,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	vals, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Flush()
 	if !found {
-		t.Error("Error finding a multihash from the batch")
+		t.Fatal("Error finding a multihash from the batch")
 	}
 	if len(vals) != 2 {
 		t.Fatal("Update over existing key not correct")
@@ -190,12 +190,12 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 
 	vals, found, err = s.Get(v1mh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Flush()
 	if !found {
 		t.Fatal("Error finding single multihash from v1 CID")
 	}
@@ -214,12 +214,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
+
 	// Getrieve value using different multihash
 	vals, found, err = s.Get(single)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Flush()
 	if !found {
 		t.Error("Error finding single multihash")
 	}
