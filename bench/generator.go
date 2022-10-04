@@ -47,22 +47,12 @@ type (
 		indexer.Value
 		Entries []multihash.Multihash
 	}
-
-	// randomBytesGenerator is used to reduce allocation in a case where the functions that
-	// determine the length of generated random bytes in GeneratorConfig always return a fixed
-	// value.
-	randomBytesGenerator struct {
-		rng   *rand.Rand
-		bytes []byte
-	}
 )
 
-func (cb *randomBytesGenerator) generate(l uint64) []byte {
-	if len(cb.bytes) != int(l) {
-		cb.bytes = make([]byte, l)
-	}
-	cb.rng.Read(cb.bytes)
-	return cb.bytes
+func generate(rng *rand.Rand, l uint64) []byte {
+	buf := make([]byte, l)
+	rng.Read(buf)
+	return buf
 }
 
 func (gc GeneratorConfig) withDefaults() GeneratorConfig {
@@ -97,7 +87,6 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 	cfg = cfg.withDefaults()
 	var gvs []GeneratedValue
 	var totalSize int
-	rbg := randomBytesGenerator{rng: rng}
 	for i := 0; i < cfg.NumProviders; i++ {
 		_, pub, err := crypto.GenerateEd25519Key(rng)
 		if err != nil {
@@ -112,10 +101,10 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 			gv.Value.ProviderID = provId
 			totalSize += provId.Size()
 
-			gv.Value.ContextID = rbg.generate(cfg.ContextIDLength())
+			gv.Value.ContextID = generate(rng, cfg.ContextIDLength())
 			totalSize += len(gv.Value.ContextID)
 
-			gv.Value.MetadataBytes = rbg.generate(cfg.MetadataLength())
+			gv.Value.MetadataBytes = generate(rng, cfg.MetadataLength())
 			totalSize += len(gv.Value.MetadataBytes)
 
 			if i > 0 && cfg.DuplicateEntries() {
@@ -128,20 +117,23 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 				gv.Entries = make([]multihash.Multihash, mhCount)
 				var err error
 				for i := 0; i < int(mhCount); i++ {
-					gv.Entries[i], err = multihash.Sum(rbg.generate(cfg.MultihashLength()), multihash.IDENTITY, -1)
+					gv.Entries[i], err = multihash.Sum(generate(rng, cfg.MultihashLength()), multihash.IDENTITY, -1)
 					if err != nil {
 						b.Fatal(err)
 					}
 					totalSize += len(gv.Entries[i])
 				}
 			}
+
 			gvs = append(gvs, gv)
 		}
 	}
+
 	if cfg.ShuffleValues {
 		rng.Shuffle(len(gvs), func(one, other int) {
 			gvs[one], gvs[other] = gvs[other], gvs[one]
 		})
 	}
+
 	return gvs, totalSize
 }
