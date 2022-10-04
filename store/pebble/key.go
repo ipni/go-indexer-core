@@ -78,12 +78,16 @@ func (k key) next() key {
 
 // stripMergeDelete removes the mergeDeleteKeyPrefix prefix from this key only if the key
 // has the prefix mergeDeleteKeyPrefix.
-// It returns the resulting key and a bool to signal weather the removal happened.
-func (k key) stripMergeDelete() (key, bool) {
-	if k.prefix() == mergeDeleteKeyPrefix {
-		return k[1:], true
+// It returns the key prefix and the resulting key; mergeDeleteKeyPrefix as the returned prefix
+// signals that the strip has occurred.
+func (k key) stripMergeDelete() (keyPrefix, key) {
+	prefix := k.prefix()
+	switch prefix {
+	case mergeDeleteKeyPrefix:
+		return prefix, k[1:]
+	default:
+		return prefix, k
 	}
-	return k, false
 }
 
 // newBlake3Keyer instantiates a new keyer that uses blake3 hash function, where the

@@ -82,19 +82,19 @@ func BenchmarkStore_PogrebGet_W3(b *testing.B) {
 }
 
 func BenchmarkStore_StorethehashPut_W0(b *testing.B) {
-	benchmarkStorePut(b, sthSubject(b), workload1(b))
-}
-
-func BenchmarkStore_StorethehashGet_W0(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload1(b))
-}
-
-func BenchmarkStore_StorethehashPut_W1(b *testing.B) {
 	benchmarkStorePut(b, sthSubject(b), workload0(b))
 }
 
-func BenchmarkStore_StorethehashGet_W1(b *testing.B) {
+func BenchmarkStore_StorethehashGet_W0(b *testing.B) {
 	benchmarkStoreGet(b, sthSubject(b), workload0(b))
+}
+
+func BenchmarkStore_StorethehashPut_W1(b *testing.B) {
+	benchmarkStorePut(b, sthSubject(b), workload1(b))
+}
+
+func BenchmarkStore_StorethehashGet_W1(b *testing.B) {
+	benchmarkStoreGet(b, sthSubject(b), workload1(b))
 }
 
 func BenchmarkStore_StorethehashPut_W2(b *testing.B) {
@@ -102,7 +102,7 @@ func BenchmarkStore_StorethehashPut_W2(b *testing.B) {
 }
 
 func BenchmarkStore_StorethehashGet_W2(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload1(b))
+	benchmarkStoreGet(b, sthSubject(b), workload2(b))
 }
 
 func BenchmarkStore_StorethehashPut_W3(b *testing.B) {
@@ -110,7 +110,7 @@ func BenchmarkStore_StorethehashPut_W3(b *testing.B) {
 }
 
 func BenchmarkStore_StorethehashGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload1(b))
+	benchmarkStoreGet(b, sthSubject(b), workload3(b))
 }
 
 func BenchmarkStore_MemoryPut_W0(b *testing.B) {
@@ -142,7 +142,7 @@ func BenchmarkStore_MemoryPut_W3(b *testing.B) {
 }
 
 func BenchmarkStore_MemoryGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, newMemorySubject, workload2(b))
+	benchmarkStoreGet(b, newMemorySubject, workload3(b))
 }
 
 func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
@@ -257,10 +257,20 @@ func benchmarkStoreGet(b *testing.B, newSubject func() (indexer.Interface, error
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			for _, v := range w.values {
-				for _, e := range v.Entries {
-					if _, _, err := subject.Get(e); err != nil {
+			for _, want := range w.values {
+			Entries:
+				for _, e := range want.Entries {
+					if gotValues, found, err := subject.Get(e); err != nil {
 						b.Fatal(err)
+					} else if !found {
+						b.Fatalf("failed to find %s", e.B58String())
+					} else {
+						for _, got := range gotValues {
+							if want.Equal(got) {
+								continue Entries
+							}
+						}
+						b.Fatalf("failed to find value %v for entry %s", want, e.B58String())
 					}
 				}
 			}
