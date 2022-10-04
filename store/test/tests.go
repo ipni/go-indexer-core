@@ -73,6 +73,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	if !found {
 		t.Error("Error finding single multihash")
 	}
@@ -91,6 +92,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	if !found {
 		t.Error("Error finding a multihash from the batch")
 	}
@@ -111,6 +113,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	if !found {
 		t.Error("Error finding a multihash from the batch")
 	}
@@ -192,6 +195,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	if !found {
 		t.Fatal("Error finding single multihash from v1 CID")
 	}
@@ -215,6 +219,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Flush()
 	if !found {
 		t.Error("Error finding single multihash")
 	}
