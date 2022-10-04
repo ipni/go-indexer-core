@@ -65,8 +65,8 @@ func Test_blake3Keyer(t *testing.T) {
 		if vk.prefix() != valueKeyPrefix {
 			t.Fatal()
 		}
-		vvk, ok := vk.stripMergeDelete()
-		if ok {
+		p, vvk := vk.stripMergeDelete()
+		if p != valueKeyPrefix {
 			t.Fatal()
 		}
 		if !bytes.Equal(vk, vvk) {
@@ -101,8 +101,8 @@ func Test_blake3Keyer(t *testing.T) {
 		if dvk.prefix() != mergeDeleteKeyPrefix {
 			t.Fatal()
 		}
-		vk2, ok := dvk.stripMergeDelete()
-		if !ok {
+		p, vk2 := dvk.stripMergeDelete()
+		if p != mergeDeleteKeyPrefix {
 			t.Fatal()
 		}
 		if !bytes.Equal(vk, vk2) {

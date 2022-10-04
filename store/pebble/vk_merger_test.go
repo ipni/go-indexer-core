@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/multiformats/go-multihash"
 )
 
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
@@ -51,7 +52,7 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 }
 
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
-	mh := []byte("lobster")
+	mh := multihash.Multihash("lobster")
 	bk := newBlake3Keyer(10)
 	value1 := indexer.Value{ProviderID: "fish", ContextID: []byte("1")}
 	value2 := indexer.Value{ProviderID: "in", ContextID: []byte("2")}
@@ -75,7 +76,11 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	}
 
 	subject := newValueKeysMerger()
-	oneMerge, err := subject.Merge(mh, vk1)
+	mk, err := bk.multihashKey(mh)
+	if err != nil {
+		t.Fatal()
+	}
+	oneMerge, err := subject.Merge(mk, vk1)
 	if err != nil {
 		t.Fatal(err)
 	}

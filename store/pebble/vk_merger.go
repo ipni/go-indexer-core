@@ -26,21 +26,48 @@ type valueKeysValueMerger struct {
 
 func newValueKeysMerger() *pebble.Merger {
 	return &pebble.Merger{
-		Merge: func(key, value []byte) (pebble.ValueMerger, error) {
-			v := &valueKeysValueMerger{}
-			return v, v.MergeNewer(value)
+		Merge: func(k, value []byte) (pebble.ValueMerger, error) {
+			// Fall back on default merger if the key is not of type multihash, i.e. the only key
+			// type that corresponds to value-keys.
+			switch key(k).prefix() {
+			case multihashKeyPrefix:
+				v := &valueKeysValueMerger{}
+				return v, v.MergeNewer(value)
+			default:
+				return pebble.DefaultMerger.Merge(k, value)
+			}
 		},
 		Name: valueKeysMergerName,
 	}
 }
 
 func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
-	dvk, ok := key(value).stripMergeDelete()
-	switch {
-	case ok:
+	prefix, dvk := key(value).stripMergeDelete()
+	switch prefix {
+	case mergeDeleteKeyPrefix:
 		v.delete = append(v.delete, dvk)
-	case !v.exists(value):
-		v.merge = append(v.merge, value)
+	case valueKeyPrefix:
+		if !v.exists(value) {
+			v.merge = append(v.merge, value)
+		}
+	default:
+		// The given value is marshalled value-keys; decode it and populate merge values.
+		vks, err := v.codec.UnmarshalValueKeys(value)
+		if err != nil {
+			return err
+		}
+
+		// Grow v.merge capacity if it is less than the upper bound for new length.
+		// This is to reduce footprint of append called in a loop.
+		maxLen := len(v.merge) + len(vks)
+		if cap(v.merge) < maxLen {
+			v.merge = append(make([][]byte, 0, maxLen), v.merge...)
+		}
+		for _, vk := range vks {
+			if !v.exists(vk) {
+				v.merge = append(v.merge, vk)
+			}
+		}
 	}
 	return nil
 }

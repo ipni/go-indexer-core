@@ -80,8 +80,11 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
-	vks, err := s.vcodec.UnmarshalValueKeys(vkb)
+	vkbcpy := make([]byte, len(vkb))
+	copy(vkbcpy, vkb)
 	_ = vkbClose.Close()
+
+	vks, err := s.vcodec.UnmarshalValueKeys(vkbcpy)
 	if err != nil {
 		return nil, false, err
 	}
@@ -96,8 +99,11 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 			log.Errorw("can't find value", "err", err)
 			return nil, false, err
 		}
-		v, err := s.vcodec.UnmarshalValue(vs)
+		vcpy := make([]byte, len(vs))
+		copy(vcpy, vs)
 		_ = vCloser.Close()
+
+		v, err := s.vcodec.UnmarshalValue(vcpy)
 		if err != nil {
 			return nil, false, err
 		}
