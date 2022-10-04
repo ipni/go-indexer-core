@@ -172,7 +172,10 @@ func (b *blake3Keyer) multihashKey(mh multihash.Multihash) (key, error) {
 func (b *blake3Keyer) keyToMultihash(k key) (multihash.Multihash, error) {
 	switch k.prefix() {
 	case multihashKeyPrefix:
-		return multihash.Multihash(k[1:]), nil
+		keyData := k[1:]
+		mhData := make([]byte, len(keyData))
+		copy(mhData, keyData)
+		return multihash.Multihash(mhData), nil
 	default:
 		return nil, errors.New("key prefix mismatch")
 	}
