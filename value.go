@@ -153,7 +153,8 @@ func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	if size < 0 || size > buf.Len() {
 		return v, ErrCodecOverflow
 	}
-	v.ContextID = buf.Next(size)
+	v.ContextID = make([]byte, size)
+	buf.Read(v.ContextID)
 
 	// Decode metadata.
 	usize, err = varint.ReadUvarint(buf)
@@ -164,7 +165,8 @@ func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	if size < 0 || size > buf.Len() {
 		return v, ErrCodecOverflow
 	}
-	v.MetadataBytes = buf.Next(size)
+	v.MetadataBytes = make([]byte, size)
+	buf.Read(v.MetadataBytes)
 	if buf.Len() != 0 {
 		return v, fmt.Errorf("too many bytes; %d remain unread", buf.Len())
 	}
@@ -201,7 +203,9 @@ func (BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 		if size < 0 || size > buf.Len() {
 			return vk, ErrCodecOverflow
 		}
-		vk = append(vk, buf.Next(size))
+		vkData := make([]byte, size)
+		buf.Read(vkData)
+		vk = append(vk, vkData)
 	}
 	return vk, nil
 }

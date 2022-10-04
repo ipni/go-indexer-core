@@ -80,11 +80,8 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
-	vkbcpy := make([]byte, len(vkb))
-	copy(vkbcpy, vkb)
+	vks, err := s.vcodec.UnmarshalValueKeys(vkb)
 	_ = vkbClose.Close()
-
-	vks, err := s.vcodec.UnmarshalValueKeys(vkbcpy)
 	if err != nil {
 		return nil, false, err
 	}
@@ -99,11 +96,8 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 			log.Errorw("can't find value", "err", err)
 			return nil, false, err
 		}
-		vcpy := make([]byte, len(vs))
-		copy(vcpy, vs)
+		v, err := s.vcodec.UnmarshalValue(vs)
 		_ = vCloser.Close()
-
-		v, err := s.vcodec.UnmarshalValue(vcpy)
 		if err != nil {
 			return nil, false, err
 		}
@@ -257,19 +251,14 @@ func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		return nil, nil, io.EOF
 	}
 
-	k := i.it.Key()
-	kcpy := make([]byte, len(k))
-	copy(kcpy, k)
-
-	mh, err := i.keygen.keyToMultihash(kcpy)
+	mh, err := i.keygen.keyToMultihash(i.it.Key())
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// We don't need to copy the value since it is only used for fetching the
 	// indexer.Values, and not returned to the caller.
-	bvks := i.it.Value()
-	vks, err := i.vcodec.UnmarshalValueKeys(bvks)
+	vks, err := i.vcodec.UnmarshalValueKeys(i.it.Value())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -279,15 +268,14 @@ func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		bvcpy := make([]byte, len(bv))
-		copy(bvcpy, bv)
-		if err := c.Close(); err != nil {
-			return nil, nil, err
-		}
 
-		v, err := i.vcodec.UnmarshalValue(bvcpy)
+		v, err := i.vcodec.UnmarshalValue(bv)
+		cerr := c.Close()
 		if err != nil {
 			return nil, nil, err
+		}
+		if cerr != nil {
+			return nil, nil, cerr
 		}
 		vs[j] = v
 	}
