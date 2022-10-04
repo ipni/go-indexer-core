@@ -49,12 +49,6 @@ type (
 	}
 )
 
-func generate(rng *rand.Rand, l uint64) []byte {
-	buf := make([]byte, l)
-	rng.Read(buf)
-	return buf
-}
-
 func (gc GeneratorConfig) withDefaults() GeneratorConfig {
 	if gc.NumProviders == 0 {
 		gc.NumProviders = 1
@@ -101,11 +95,13 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 			gv.Value.ProviderID = provId
 			totalSize += provId.Size()
 
-			gv.Value.ContextID = generate(rng, cfg.ContextIDLength())
-			totalSize += len(gv.Value.ContextID)
+			gv.Value.ContextID = make([]byte, cfg.ContextIDLength())
+			n, _ := rng.Read(gv.Value.ContextID)
+			totalSize += n
 
-			gv.Value.MetadataBytes = generate(rng, cfg.MetadataLength())
-			totalSize += len(gv.Value.MetadataBytes)
+			gv.Value.MetadataBytes = make([]byte, cfg.MetadataLength())
+			n, _ = rng.Read(gv.Value.MetadataBytes)
+			totalSize += n
 
 			if i > 0 && cfg.DuplicateEntries() {
 				pi := rng.Intn(len(gvs) - j)
@@ -116,8 +112,10 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 				mhCount := cfg.NumEntriesPerValue()
 				gv.Entries = make([]multihash.Multihash, mhCount)
 				var err error
+				entBuf := make([]byte, cfg.MultihashLength())
 				for i := 0; i < int(mhCount); i++ {
-					gv.Entries[i], err = multihash.Sum(generate(rng, cfg.MultihashLength()), multihash.IDENTITY, -1)
+					rng.Read(entBuf)
+					gv.Entries[i], err = multihash.Sum(entBuf, multihash.IDENTITY, -1)
 					if err != nil {
 						b.Fatal(err)
 					}
