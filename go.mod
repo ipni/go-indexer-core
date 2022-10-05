@@ -14,14 +14,11 @@ require (
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipld/go-storethehash v0.3.6
+	github.com/libp2p/go-libp2p v0.23.2
 	github.com/multiformats/go-multihash v0.2.1
 	github.com/multiformats/go-varint v0.0.6
 	go.opencensus.io v0.23.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
-)
-
-require (
-	github.com/libp2p/go-libp2p v0.23.2
 	lukechampine.com/blake3 v1.1.7
 )
 
