@@ -19,7 +19,7 @@ import (
 
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/gammazero/radixtree"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
 

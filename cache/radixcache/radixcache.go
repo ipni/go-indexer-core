@@ -11,7 +11,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/metrics"
 	"github.com/gammazero/radixtree"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
 )
