@@ -12,7 +12,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/filecoin-project/go-indexer-core"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
 

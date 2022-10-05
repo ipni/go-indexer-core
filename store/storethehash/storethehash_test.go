@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
 	sth "github.com/ipld/go-storethehash/store"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func initSth(t *testing.T, vals ...int) *storethehash.SthStorage {

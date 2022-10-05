@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"lukechampine.com/blake3"
 
 	"github.com/filecoin-project/go-indexer-core"

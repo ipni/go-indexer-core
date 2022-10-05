@@ -20,7 +20,7 @@ import (
 	"github.com/akrylysov/pogreb"
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/gammazero/keymutex"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/crypto/blake2b"
 )
