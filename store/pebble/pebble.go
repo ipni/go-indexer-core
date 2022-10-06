@@ -85,7 +85,10 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	var values []indexer.Value
+
+	// Optimistically set the capacity of values slice to the number of value-keys
+	// in order to reduce the append footprint in the loop below.
+	values := make([]indexer.Value, 0, len(vks))
 	for _, vk := range vks {
 		vs, vCloser, err := s.db.Get(vk)
 		if err == pebble.ErrNotFound {
