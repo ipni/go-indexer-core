@@ -30,7 +30,10 @@ type (
 		// Only support binary format since in pebble we need the capability to merge keys and
 		// there is little reason for store values in any format other than binary for performance
 		// characteristics.
-		vcodec indexer.BinaryValueCodec
+		// Note, pebble is using a zero-copy variation of marshaller to allow optimizations in
+		// cases where the value need not to be copied. The root level binary codec copies on
+		// unmarshal every time.
+		vcodec zeroCopyBinaryValueCodec
 
 		newKeyer func() keyer
 		closed   bool
@@ -40,7 +43,7 @@ type (
 		snapshot *pebble.Snapshot
 		it       *pebble.Iterator
 		keygen   keyer
-		vcodec   indexer.BinaryValueCodec
+		vcodec   zeroCopyBinaryValueCodec
 	}
 )
 
@@ -78,7 +81,11 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
-	vks, err := s.vcodec.UnmarshalValueKeys(vkb)
+	vkbcpy := make([]byte, len(vkb))
+	copy(vkbcpy, vkb)
+	_ = vkbClose.Close()
+
+	vks, err := s.vcodec.UnmarshalValueKeys(vkbcpy)
 	_ = vkbClose.Close()
 	if err != nil {
 		return nil, false, err
@@ -97,8 +104,11 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 			log.Errorw("can't find value", "err", err)
 			return nil, false, err
 		}
-		v, err := s.vcodec.UnmarshalValue(vs)
+		vcpy := make([]byte, len(vs))
+		copy(vcpy, vs)
 		_ = vCloser.Close()
+
+		v, err := s.vcodec.UnmarshalValue(vcpy)
 		if err != nil {
 			return nil, false, err
 		}
@@ -259,7 +269,8 @@ func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
 
 	// We don't need to copy the value since it is only used for fetching the
 	// indexer.Values, and not returned to the caller.
-	vks, err := i.vcodec.UnmarshalValueKeys(i.it.Value())
+	bvks := i.it.Value()
+	vks, err := i.vcodec.UnmarshalValueKeys(bvks)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -270,7 +281,13 @@ func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
-		v, err := i.vcodec.UnmarshalValue(bv)
+		bvcpy := make([]byte, len(bv))
+		copy(bvcpy, bv)
+		if err := c.Close(); err != nil {
+			return nil, nil, err
+		}
+
+		v, err := i.vcodec.UnmarshalValue(bvcpy)
 		cerr := c.Close()
 		if err != nil {
 			return nil, nil, err
