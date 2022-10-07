@@ -17,30 +17,25 @@ func initBenchStore(b *testing.B) indexer.Interface {
 }
 
 func BenchmarkGet(b *testing.B) {
-	skipIf32bit(b)
 	test.BenchMultihashGet(initBenchStore(b), b)
 }
 func BenchmarkParallelGet(b *testing.B) {
-	skipIf32bit(b)
 	test.BenchParallelMultihashGet(initBenchStore(b), b)
 }
 
 // To run this storage benchmarks run:
 // TEST_STORAGE=true go test -v -timeout=30m
 func TestBenchSingle10MB(t *testing.T) {
-	skipIf32bit(t)
 	test.SkipStorage(t)
 	test.BenchReadAll(initPogreb(t), "10MB", t)
 }
 
 func TestBenchSingle100MB(t *testing.T) {
-	skipIf32bit(t)
 	test.SkipStorage(t)
 	test.BenchReadAll(initPogreb(t), "100MB", t)
 }
 
 func TestBenchSingle1GB(t *testing.T) {
-	skipIf32bit(t)
 	test.SkipStorage(t)
 	test.BenchReadAll(initPogreb(t), "1GB", t)
 }

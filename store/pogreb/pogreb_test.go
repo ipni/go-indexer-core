@@ -1,7 +1,6 @@
 package pogreb_test
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/filecoin-project/go-indexer-core"
@@ -18,8 +17,6 @@ func initPogreb(t *testing.T) indexer.Interface {
 }
 
 func TestE2E(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.E2ETest(t, s)
 	if err := s.Close(); err != nil {
@@ -28,8 +25,6 @@ func TestE2E(t *testing.T) {
 }
 
 func TestParallel(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.ParallelUpdateTest(t, s)
 	if err := s.Close(); err != nil {
@@ -38,8 +33,6 @@ func TestParallel(t *testing.T) {
 }
 
 func TestSize(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.SizeTest(t, s)
 	if err := s.Close(); err != nil {
@@ -48,8 +41,6 @@ func TestSize(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.RemoveTest(t, s)
 	if err := s.Close(); err != nil {
@@ -58,8 +49,6 @@ func TestRemove(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.RemoveProviderContextTest(t, s)
 	if err := s.Close(); err != nil {
@@ -68,8 +57,6 @@ func TestRemoveProviderContext(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	test.RemoveProviderTest(t, s)
 	if err := s.Close(); err != nil {
@@ -78,8 +65,6 @@ func TestRemoveProvider(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	skipIf32bit(t)
-
 	s := initPogreb(t)
 	err := s.Close()
 	if err != nil {
@@ -88,11 +73,5 @@ func TestClose(t *testing.T) {
 
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func skipIf32bit(t testing.TB) {
-	if runtime.GOARCH == "386" {
-		t.Skip("Pogreb cannot use GOARCH=386")
 	}
 }
