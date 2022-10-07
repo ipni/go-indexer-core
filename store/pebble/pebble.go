@@ -1,5 +1,3 @@
-//go:build !386
-
 package pebble
 
 import (
