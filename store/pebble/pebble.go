@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -50,6 +51,18 @@ type (
 // New instantiates a new instance of a store backed by Pebble.
 // Note that any Merger value specified in the given options will be overridden.
 func New(path string, opts *pebble.Options) (indexer.Interface, error) {
+	vsInfo, err := vsinfo.Load(path, "pebble")
+	if err != nil {
+		return nil, err
+	}
+	// Force binary codec for pebble.
+	if vsInfo.Codec != vsinfo.BinaryCodec {
+		vsInfo.Codec = vsinfo.BinaryCodec
+		if err = vsInfo.Save(path); err != nil {
+			return nil, err
+		}
+	}
+
 	if opts == nil {
 		opts = &pebble.Options{}
 	}
@@ -60,6 +73,7 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &store{
 		db:       db,
 		newKeyer: func() keyer { return newBlake3Keyer(defaultKeyerLength) },

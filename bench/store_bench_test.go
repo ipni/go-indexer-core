@@ -187,14 +187,13 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 
 func newPogrebSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
-		return pogreb.New(b.TempDir(), indexer.BinaryValueCodec{})
+		return pogreb.New(b.TempDir())
 	}
 }
 
 func sthSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
 		return storethehash.New(context.Background(), b.TempDir(),
-			indexer.BinaryValueCodec{},
 			64,
 			sth.GCInterval(0),
 			sth.SyncInterval(time.Second),

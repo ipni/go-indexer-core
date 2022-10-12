@@ -17,7 +17,7 @@ func initSth(t *testing.T, vals ...int) *storethehash.SthStorage {
 	if len(vals) > 0 {
 		putConcurrency = vals[0]
 	}
-	s, err := storethehash.New(context.Background(), t.TempDir(), nil, putConcurrency)
+	s, err := storethehash.New(context.Background(), t.TempDir(), putConcurrency)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestPeriodicFlush(t *testing.T) {
 
 	syncInterval := 200 * time.Millisecond
 
-	s, err := storethehash.New(context.Background(), tmpDir, nil, 0, sth.SyncInterval(syncInterval))
+	s, err := storethehash.New(context.Background(), tmpDir, 0, sth.SyncInterval(syncInterval))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestPeriodicFlush(t *testing.T) {
 	time.Sleep(2 * syncInterval)
 
 	// Regenerate new storage
-	s2, err := storethehash.New(context.Background(), tmpDir, nil, 16)
+	s2, err := storethehash.New(context.Background(), tmpDir, 16)
 	if err != nil {
 		t.Fatal(err)
 	}

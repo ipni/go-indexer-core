@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
@@ -58,7 +59,12 @@ type sthIterator struct {
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // // will gracefully migrate the codec from JSON to Binary format.
-func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
+func New(ctx context.Context, dir string, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
+	vsInfo, err := vsinfo.Load(dir, "storethehash")
+	if err != nil {
+		return nil, err
+	}
+
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
 
@@ -66,9 +72,12 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash: %w", err)
 	}
-	if vcodec == nil {
-		vcodec = indexer.BinaryWithJsonFallbackCodec{}
+
+	vcodec, err := vsInfo.MakeCodec()
+	if err != nil {
+		return nil, err
 	}
+
 	s.Start()
 	var wp *workerpool.WorkerPool
 	if putConcurrency > 1 {

@@ -9,7 +9,7 @@ import (
 )
 
 func initPogreb(t *testing.T) indexer.Interface {
-	s, err := pogreb.New(t.TempDir(), nil)
+	s, err := pogreb.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
