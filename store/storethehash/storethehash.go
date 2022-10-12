@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
 	sth "github.com/ipld/go-storethehash/store"
@@ -58,17 +60,37 @@ type sthIterator struct {
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // // will gracefully migrate the codec from JSON to Binary format.
-func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
+func New(ctx context.Context, dir string, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
+
+	const vstype = "storethehash"
+
+	// Use BinaryWithJsonFallbackCodec codec if the valuestore directory
+	// already exists and was not created using binary codec.
+	vsInfo, err := vsinfo.Load(dir)
+	if os.IsNotExist(err) {
+		vsInfo.Type = vstype
+		if fileExists(indexPath) {
+			vsInfo.Codec = "binaryjson"
+		} else {
+			vsInfo.Codec = "binary"
+		}
+		vsInfo.Save(dir)
+	} else if vsInfo.Type != vstype {
+		return nil, fmt.Errorf("value store of type %s already exists", vsInfo.Type)
+	}
 
 	s, err := sth.OpenStore(ctx, sth.MultihashPrimary, dataPath, indexPath, false, options...)
 	if err != nil {
 		return nil, fmt.Errorf("error opening storethehash: %w", err)
 	}
-	if vcodec == nil {
-		vcodec = indexer.BinaryWithJsonFallbackCodec{}
+
+	vcodec, err := vsInfo.MakeCodec()
+	if err != nil {
+		return nil, err
 	}
+
 	s.Start()
 	var wp *workerpool.WorkerPool
 	if putConcurrency > 1 {
@@ -83,6 +105,11 @@ func New(ctx context.Context, dir string, vcodec indexer.ValueCodec, putConcurre
 		vcodec: vcodec,
 		wp:     wp,
 	}, nil
+}
+
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
 }
 
 func (s *SthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {

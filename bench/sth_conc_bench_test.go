@@ -39,7 +39,6 @@ func BenchmarkStore_Sth_PutConcurrency_W1_64(b *testing.B) {
 func sthWithPutConcurrency(b *testing.B, c int) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
 		return storethehash.New(context.Background(), b.TempDir(),
-			indexer.BinaryValueCodec{},
 			c,
 			sth.GCInterval(0),
 			sth.SyncInterval(3*time.Second),

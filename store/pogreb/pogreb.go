@@ -19,6 +19,7 @@ import (
 
 	"github.com/akrylysov/pogreb"
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/gammazero/keymutex"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -55,15 +56,39 @@ type pogrebIter struct {
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // will gracefully migrate the codec from JSON to Binary format.
-func New(dir string, vcodec indexer.ValueCodec) (indexer.Interface, error) {
+func New(dir string) (indexer.Interface, error) {
 	opts := pogreb.Options{BackgroundSyncInterval: DefaultSyncInterval}
-	if vcodec == nil {
-		vcodec = indexer.BinaryWithJsonFallbackCodec{}
-	}
 	s, err := pogreb.Open(dir, &opts)
 	if err != nil {
 		return nil, err
 	}
+
+	const vstype = "pogreb"
+
+	// Use BinaryWithJsonFallbackCodec codec if the valuestore already exists
+	// and was not created using binary codec.
+	vsInfo, err := vsinfo.Load(dir)
+	if os.IsNotExist(err) {
+		vsInfo.Type = vstype
+		size, err := s.FileSize()
+		if err != nil {
+			return nil, err
+		}
+		if size == 0 {
+			vsInfo.Codec = "binary"
+		} else {
+			vsInfo.Codec = "binaryjson"
+		}
+		vsInfo.Save(dir)
+	} else if vsInfo.Type != vstype {
+		return nil, fmt.Errorf("value store of type %s already exists", vsInfo.Type)
+	}
+
+	vcodec, err := vsInfo.MakeCodec()
+	if err != nil {
+		return nil, err
+	}
+
 	return &pStorage{
 		dir:    dir,
 		store:  s,
