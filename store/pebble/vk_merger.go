@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/cockroachdb/pebble"
+	indexer "github.com/filecoin-project/go-indexer-core"
 )
 
 const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
@@ -18,7 +19,7 @@ type valueKeysValueMerger struct {
 	merges  [][]byte
 	deletes map[string]struct{}
 	reverse bool
-	codec   zeroCopyBinaryValueCodec
+	codec   indexer.BinaryValueCodec
 }
 
 func newValueKeysMerger() *pebble.Merger {
@@ -28,7 +29,11 @@ func newValueKeysMerger() *pebble.Merger {
 			// type that corresponds to value-keys.
 			switch key(k).prefix() {
 			case multihashKeyPrefix:
-				v := &valueKeysValueMerger{}
+				v := &valueKeysValueMerger{
+					codec: indexer.BinaryValueCodec{
+						ZeroCopy: true,
+					},
+				}
 				return v, v.MergeNewer(value)
 			default:
 				return pebble.DefaultMerger.Merge(k, value)
