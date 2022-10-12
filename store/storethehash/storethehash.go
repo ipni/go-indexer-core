@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -93,11 +92,6 @@ func New(ctx context.Context, dir string, putConcurrency int, options ...sth.Opt
 		vcodec: vcodec,
 		wp:     wp,
 	}, nil
-}
-
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
 }
 
 func (s *SthStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
