@@ -51,7 +51,17 @@ type (
 
 	// BinaryValueCodec serializes and deserializes Value as binary sections
 	// prepended with byte length as varint.
-	BinaryValueCodec struct{}
+	BinaryValueCodec struct {
+		// ZeroCopy controls whether decoded values of []byte type point into
+		// the input []byte parameter passed to UnmarshalValue or
+		// UnmarshalValueKeys.
+		//
+		// This optimization prevents unnecessary copying. It is optional as
+		// the caller MUST ensure that the input parameter []byte is not
+		// modified after the Unmarshal happens, as any changes are mirrored in
+		// the decoded result.
+		ZeroCopy bool
+	}
 
 	// BinaryWithJsonFallbackCodec always serialises values as binary but deserializes
 	// both from binary and JSON, which gracefully and opportunistically migrates codec
@@ -129,7 +139,7 @@ func (BinaryValueCodec) MarshalValue(v Value) ([]byte, error) {
 // If a failure occurs during serialization an error is returned along with
 // the partially deserialized value keys. Only nil error means complete and
 // successful deserialization.
-func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
+func (c BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	var v Value
 	buf := bytes.NewBuffer(b)
 
@@ -153,8 +163,12 @@ func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	if size < 0 || size > buf.Len() {
 		return v, ErrCodecOverflow
 	}
-	v.ContextID = make([]byte, size)
-	buf.Read(v.ContextID)
+	if c.ZeroCopy {
+		v.ContextID = buf.Next(size)
+	} else {
+		v.ContextID = make([]byte, size)
+		buf.Read(v.ContextID)
+	}
 
 	// Decode metadata.
 	usize, err = varint.ReadUvarint(buf)
@@ -165,8 +179,12 @@ func (BinaryValueCodec) UnmarshalValue(b []byte) (Value, error) {
 	if size < 0 || size > buf.Len() {
 		return v, ErrCodecOverflow
 	}
-	v.MetadataBytes = make([]byte, size)
-	buf.Read(v.MetadataBytes)
+	if c.ZeroCopy {
+		v.MetadataBytes = buf.Next(size)
+	} else {
+		v.MetadataBytes = make([]byte, size)
+		buf.Read(v.MetadataBytes)
+	}
 	if buf.Len() != 0 {
 		return v, fmt.Errorf("too many bytes; %d remain unread", buf.Len())
 	}
@@ -190,7 +208,7 @@ func (BinaryValueCodec) MarshalValueKeys(vk [][]byte) ([]byte, error) {
 // If a failure occurs during serialization an error is returned along with
 // the partially deserialized value keys. Only nil error means complete and
 // successful deserialization.
-func (BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
+func (c BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 	var vk [][]byte
 	buf := bytes.NewBuffer(b)
 	// Decode each value key.
@@ -203,9 +221,13 @@ func (BinaryValueCodec) UnmarshalValueKeys(b []byte) ([][]byte, error) {
 		if size < 0 || size > buf.Len() {
 			return vk, ErrCodecOverflow
 		}
-		vkData := make([]byte, size)
-		buf.Read(vkData)
-		vk = append(vk, vkData)
+		if c.ZeroCopy {
+			vk = append(vk, buf.Next(size))
+		} else {
+			vkData := make([]byte, size)
+			buf.Read(vkData)
+			vk = append(vk, vkData)
+		}
 	}
 	return vk, nil
 }

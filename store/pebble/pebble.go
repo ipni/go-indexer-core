@@ -34,7 +34,7 @@ type (
 		// Note, pebble is using a zero-copy variation of marshaller to allow optimizations in
 		// cases where the value need not to be copied. The root level binary codec copies on
 		// unmarshal every time.
-		vcodec zeroCopyBinaryValueCodec
+		vcodec indexer.BinaryValueCodec
 
 		newKeyer func() keyer
 		closed   bool
@@ -44,7 +44,7 @@ type (
 		snapshot *pebble.Snapshot
 		it       *pebble.Iterator
 		keygen   keyer
-		vcodec   zeroCopyBinaryValueCodec
+		vcodec   indexer.BinaryValueCodec
 	}
 )
 
@@ -77,6 +77,9 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	return &store{
 		db:       db,
 		newKeyer: func() keyer { return newBlake3Keyer(defaultKeyerLength) },
+		vcodec: indexer.BinaryValueCodec{
+			ZeroCopy: true,
+		},
 	}, nil
 }
 
