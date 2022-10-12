@@ -57,31 +57,15 @@ type pogrebIter struct {
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // will gracefully migrate the codec from JSON to Binary format.
 func New(dir string) (indexer.Interface, error) {
-	opts := pogreb.Options{BackgroundSyncInterval: DefaultSyncInterval}
-	s, err := pogreb.Open(dir, &opts)
+	vsInfo, err := vsinfo.Load(dir, "pogreb")
 	if err != nil {
 		return nil, err
 	}
 
-	const vstype = "pogreb"
-
-	// Use BinaryWithJsonFallbackCodec codec if the valuestore already exists
-	// and was not created using binary codec.
-	vsInfo, err := vsinfo.Load(dir)
-	if os.IsNotExist(err) {
-		vsInfo.Type = vstype
-		size, err := s.FileSize()
-		if err != nil {
-			return nil, err
-		}
-		if size == 0 {
-			vsInfo.Codec = "binary"
-		} else {
-			vsInfo.Codec = "binaryjson"
-		}
-		vsInfo.Save(dir)
-	} else if vsInfo.Type != vstype {
-		return nil, fmt.Errorf("value store of type %s already exists", vsInfo.Type)
+	opts := pogreb.Options{BackgroundSyncInterval: DefaultSyncInterval}
+	s, err := pogreb.Open(dir, &opts)
+	if err != nil {
+		return nil, err
 	}
 
 	vcodec, err := vsInfo.MakeCodec()

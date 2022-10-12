@@ -61,25 +61,13 @@ type sthIterator struct {
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // // will gracefully migrate the codec from JSON to Binary format.
 func New(ctx context.Context, dir string, putConcurrency int, options ...sth.Option) (*SthStorage, error) {
+	vsInfo, err := vsinfo.Load(dir, "storethehash")
+	if err != nil {
+		return nil, err
+	}
+
 	indexPath := filepath.Join(dir, "storethehash.index")
 	dataPath := filepath.Join(dir, "storethehash.data")
-
-	const vstype = "storethehash"
-
-	// Use BinaryWithJsonFallbackCodec codec if the valuestore directory
-	// already exists and was not created using binary codec.
-	vsInfo, err := vsinfo.Load(dir)
-	if os.IsNotExist(err) {
-		vsInfo.Type = vstype
-		if fileExists(indexPath) {
-			vsInfo.Codec = "binaryjson"
-		} else {
-			vsInfo.Codec = "binary"
-		}
-		vsInfo.Save(dir)
-	} else if vsInfo.Type != vstype {
-		return nil, fmt.Errorf("value store of type %s already exists", vsInfo.Type)
-	}
 
 	s, err := sth.OpenStore(ctx, sth.MultihashPrimary, dataPath, indexPath, false, options...)
 	if err != nil {
