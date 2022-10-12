@@ -30,7 +30,7 @@ type VStoreInfo struct {
 }
 
 func Load(dir, vsType string) (VStoreInfo, error) {
-	data, err := os.ReadFile(filepath.Join(dir, fileName))
+	data, err := os.ReadFile(Path(dir))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return initVStoreInfo(dir, vsType)
@@ -57,7 +57,11 @@ func (v VStoreInfo) Save(dir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, fileName), data, 0o666)
+	return os.WriteFile(Path(dir), data, 0o666)
+}
+
+func Path(dir string) string {
+	return filepath.Join(dir, fileName)
 }
 
 func (v VStoreInfo) MakeCodec() (indexer.ValueCodec, error) {
