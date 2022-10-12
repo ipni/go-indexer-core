@@ -45,7 +45,7 @@ func Load(dir, vsType string) (VStoreInfo, error) {
 	}
 
 	if vsinfo.Type != vsType {
-		return VStoreInfo{}, fmt.Errorf("value store of type %s already exists", vsinfo.Type)
+		return VStoreInfo{}, fmt.Errorf("value store of type %s already exists in directory %s", vsinfo.Type, dir)
 	}
 
 	return vsinfo, nil
