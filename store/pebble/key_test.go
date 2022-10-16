@@ -9,14 +9,14 @@ import (
 )
 
 func Test_blake3Keyer(t *testing.T) {
-	const l = 4
-	var vk key
-	v := indexer.Value{
+	var vk *key
+	v := &indexer.Value{
 		ProviderID: "fish",
 		ContextID:  []byte("lobster"),
 	}
 
-	subject := newBlake3Keyer(l)
+	p := newPool()
+	subject := p.leaseBlake3Keyer()
 
 	t.Run("multihashKey", func(t *testing.T) {
 		wantMh, err := multihash.Sum([]byte("fish"), multihash.SHA2_256, -1)
@@ -45,10 +45,10 @@ func Test_blake3Keyer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(start, []byte{byte(multihashKeyPrefix)}) {
+		if !bytes.Equal(start.buf, []byte{byte(multihashKeyPrefix)}) {
 			t.Fatal()
 		}
-		if !bytes.Equal(end, start.next()) {
+		if !bytes.Equal(end.buf, start.next().buf) {
 			t.Fatal()
 		}
 		if start.prefix() != multihashKeyPrefix {
@@ -65,13 +65,6 @@ func Test_blake3Keyer(t *testing.T) {
 		if vk.prefix() != valueKeyPrefix {
 			t.Fatal()
 		}
-		p, vvk := vk.stripMergeDelete()
-		if p != valueKeyPrefix {
-			t.Fatal()
-		}
-		if !bytes.Equal(vk, vvk) {
-			t.Fatal()
-		}
 	})
 
 	t.Run("valuesByProviderKeyRange", func(t *testing.T) {
@@ -79,10 +72,10 @@ func Test_blake3Keyer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.HasPrefix(vk, start) {
+		if !bytes.HasPrefix(vk.buf, start.buf) {
 			t.Fatal()
 		}
-		if !bytes.Equal(end, start.next()) {
+		if !bytes.Equal(end.buf, start.next().buf) {
 			t.Fatal()
 		}
 		if start.prefix() != valueKeyPrefix {
@@ -101,39 +94,36 @@ func Test_blake3Keyer(t *testing.T) {
 		if dvk.prefix() != mergeDeleteKeyPrefix {
 			t.Fatal()
 		}
-		p, vk2 := dvk.stripMergeDelete()
-		if p != mergeDeleteKeyPrefix {
-			t.Fatal()
-		}
-		if !bytes.Equal(vk, vk2) {
+		if !bytes.Equal(vk.buf, dvk.buf[1:]) {
 			t.Fatal()
 		}
 	})
 }
 
 func Test_key_next(t *testing.T) {
-	var k key
+	k := newPool().leaseKey()
 	t.Run("increment", func(t *testing.T) {
-		k = []byte{1, 2, 3, 4}
-		if !bytes.Equal([]byte{1, 2, 3, 5}, k.next()) {
+		k.buf = []byte{1, 2, 3, 4}
+		if !bytes.Equal([]byte{1, 2, 3, 5}, k.next().buf) {
 			t.Fatal()
 		}
 	})
 	t.Run("incrementWith0xff", func(t *testing.T) {
-		k = []byte{1, 2, 3, 0xff}
-		if !bytes.Equal([]byte{1, 2, 4}, k.next()) {
+		k.buf = []byte{1, 2, 3, 0xff}
+		next := k.next()
+		if !bytes.Equal([]byte{1, 2, 4}, next.buf) {
 			t.Fatal()
 		}
 	})
 	t.Run("0xff", func(t *testing.T) {
-		k = []byte{0xff}
-		if !bytes.Equal(nil, k.next()) {
+		k.buf = []byte{0xff}
+		if k.next() != nil {
 			t.Fatal()
 		}
 	})
 	t.Run("empty", func(t *testing.T) {
-		k = []byte{}
-		if !bytes.Equal(nil, k.next()) {
+		k.buf = []byte{}
+		if k.next() != nil {
 			t.Fatal()
 		}
 	})
