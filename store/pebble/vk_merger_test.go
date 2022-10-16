@@ -9,13 +9,15 @@ import (
 )
 
 var (
-	value1 = indexer.Value{ProviderID: "fish", ContextID: []byte("1")}
-	value2 = indexer.Value{ProviderID: "in", ContextID: []byte("2")}
-	value3 = indexer.Value{ProviderID: "dasea", ContextID: []byte("3")}
+	value1 = &indexer.Value{ProviderID: "fish", ContextID: []byte("1"), MetadataBytes: []byte{}}
+	value2 = &indexer.Value{ProviderID: "in", ContextID: []byte("2"), MetadataBytes: []byte("lulu")}
+	value3 = &indexer.Value{ProviderID: "dasea", ContextID: []byte("3"), MetadataBytes: []byte{141}}
 )
 
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
-	bk := newBlake3Keyer(10)
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
 	k, err := bk.multihashKey(multihash.Multihash("fish"))
 	if err != nil {
 		t.Fatal()
@@ -33,15 +35,15 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 		t.Fatal()
 	}
 
-	subject := newValueKeysMerger()
-	oneMerge, err := subject.Merge(k, a)
+	subject := newValueKeysMerger(cdc)
+	oneMerge, err := subject.Merge(k.buf, a.buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := oneMerge.MergeOlder(b); err != nil {
+	if err := oneMerge.MergeOlder(b.buf); err != nil {
 		t.Fatal(err)
 	}
-	if err := oneMerge.MergeOlder(c); err != nil {
+	if err := oneMerge.MergeOlder(c.buf); err != nil {
 		t.Fatal(err)
 	}
 	gotOne, _, err := oneMerge.Finish(false)
@@ -49,14 +51,14 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	anotherMerge, err := subject.Merge(k, c)
+	anotherMerge, err := subject.Merge(k.buf, c.buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := anotherMerge.MergeNewer(b); err != nil {
+	if err := anotherMerge.MergeNewer(b.buf); err != nil {
 		t.Fatal(err)
 	}
-	if err := anotherMerge.MergeNewer(a); err != nil {
+	if err := anotherMerge.MergeNewer(a.buf); err != nil {
 		t.Fatal(err)
 	}
 	gotAnother, _, err := anotherMerge.Finish(false)
@@ -70,7 +72,9 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	mh := multihash.Multihash("lobster")
-	bk := newBlake3Keyer(10)
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
 
 	vk1, err := bk.valueKey(value1, false)
 	if err != nil {
@@ -89,22 +93,22 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	subject := newValueKeysMerger()
+	subject := newValueKeysMerger(cdc)
 	mk, err := bk.multihashKey(mh)
 	if err != nil {
 		t.Fatal()
 	}
-	oneMerge, err := subject.Merge(mk, vk1)
+	oneMerge, err := subject.Merge(mk.buf, vk1.buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := oneMerge.MergeNewer(vk2); err != nil {
+	if err := oneMerge.MergeNewer(vk2.buf); err != nil {
 		t.Fatal(err)
 	}
-	if err := oneMerge.MergeNewer(vk3); err != nil {
+	if err := oneMerge.MergeNewer(vk3.buf); err != nil {
 		t.Fatal(err)
 	}
-	if err := oneMerge.MergeNewer(dvk2); err != nil {
+	if err := oneMerge.MergeNewer(dvk2.buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +118,7 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantVKs, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1, vk3})
+	wantVKs, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk3.buf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +130,9 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 
-	bk := newBlake3Keyer(10)
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
 	mh := multihash.Multihash("lobster")
 	k, err := bk.multihashKey(mh)
 	if err != nil {
@@ -147,7 +153,7 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	}
 
 	// Repeatedly marshall the marshalled value
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1, vk2, vk3})
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk2.buf, vk3.buf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,8 +171,8 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	}
 
 	t.Run("four nested initial", func(t *testing.T) {
-		subject := newValueKeysMerger()
-		m, err := subject.Merge(k, mvk4)
+		subject := newValueKeysMerger(cdc)
+		m, err := subject.Merge(k.buf, mvk4)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,12 +185,12 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		}
 	})
 	t.Run("mix nested newer", func(t *testing.T) {
-		subject := newValueKeysMerger()
-		m, err := subject.Merge(k, vk1)
+		subject := newValueKeysMerger(cdc)
+		m, err := subject.Merge(k.buf, vk1.buf)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := m.MergeNewer(vk2); err != nil {
+		if err := m.MergeNewer(vk2.buf); err != nil {
 			t.Fatal(err)
 		}
 		if err := m.MergeNewer(mvk3); err != nil {
@@ -199,7 +205,7 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		}
 	})
 
-	reverse, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk3, vk2, vk1})
+	reverse, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk3.buf, vk2.buf, vk1.buf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,8 +215,8 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	}
 
 	t.Run("mix nested older", func(t *testing.T) {
-		subject := newValueKeysMerger()
-		m, err := subject.Merge(k, vk3)
+		subject := newValueKeysMerger(cdc)
+		m, err := subject.Merge(k.buf, vk3.buf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -220,10 +226,10 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		if err := m.MergeOlder(mvk3); err != nil {
 			t.Fatal(err)
 		}
-		if err := m.MergeOlder(vk1); err != nil {
+		if err := m.MergeOlder(vk1.buf); err != nil {
 			t.Fatal(err)
 		}
-		if err := m.MergeOlder(vk2); err != nil {
+		if err := m.MergeOlder(vk2.buf); err != nil {
 			t.Fatal(err)
 		}
 		got, _, err := m.Finish(false)

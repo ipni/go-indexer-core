@@ -2,10 +2,10 @@ package pebble
 
 import (
 	"bytes"
+	"errors"
 	"io"
 
 	"github.com/cockroachdb/pebble"
-	indexer "github.com/filecoin-project/go-indexer-core"
 )
 
 const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
@@ -19,21 +19,17 @@ type valueKeysValueMerger struct {
 	merges  [][]byte
 	deletes map[string]struct{}
 	reverse bool
-	codec   indexer.BinaryValueCodec
+	c       *codec
 }
 
-func newValueKeysMerger() *pebble.Merger {
+func newValueKeysMerger(c *codec) *pebble.Merger {
 	return &pebble.Merger{
 		Merge: func(k, value []byte) (pebble.ValueMerger, error) {
 			// Fall back on default merger if the key is not of type multihash, i.e. the only key
 			// type that corresponds to value-keys.
-			switch key(k).prefix() {
+			switch keyPrefix(k[0]) {
 			case multihashKeyPrefix:
-				v := &valueKeysValueMerger{
-					codec: indexer.BinaryValueCodec{
-						ZeroCopy: true,
-					},
-				}
+				v := &valueKeysValueMerger{c: c}
 				return v, v.MergeNewer(value)
 			default:
 				return pebble.DefaultMerger.Merge(k, value)
@@ -44,10 +40,13 @@ func newValueKeysMerger() *pebble.Merger {
 }
 
 func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
-	prefix, dvk := key(value).stripMergeDelete()
+	if len(value) == 0 {
+		return nil
+	}
+	prefix := keyPrefix(value[0])
 	switch prefix {
 	case mergeDeleteKeyPrefix:
-		v.addToDeletes(dvk)
+		v.addToDeletes(value[1:])
 	case valueKeyPrefix:
 		v.addToMerges(value)
 	default:
@@ -64,21 +63,28 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 //
 // See: https://github.com/filecoin-project/go-indexer-core/issues/94
 func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
+
+	offset := len(value) % marshalledValueKeyLength
+
+	if offset < 0 {
+		return errors.New("invalid marshalled value key")
+	}
+
 	// The given value is marshalled value-keys; decode it and populate merge values.
-	vks, err := v.codec.UnmarshalValueKeys(value)
+	vks, err := v.c.unmarshalValueKeys(value[offset:])
 	if err != nil {
 		return err
 	}
+	defer vks.Close()
 	// Attempt to grow the capacity of v.merge to reduce append footprint loop below.
-	v.merges = maybeGrow(v.merges, len(vks))
-	for _, vk := range vks {
+	v.merges = maybeGrow(v.merges, len(vks.keys))
+	for _, vk := range vks.keys {
 		// Recursively merge the value key to accommodate previous behaviour of the value-key
 		// merger, where the value-keys may have been marshalled multiple times.
 		// Recursion here will gracefully and opportunistically correct any such cases.
-		if err := v.MergeNewer(vk); err != nil {
-			return err
-		}
+		v.addToMerges(vk.buf)
 	}
+
 	return nil
 }
 
@@ -97,8 +103,7 @@ func (v *valueKeysValueMerger) Finish(_ bool) ([]byte, io.Closer, error) {
 			v.merges[one], v.merges[other] = v.merges[other], v.merges[one]
 		}
 	}
-	b, err := v.codec.MarshalValueKeys(v.merges)
-	return b, nil, err
+	return v.c.marshalValueKeys(v.merges)
 }
 
 func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool, io.Closer, error) {

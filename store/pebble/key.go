@@ -1,28 +1,42 @@
 package pebble
 
 import (
-	"bytes"
 	"errors"
-
-	"github.com/libp2p/go-libp2p/core/peer"
-	"lukechampine.com/blake3"
+	"io"
 
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
+	"lukechampine.com/blake3"
+)
+
+var (
+	_ keyer     = (*blake3Keyer)(nil)
+	_ io.Closer = (*blake3Keyer)(nil)
+	_ io.Closer = (*key)(nil)
+	_ io.Closer = (*keyList)(nil)
 )
 
 type (
 	keyPrefix byte
-	key       []byte
-	keyer     interface {
-		multihashKey(mh multihash.Multihash) (key, error)
-		multihashesKeyRange() (start, end key, err error)
-		keyToMultihash(key) (multihash.Multihash, error)
-		valuesByProviderKeyRange(pid peer.ID) (start, end key, err error)
-		valueKey(value indexer.Value, md bool) (key, error)
+	key       struct {
+		buf []byte
+		p   *pool
+	}
+	keyList struct {
+		keys []*key
+		p    *pool
+	}
+	keyer interface {
+		multihashKey(mh multihash.Multihash) (*key, error)
+		multihashesKeyRange() (start, end *key, err error)
+		keyToMultihash(*key) (multihash.Multihash, error)
+		valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error)
+		valueKey(value *indexer.Value, md bool) (*key, error)
 	}
 	blake3Keyer struct {
 		hasher *blake3.Hasher
+		p      *pool
 	}
 )
 
@@ -39,15 +53,13 @@ const (
 	mergeDeleteKeyPrefix
 )
 
-var _ keyer = (*blake3Keyer)(nil)
-
 // prefix returns the keyPrefix of this key by checking its first byte.
 // If no known prefix is found unknownKeyPrefix is returned.
-func (k key) prefix() keyPrefix {
-	if len(k) == 0 {
+func (k *key) prefix() keyPrefix {
+	if len(k.buf) == 0 {
 		return unknownKeyPrefix
 	}
-	switch k[0] {
+	switch k.buf[0] {
 	case byte(multihashKeyPrefix):
 		return multihashKeyPrefix
 	case byte(valueKeyPrefix):
@@ -61,33 +73,70 @@ func (k key) prefix() keyPrefix {
 
 // next returns the next key after the current kye in lexicographical order.
 // See: bytes.Compare
-func (k key) next() key {
-	var next key
-	for i := len(k) - 1; i >= 0; i-- {
-		b := k[i]
+func (k *key) next() *key {
+	var next *key
+	for i := len(k.buf) - 1; i >= 0; i-- {
+		b := k.buf[i]
 		if b == 0xff {
 			continue
 		}
-		next = make([]byte, i+1)
-		copy(next, k)
-		next[i] = b + 1
+		next = k.p.leaseKey()
+		next.maybeGrow(i + 1)
+		next.buf = next.buf[:i+1]
+		copy(next.buf, k.buf)
+		next.buf[i] = b + 1
 		break
 	}
 	return next
 }
 
-// stripMergeDelete removes the mergeDeleteKeyPrefix prefix from this key only if the key
-// has the prefix mergeDeleteKeyPrefix.
-// It returns the key prefix and the resulting key; mergeDeleteKeyPrefix as the returned prefix
-// signals that the strip has occurred.
-func (k key) stripMergeDelete() (keyPrefix, key) {
-	prefix := k.prefix()
-	switch prefix {
-	case mergeDeleteKeyPrefix:
-		return prefix, k[1:]
+func (k *key) append(b ...byte) {
+	k.buf = append(k.buf, b...)
+}
+
+func (k *key) maybeGrow(n int) {
+	l := len(k.buf)
+	switch {
+	case n <= cap(k.buf)-l:
+	case l == 0:
+		k.buf = make([]byte, 0, n*pooledSliceCapGrowthFactor)
 	default:
-		return prefix, k
+		k.buf = append(make([]byte, 0, (l+n)*pooledSliceCapGrowthFactor), k.buf...)
 	}
+}
+
+func (k *key) Close() error {
+	if cap(k.buf) <= pooledKeyMaxCap {
+		k.buf = k.buf[:0]
+		k.p.keyPool.Put(k)
+	}
+	return nil
+}
+
+func (kl *keyList) append(b ...*key) {
+	kl.keys = append(kl.keys, b...)
+}
+
+func (kl *keyList) maybeGrow(n int) {
+	l := len(kl.keys)
+	switch {
+	case n <= cap(kl.keys)-l:
+	case l == 0:
+		kl.keys = make([]*key, 0, n*pooledSliceCapGrowthFactor)
+	default:
+		kl.keys = append(make([]*key, 0, (l+n)*pooledSliceCapGrowthFactor), kl.keys...)
+	}
+}
+
+func (kl *keyList) Close() error {
+	if cap(kl.keys) <= pooledKeyListMaxCap {
+		for _, k := range kl.keys {
+			_ = k.Close()
+		}
+		kl.keys = kl.keys[:0]
+		kl.p.keyListPool.Put(kl)
+	}
+	return nil
 }
 
 // newBlake3Keyer instantiates a new keyer that uses blake3 hash function, where the
@@ -95,7 +144,7 @@ func (k key) stripMergeDelete() (keyPrefix, key) {
 // - l + 1 for indexer.Value keys
 // - l + 2 for merge-delete indexer.Value keys
 // - multihash length + 1 for multihash keys
-func newBlake3Keyer(l int) *blake3Keyer {
+func newBlake3Keyer(l int, p *pool) *blake3Keyer {
 	return &blake3Keyer{
 		// Instantiate the hasher with half the given length. Because,
 		// hasher is only used for generating indexer.Value keys, and
@@ -106,17 +155,20 @@ func newBlake3Keyer(l int) *blake3Keyer {
 		// key-range by provider ID since all such keys will have the
 		// same prefix.
 		hasher: blake3.New(l/2, nil),
+		p:      p,
 	}
 }
 
 // valuesByProviderKeyRange returns the key range that contains all the indexer.Value records
 // that belong to the given provider ID.
-func (b *blake3Keyer) valuesByProviderKeyRange(pid peer.ID) (start, end key, err error) {
+func (b *blake3Keyer) valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error) {
 	b.hasher.Reset()
 	if _, err := b.hasher.Write([]byte(pid)); err != nil {
 		return nil, nil, err
 	}
-	start = b.hasher.Sum([]byte{byte(valueKeyPrefix)})
+
+	start = b.p.leaseKey()
+	start.append(b.hasher.Sum([]byte{byte(valueKeyPrefix)})...)
 	end = start.next()
 	return
 }
@@ -124,14 +176,16 @@ func (b *blake3Keyer) valuesByProviderKeyRange(pid peer.ID) (start, end key, err
 // multihashesKeyRange returns the key range that contains all the records identified by
 // multihashKeyPrefix, i.e. all the stored multihashes to which one or more indexer.Value records
 // are associated.
-func (b *blake3Keyer) multihashesKeyRange() (start, end key, err error) {
-	start = []byte{byte(multihashKeyPrefix)}
+func (b *blake3Keyer) multihashesKeyRange() (start, end *key, err error) {
+	start = b.p.leaseKey()
+	start.maybeGrow(1)
+	start.append(byte(multihashKeyPrefix))
 	end = start.next()
 	return
 }
 
 // valueKey returns the key by which an indexer.Value is identified
-func (b *blake3Keyer) valueKey(v indexer.Value, md bool) (key, error) {
+func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
 	b.hasher.Reset()
 	if _, err := b.hasher.Write([]byte(v.ProviderID)); err != nil {
 		return nil, err
@@ -144,39 +198,45 @@ func (b *blake3Keyer) valueKey(v indexer.Value, md bool) (key, error) {
 	}
 	ctxk := b.hasher.Sum(nil)
 
-	var buf bytes.Buffer
+	vk := b.p.leaseKey()
 	klen := 1 + len(pidk) + len(ctxk)
 	if md {
-		buf.Grow(1 + klen)
-		buf.WriteByte(byte(mergeDeleteKeyPrefix))
+		vk.maybeGrow(1 + klen)
+		vk.append(byte(mergeDeleteKeyPrefix))
 	} else {
-		buf.Grow(klen)
+		vk.maybeGrow(klen)
 	}
-	buf.WriteByte(byte(valueKeyPrefix))
-	buf.Write(pidk)
-	buf.Write(ctxk)
-	return buf.Bytes(), nil
+	vk.append(byte(valueKeyPrefix))
+	vk.append(pidk...)
+	vk.append(ctxk...)
+	return vk, nil
 }
 
 // multihashKey returns the key by which a multihash is identified
-func (b *blake3Keyer) multihashKey(mh multihash.Multihash) (key, error) {
-	var buf bytes.Buffer
-	buf.Grow(1 + len(mh))
-	buf.WriteByte(byte(multihashKeyPrefix))
-	buf.Write(mh)
-	return buf.Bytes(), nil
+func (b *blake3Keyer) multihashKey(mh multihash.Multihash) (*key, error) {
+	mhk := b.p.leaseKey()
+	mhk.maybeGrow(1 + len(mh))
+	mhk.append(byte(multihashKeyPrefix))
+	mhk.append(mh...)
+	return mhk, nil
 }
 
 // keyToMultihash extracts the multihash to which the given key is associated.
 // An error is returned if the given key does not have multihashKeyPrefix.
-func (b *blake3Keyer) keyToMultihash(k key) (multihash.Multihash, error) {
+func (b *blake3Keyer) keyToMultihash(k *key) (multihash.Multihash, error) {
 	switch k.prefix() {
 	case multihashKeyPrefix:
-		keyData := k[1:]
-		mhData := make([]byte, len(keyData))
-		copy(mhData, keyData)
-		return multihash.Multihash(mhData), nil
+		keyData := k.buf[1:]
+		mh := make([]byte, len(keyData))
+		copy(mh, keyData)
+		return mh, nil
 	default:
 		return nil, errors.New("key prefix mismatch")
 	}
+}
+
+func (b *blake3Keyer) Close() error {
+	b.hasher.Reset()
+	b.p.blake3KeyerPool.Put(b)
+	return nil
 }
