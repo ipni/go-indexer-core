@@ -44,28 +44,25 @@ jobs:
           # If package ./A imports ./B, and ./A's tests also cover ./B,
           # this means ./B's coverage will be significantly higher than 0%.
           run: go test -v -shuffle=on -coverprofile=module-coverage.txt -coverpkg=./... ./...
-# Disable 32-bit tests until option is added to do it gracefully; see:
-#  - https://github.com/protocol/.github/issues/388
-#
-#      - name: Run tests (32 bit)
-#        if: ${{ matrix.os != 'macos' }} # can't run 32 bit tests on OSX.
-#        uses: protocol/multiple-go-modules@v1.2
-#        env:
-#          GOARCH: 386
-#        with:
-#          run: |
-#            export "PATH=${{ env.PATH_386 }}:$PATH"
-#            go test -v -shuffle=on ./...
-#      - name: Run tests with race detector
-#        if: ${{ matrix.os == 'ubuntu' }} # speed things up. Windows and OSX VMs are slow
-#        uses: protocol/multiple-go-modules@v1.2
-#        with:
-#          run: go test -v -race ./...
-#      - name: Collect coverage files
-#        shell: bash
-#        run: echo "COVERAGES=$(find . -type f -name 'module-coverage.txt' | tr -s '\n' ',' | sed 's/,$//')" >> $GITHUB_ENV
-#      - name: Upload coverage to Codecov
-#        uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378 # v3.1.0
-#        with:
-#          files: '${{ env.COVERAGES }}'
-#          env_vars: OS=${{ matrix.os }}, GO=${{ matrix.go }}
+      - name: Run tests (32 bit)
+        if: ${{ matrix.os != 'macos' }} # can't run 32 bit tests on OSX.
+        uses: protocol/multiple-go-modules@v1.2
+        env:
+          GOARCH: 386
+        with:
+          run: |
+            export "PATH=${{ env.PATH_386 }}:$PATH"
+            go test -v -shuffle=on ./...
+      - name: Run tests with race detector
+        if: ${{ matrix.os == 'ubuntu' }} # speed things up. Windows and OSX VMs are slow
+        uses: protocol/multiple-go-modules@v1.2
+        with:
+          run: go test -v -race ./...
+      - name: Collect coverage files
+        shell: bash
+        run: echo "COVERAGES=$(find . -type f -name 'module-coverage.txt' | tr -s '\n' ',' | sed 's/,$//')" >> $GITHUB_ENV
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378 # v3.1.0
+        with:
+          files: '${{ env.COVERAGES }}'
+          env_vars: OS=${{ matrix.os }}, GO=${{ matrix.go }}
