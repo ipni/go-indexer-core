@@ -7,13 +7,17 @@ import (
 	"github.com/filecoin-project/go-indexer-core"
 	"github.com/filecoin-project/go-indexer-core/cache"
 	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
+	"github.com/filecoin-project/go-indexer-core/store/pebble"
 	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	"github.com/filecoin-project/go-indexer-core/store/test"
+	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+const testPutConcurrency = 4
+
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
-	valueStore, err := storethehash.New(context.Background(), t.TempDir(), 4)
+	valueStore, err := storethehash.New(context.Background(), t.TempDir(), testPutConcurrency)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,6 +531,131 @@ func TestBoth(t *testing.T) {
 	}
 }
 
+func TestMultiCodec(t *testing.T) {
+	const vsType = "storethehash"
+
+	// Force the codec to be json and create engine instance.
+	tempDir := t.TempDir()
+	vsi, err := vsinfo.Load(tempDir, vsType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vsi.Codec = vsinfo.JsonCodec
+	if err = vsi.Save(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	vsi, err = vsinfo.Load(tempDir, vsType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vsi.Codec != vsinfo.JsonCodec {
+		t.Fatal("Codec should be", vsinfo.JsonCodec, "got", vsi.Codec)
+	}
+	var valueStore indexer.Interface
+	switch vsType {
+	case "storethehash":
+		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
+	case "pebble":
+		valueStore, err = pebble.New(tempDir, nil)
+	default:
+		t.Fatal("vsType must be storethehash or pebble")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := New(nil, valueStore)
+
+	// Create new valid peer.ID
+	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mhs := test.RandomMultihashes(5)
+
+	value1 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("0{metadata-1}"),
+	}
+	value2 := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[1]),
+		MetadataBytes: []byte("{metadata-2}"),
+	}
+
+	key := mhs[2]
+
+	// Store value1 using the json codec
+	err = eng.Put(value1, key)
+	if err != nil {
+		t.Fatal("Error putting single multihash:", err)
+	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Change codec from Json to BinaryJson and start new engine.
+	vsi, err = vsinfo.Load(tempDir, vsType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vsi.Codec = vsinfo.BinaryJsonCodec
+	if err = vsi.Save(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	switch vsType {
+	case "storethehash":
+		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
+	case "pebble":
+		valueStore, err = pebble.New(tempDir, nil)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng = New(nil, valueStore)
+
+	// Confirm that codec is BinaryJson after starting engine.
+	vsi, err = vsinfo.Load(tempDir, vsType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vsi.Codec != vsinfo.BinaryJsonCodec {
+		t.Fatal("Codec should be", vsinfo.BinaryJsonCodec, "got", vsi.Codec)
+	}
+
+	// Store value2 using Binary codec
+	err = eng.Put(value2, key)
+	if err != nil {
+		t.Fatal("Error putting single multihash:", err)
+	}
+
+	// Get both values, and confirm they are retrieved.
+	vals, found, err := eng.Get(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Errorf("Error finding multihash")
+	}
+	if len(vals) != 2 {
+		t.Fatalf("Expected 2 values, got %d", len(vals))
+	}
+	if !vals[0].Equal(value1) {
+		t.Errorf("Got wrong first value")
+	}
+	if !vals[1].Equal(value2) {
+		t.Errorf("Got wrong second value")
+	}
+
+	err = eng.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func e2e(t *testing.T, eng *Engine) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -539,12 +668,12 @@ func e2e(t *testing.T, eng *Engine) {
 	value1 := indexer.Value{
 		ProviderID:    p,
 		ContextID:     []byte(mhs[0]),
-		MetadataBytes: []byte("mtadata-1"),
+		MetadataBytes: []byte("metadata-1"),
 	}
 	value2 := indexer.Value{
 		ProviderID:    p,
 		ContextID:     []byte(mhs[1]),
-		MetadataBytes: []byte("mtadata-2"),
+		MetadataBytes: []byte("metadata-2"),
 	}
 
 	single := mhs[2]
