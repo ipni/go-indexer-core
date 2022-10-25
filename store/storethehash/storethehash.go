@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/gammazero/keymutex"
 	"github.com/gammazero/workerpool"
+	logging "github.com/ipfs/go-log/v2"
 	sth "github.com/ipld/go-storethehash/store"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -26,6 +27,8 @@ const valueKeySize = 20
 var (
 	indexKeySuffix = []byte("I")
 	valueKeySuffix = []byte("M")
+
+	log = logging.Logger("store/storethehash")
 )
 
 type SthStorage struct {
@@ -502,10 +505,13 @@ func (s *SthStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value,
 		// Fetch value from datastore.
 		valData, found, err := s.store.Get(valueKeys[i])
 		s.vlk.RUnlockBytes(valueKeys[i])
-		if err != nil {
-			return nil, fmt.Errorf("cannot get value: %w", err)
-		}
 		if !found {
+			// If not found due to an error, this means the value is not
+			// retrievable and the key should be removed.
+			if err != nil {
+				log.Errorw("Cannot get value, removing value key", "err", err, "valueKeys", len(valueKeys))
+			}
+
 			// If value not in datastore, this means it has been deleted, and
 			// the mapping from the multihash to that value should also be
 			// removed.

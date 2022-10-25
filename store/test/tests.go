@@ -634,12 +634,13 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 	single := mhs[14]
 	metadata := []byte("test-metadata")
 
-	var wg sync.WaitGroup
+	wg := new(sync.WaitGroup)
 
 	// Test parallel writes over same multihash
+	wg.Add(5)
 	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, i int) {
+		i := i
+		go func() {
 			t.Log("Put/Get different multihash")
 			value := indexer.Value{
 				ProviderID:    p,
@@ -650,7 +651,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 				t.Error("Error putting single multihash:", err)
 			}
 			wg.Done()
-		}(&wg, i)
+		}()
 	}
 	wg.Wait()
 	x, found, err := s.Get(single)
@@ -665,9 +666,10 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 	}
 
 	// Test remove for all except one
+	wg.Add(4)
 	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, i int) {
+		i := i
+		go func() {
 			t.Log("Remove multihash")
 			value := indexer.Value{
 				ProviderID:    p,
@@ -678,7 +680,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 				t.Error("Error removing single multihash:", err)
 			}
 			wg.Done()
-		}(&wg, i)
+		}()
 	}
 	wg.Wait()
 	x, found, err = s.Get(single)
