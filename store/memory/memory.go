@@ -26,7 +26,7 @@ import (
 type memoryStore struct {
 	// multihash -> indexer.Value
 	rtree *radixtree.Tree
-	// IndexEntery interning
+	// IndexEntry interning
 	interns *radixtree.Tree
 	mutex   sync.Mutex
 }
@@ -35,6 +35,8 @@ type memoryIter struct {
 	iter   *radixtree.Iterator
 	values []indexer.Value
 }
+
+var _ indexer.Interface = (*memoryStore)(nil)
 
 // New creates a new indexer.Interface implemented by a radixtree-based value
 // store.
@@ -194,6 +196,12 @@ func (s *memoryStore) Iter() (indexer.Iterator, error) {
 	}, nil
 }
 
+func (s *memoryStore) Stats() (*indexer.Stats, error) {
+	return &indexer.Stats{
+		MultihashCount: uint64(s.rtree.Len()),
+	}, nil
+}
+
 func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
 	key, val, done := it.iter.Next()
 	if done {
@@ -201,7 +209,7 @@ func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
 		return nil, nil, io.EOF
 	}
 
-	m := multihash.Multihash([]byte(key))
+	m := multihash.Multihash(key)
 	vals, ok := val.([]*indexer.Value)
 	if !ok {
 		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())

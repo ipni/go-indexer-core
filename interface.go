@@ -2,16 +2,20 @@ package indexer
 
 import (
 	"context"
+	"errors"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
 
+// ErrStatsNotSupported signals that an indexer.Interface does not support Stats calculation.
+var ErrStatsNotSupported = errors.New("stats is not supported by store")
+
 type Interface interface {
 	// Get retrieves a slice of Value for a multihash.
 	Get(multihash.Multihash) ([]Value, bool, error)
 
-	// Put stores a Value and adds a mapping from each of the given multihashs
+	// Put stores a Value and adds a mapping from each of the given multihashes
 	// to that Value. If the Value has the same ProviderID and ContextID as a
 	// previously stored Value, then update the metadata in the stored Value
 	// with the metadata from the provided Value. Call Put without any
@@ -45,6 +49,10 @@ type Interface interface {
 
 	// Iter creates a new value store iterator.
 	Iter() (Iterator, error)
+
+	// Stats returns statistical information about the indexed values.
+	// If unsupported by the backing store, ErrStatsNotSupported is returned.
+	Stats() (*Stats, error)
 }
 
 // Iterator iterates multihashes and values in the value store. Any write
@@ -58,4 +66,10 @@ type Iterator interface {
 	// The iterator will no longer be usable after a call to this function and is
 	// discarded.
 	Close() error
+}
+
+// Stats provides statistics about the indexed values.
+type Stats struct {
+	// MultihashCount is the number of unique multihashes indexed.
+	MultihashCount uint64
 }
