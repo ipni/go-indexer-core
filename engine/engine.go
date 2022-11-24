@@ -226,3 +226,7 @@ func (e *Engine) updateCacheStats() {
 		stats.Record(context.Background(), ms...)
 	}
 }
+
+func (e *Engine) Stats() (*indexer.Stats, error) {
+	return e.valueStore.Stats()
+}

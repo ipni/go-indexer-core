@@ -277,6 +277,10 @@ func (s *SthStorage) Close() error {
 	return s.store.Close()
 }
 
+func (s *SthStorage) Stats() (*indexer.Stats, error) {
+	return nil, indexer.ErrStatsNotSupported
+}
+
 func (s *SthStorage) SetFileCacheSize(size int) {
 	s.store.SetFileCacheSize(size)
 }

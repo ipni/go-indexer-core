@@ -206,6 +206,10 @@ func (s *pStorage) Close() error {
 	return err
 }
 
+func (s *pStorage) Stats() (*indexer.Stats, error) {
+	return nil, indexer.ErrStatsNotSupported
+}
+
 func (s *pStorage) Iter() (indexer.Iterator, error) {
 	err := s.store.Sync()
 	if err != nil {

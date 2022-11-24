@@ -33,9 +33,10 @@ type (
 		// Note, pebble is using a zero-copy variation of marshaller to allow optimizations in
 		// cases where the value need not to be copied. The root level binary codec copies on
 		// unmarshal every time.
-		vcodec *codec
-		p      *pool
-		closed bool
+		vcodec   *codec
+		p        *pool
+		closed   bool
+		comparer *pebble.Comparer
 	}
 	iterator struct {
 		closed   bool
@@ -51,14 +52,14 @@ type (
 // New instantiates a new instance of a store backed by Pebble.
 // Note that any Merger value specified in the given options will be overridden.
 func New(path string, opts *pebble.Options) (indexer.Interface, error) {
-	if opts == nil {
-		opts = &pebble.Options{}
-	}
-
 	p := newPool()
 	c := &codec{
 		p: p,
 	}
+	if opts == nil {
+		opts = &pebble.Options{}
+	}
+	opts.EnsureDefaults()
 	// Override Merger since the store relies on a specific implementation of it
 	// to handle read-free writing of value-keys; see: valueKeysValueMerger.
 	opts.Merger = newValueKeysMerger(c)
@@ -68,9 +69,10 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	}
 
 	return &store{
-		db:     db,
-		p:      p,
-		vcodec: c,
+		db:       db,
+		p:        p,
+		vcodec:   c,
+		comparer: opts.Comparer,
 	}, nil
 }
 
@@ -258,12 +260,50 @@ func (s *store) Close() error {
 	return ferr
 }
 
-func (s *store) Iter() (indexer.Iterator, error) {
+// Stats gathers statistics about the values indexed by Pebble store.
+// The statistic gathering can be expensive and may be slow to calculate.
+// The numbers returned are estimated, must not be interpreted as exact and will not include
+// records that are not flushed.
+func (s *store) Stats() (*indexer.Stats, error) {
+	sst, err := s.db.SSTables(pebble.WithProperties())
+	if err != nil {
+		return nil, err
+	}
 	keygen := s.p.leaseBlake3Keyer()
+	defer keygen.Close()
+
 	start, end, err := keygen.multihashesKeyRange()
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = start.Close()
+		_ = end.Close()
+	}()
+	var stats indexer.Stats
+	for _, is := range sst {
+		for _, info := range is {
+			// SST file entries may overlap beyont start or end key. Include all such overlapping
+			// SST files in the count; this effectively implies an over estimation of unique
+			// multihashes. This is fine since the number of multihashes is expected to be
+			// overwhelmingly larger than provider records.
+			if s.comparer.Compare(start.buf, info.Smallest.UserKey) <= 0 ||
+				s.comparer.Compare(end.buf, info.Largest.UserKey) <= 0 {
+				stats.MultihashCount += info.Properties.NumEntries
+			}
+		}
+	}
+	return &stats, nil
+}
+
+func (s *store) Iter() (indexer.Iterator, error) {
+	keygen := s.p.leaseBlake3Keyer()
+	start, end, err := keygen.multihashesKeyRange()
+	if err != nil {
+		_ = keygen.Close()
+		return nil, err
+	}
+	_ = keygen.Close()
 	snapshot := s.db.NewSnapshot()
 	iter := snapshot.NewIter(&pebble.IterOptions{
 		LowerBound: start.buf,
