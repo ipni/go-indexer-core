@@ -360,7 +360,7 @@ func (s *pStorage) removeIndex(m multihash.Multihash, value indexer.Value) error
 	for i := range valueKeys {
 		existingValKey := valueKeys[i]
 		if s.encrypt {
-			existingValKey = decryptedValKeySlice(existingValKey)
+			existingValKey = decryptedValKeySlice(existingValKey, m)
 		}
 
 		if bytes.Equal(valKey, existingValKey) {
@@ -444,7 +444,7 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte, passphrase []byte) 
 	for i := 0; i < len(valueKeys); {
 		valKey := valueKeys[i]
 		if s.encrypt {
-			valKey = decryptedValKeySlice(valKey)
+			valKey = decryptedValKeySlice(valKey, passphrase)
 		}
 
 		// Fetch value from datastore
@@ -535,20 +535,34 @@ func makeValueKey(value indexer.Value) []byte {
 // While bytes after  PrefixLength + HashLength can be returned as an encrypted value to the user.
 func encryptValKey(valKey, passphrase []byte) []byte {
 	// Encrypt value with the original multihash
-	salt, nonce, encrypted, err := dhash.EncryptAES(valKey[len(valueKeyPrefix):], passphrase)
+	nonce, encrypted, err := dhash.EncryptAES(valKey[len(valueKeyPrefix):], passphrase)
 	if err != nil {
 		panic(err)
 	}
 
 	var b bytes.Buffer
-	b.Grow(len(valKey) + len(salt) + len(nonce) + len(encrypted))
+	b.Grow(len(valKey) + len(nonce) + len(encrypted))
 	b.Write(valKey)
-	b.Write(salt)
 	b.Write(nonce)
 	b.Write(encrypted)
 	return b.Bytes()
 }
 
-func decryptedValKeySlice(encValKey []byte) []byte {
-	return encValKey[:len(valueKeyPrefix)+valueKeySize]
+func decryptedValKeySlice(encValKey, passphrase []byte) []byte {
+	origLen := len(valueKeyPrefix) + valueKeySize
+	nonce := encValKey[origLen : origLen+dhash.NonceLen]
+	payload := encValKey[origLen+dhash.NonceLen:]
+
+	val, err := dhash.DecryptAES(nonce, payload, passphrase)
+	if err != nil {
+		panic(err)
+	}
+
+	var b bytes.Buffer
+	b.Grow(len(valueKeyPrefix) + len(val))
+	b.Write(valueKeyPrefix)
+	b.Write(val)
+	return b.Bytes()
 }
+
+// return val //encValKey[:len(valueKeyPrefix)+valueKeySize]
