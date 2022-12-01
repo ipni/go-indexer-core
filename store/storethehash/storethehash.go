@@ -312,7 +312,7 @@ func (s *SthStorage) Iter() (indexer.Iterator, error) {
 	}, nil
 }
 
-func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
+func (it *sthIterator) Next() ([]byte, [][]byte, error) {
 	for {
 		// Retruns io.EOF error when done.
 		key, valueData, err := it.storeIter.Next()
@@ -335,21 +335,11 @@ func (it *sthIterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
-		// Get the value for each value key
-		values, err := it.storage.getValues(key, valueKeys)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cannot get values for multihash: %w", err)
-		}
-
-		if len(values) == 0 {
-			continue
-		}
-
 		mhb := make([]byte, len(dm.Digest)-len(indexKeySuffix))
 		copy(mhb, dm.Digest)
 		reverseBytes(mhb)
 
-		return multihash.Multihash(mhb), values, nil
+		return mhb, valueKeys, nil
 	}
 }
 

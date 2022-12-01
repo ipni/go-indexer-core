@@ -31,8 +31,15 @@ type (
 		multihashKey(mh multihash.Multihash) (*key, error)
 		multihashesKeyRange() (start, end *key, err error)
 		keyToMultihash(*key) (multihash.Multihash, error)
+		// keyToValKey extracts value key payload from the value key
+		keyToValKey(*key) ([]byte, error)
+		// TODO: remove - such queries won't be possible because of encryption
 		valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error)
 		valueKey(value *indexer.Value, md bool) (*key, error)
+		// valueKeyFromPayload creates value key from payload pieces
+		valueKeyFromPayload(md bool, totalLen int, payloadPieces ...[]byte) *key
+		// valueKeyPayload creates value key payload for the indexer value
+		valueKeyPayload(value *indexer.Value) ([]byte, []byte, error)
 	}
 	blake3Keyer struct {
 		hasher *blake3.Hasher
@@ -184,22 +191,9 @@ func (b *blake3Keyer) multihashesKeyRange() (start, end *key, err error) {
 	return
 }
 
-// valueKey returns the key by which an indexer.Value is identified
-func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
-	b.hasher.Reset()
-	if _, err := b.hasher.Write([]byte(v.ProviderID)); err != nil {
-		return nil, err
-	}
-	pidk := b.hasher.Sum(nil)
-
-	b.hasher.Reset()
-	if _, err := b.hasher.Write(v.ContextID); err != nil {
-		return nil, err
-	}
-	ctxk := b.hasher.Sum(nil)
-
+func (b *blake3Keyer) leaseValueKeyWithPrefix(len int, md bool) *key {
 	vk := b.p.leaseKey()
-	klen := 1 + len(pidk) + len(ctxk)
+	klen := 1 + len
 	if md {
 		vk.maybeGrow(1 + klen)
 		vk.append(byte(mergeDeleteKeyPrefix))
@@ -207,9 +201,43 @@ func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
 		vk.maybeGrow(klen)
 	}
 	vk.append(byte(valueKeyPrefix))
-	vk.append(pidk...)
-	vk.append(ctxk...)
+	return vk
+}
+
+// valueKey returns the key by which an indexer.Value is identified
+func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
+	ph, ch, err := b.valueKeyPayload(v)
+	if err != nil {
+		return nil, err
+	}
+	vk := b.leaseValueKeyWithPrefix(len(ph)+len(ch), md)
+	vk.append(ph...)
+	vk.append(ch...)
 	return vk, nil
+}
+
+func (b *blake3Keyer) valueKeyFromPayload(md bool, totalLen int, payloadPieces ...[]byte) *key {
+	vk := b.leaseValueKeyWithPrefix(totalLen, md)
+	for _, payload := range payloadPieces {
+		vk.append(payload...)
+	}
+	return vk
+}
+
+// valueKeyPayload returns hashed pieces of the value key payload
+func (b *blake3Keyer) valueKeyPayload(v *indexer.Value) ([]byte, []byte, error) {
+	b.hasher.Reset()
+	if _, err := b.hasher.Write([]byte(v.ProviderID)); err != nil {
+		return nil, nil, err
+	}
+	ph := b.hasher.Sum(nil)
+
+	b.hasher.Reset()
+	if _, err := b.hasher.Write(v.ContextID); err != nil {
+		return nil, nil, err
+	}
+	ch := b.hasher.Sum(nil)
+	return ph, ch, nil
 }
 
 // multihashKey returns the key by which a multihash is identified
@@ -231,7 +259,19 @@ func (b *blake3Keyer) keyToMultihash(k *key) (multihash.Multihash, error) {
 		copy(mh, keyData)
 		return mh, nil
 	default:
-		return nil, errors.New("key prefix mismatch")
+		return nil, errors.New("multihash key prefix mismatch")
+	}
+}
+
+func (b *blake3Keyer) keyToValKey(k *key) ([]byte, error) {
+	switch k.prefix() {
+	case valueKeyPrefix:
+		keyData := k.buf[1:]
+		c := make([]byte, len(keyData))
+		copy(c, keyData)
+		return c, nil
+	default:
+		return nil, errors.New("value key key prefix mismatch")
 	}
 }
 

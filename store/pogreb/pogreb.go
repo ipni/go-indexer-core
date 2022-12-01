@@ -221,7 +221,7 @@ func (s *pStorage) Iter() (indexer.Iterator, error) {
 	}, nil
 }
 
-func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
+func (it *pogrebIter) Next() ([]byte, [][]byte, error) {
 	for {
 		key, valKeysData, err := it.iter.Next()
 		if err != nil {
@@ -240,16 +240,16 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
-		// Get the value for each value key
-		values, err := it.s.getValues(key, valueKeys)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cannot get values for multihash: %w", err)
-		}
-		if len(values) == 0 {
+		if len(valueKeys) == 0 {
 			continue
 		}
 
-		return multihash.Multihash(key[len(indexKeyPrefix):]), values, nil
+		results := make([][]byte, len(valueKeys))
+		for i, vk := range valueKeys {
+			results[i] = vk[len(valueKeyPrefix):]
+		}
+
+		return multihash.Multihash(key[len(indexKeyPrefix):]), valueKeys, nil
 	}
 }
 

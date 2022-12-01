@@ -9,7 +9,7 @@ import (
 
 func TestE2E(t *testing.T) {
 	s := memory.New()
-	test.E2ETest(t, s)
+	test.E2ETest(t, s, false)
 }
 
 func TestParallel(t *testing.T) {

@@ -26,7 +26,7 @@ func initSth(t *testing.T, vals ...int) *storethehash.SthStorage {
 
 func TestE2E(t *testing.T) {
 	s := initSth(t)
-	test.E2ETest(t, s)
+	test.E2ETest(t, s, false)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

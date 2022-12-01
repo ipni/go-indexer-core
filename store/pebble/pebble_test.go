@@ -6,27 +6,38 @@ import (
 
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
+	"github.com/ipni/go-indexer-core/dhash"
 	"github.com/ipni/go-indexer-core/store/test"
 )
 
-func initPebble(t *testing.T) indexer.Interface {
-	s, err := New(t.TempDir(), nil)
+func initPebble(t *testing.T, doubleHashing bool) indexer.Interface {
+	s, err := New(t.TempDir(), doubleHashing, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s
+	return dhash.New(s, doubleHashing)
 }
 
 func TestE2E(t *testing.T) {
-	s := initPebble(t)
-	test.E2ETest(t, s)
+	testE2E(t, true)
+	testE2E(t, false)
+}
+
+func testE2E(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
+	test.E2ETest(t, s, doubleHashing)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestSize(t *testing.T) {
-	s := initPebble(t)
+	testSize(t, true)
+	testSize(t, false)
+}
+
+func testSize(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	test.SizeTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -34,7 +45,12 @@ func TestSize(t *testing.T) {
 }
 
 func TestMany(t *testing.T) {
-	s := initPebble(t)
+	testMany(t, true)
+	testMany(t, false)
+}
+
+func testMany(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	test.RemoveTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -42,7 +58,12 @@ func TestMany(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	s := initPebble(t)
+	testRemoveProviderContext(t, true)
+	testRemoveProviderContext(t, false)
+}
+
+func testRemoveProviderContext(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	test.RemoveProviderContextTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -50,7 +71,14 @@ func TestRemoveProviderContext(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	s := initPebble(t)
+	// Removing provider is not supported for double hashed datastore
+	t.Skip()
+	testRemoveProvider(t, true)
+	testRemoveProvider(t, false)
+}
+
+func testRemoveProvider(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	test.RemoveProviderTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -58,7 +86,12 @@ func TestRemoveProvider(t *testing.T) {
 }
 
 func TestParallel(t *testing.T) {
-	s := initPebble(t)
+	testParallel(t, true)
+	testParallel(t, false)
+}
+
+func testParallel(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	test.ParallelUpdateTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -66,7 +99,12 @@ func TestParallel(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	s := initPebble(t)
+	testClose(t, true)
+	testClose(t, false)
+}
+
+func testClose(t *testing.T, doubleHashing bool) {
+	s := initPebble(t, doubleHashing)
 	err := s.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -79,11 +117,12 @@ func TestClose(t *testing.T) {
 
 func TestStats(t *testing.T) {
 	dir := t.TempDir()
-	subject, err := New(dir, nil)
+	ds, err := New(dir, true, nil)
 	if err != nil {
 		t.Fatal()
 	}
-	defer subject.Close()
+	defer ds.Close()
+	subject := dhash.New(ds, true)
 	rng := rand.New(rand.NewSource(1413))
 	values, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{
 		NumProviders:         1,

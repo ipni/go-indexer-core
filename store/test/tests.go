@@ -8,13 +8,16 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
+
+	base58 "github.com/mr-tron/base58/base58"
 )
 
 // TODO: rewrite these tests with test-runner so that they are individually re-runnable
 // TODO: use bench.GenerateRandomValues in testing.
 
-func E2ETest(t *testing.T, s indexer.Interface) {
+func E2ETest(t *testing.T, s indexer.Interface, doubleHashing bool) {
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -149,7 +152,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 			t.Fatalf("Iteration error: %s", err)
 		}
 
-		mb58 := m.B58String()
+		mb58 := base58.Encode(m)
 		t.Logf("Visited: %s", mb58)
 		_, already := seen[mb58]
 		if already {
@@ -164,7 +167,13 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Errorf("Wrong iteration count: expected %d, got %d", len(batch)+1, indexCount)
 	}
 	for i := range batch {
-		b58 := batch[i].B58String()
+		var b58 string
+		if doubleHashing {
+			b58 = base58.Encode(dhash.SecondSHA(batch[i], nil))
+		} else {
+			b58 = base58.Encode(batch[i])
+		}
+
 		_, ok := seen[b58]
 		if !ok {
 			t.Fatalf("Did not iterate multihash %s", b58)

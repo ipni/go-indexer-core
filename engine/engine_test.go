@@ -7,6 +7,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/cache/radixcache"
+	"github.com/ipni/go-indexer-core/dhash"
 	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipni/go-indexer-core/store/storethehash"
 	"github.com/ipni/go-indexer-core/store/test"
@@ -556,7 +557,9 @@ func TestMultiCodec(t *testing.T) {
 	case "storethehash":
 		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
 	case "pebble":
-		valueStore, err = pebble.New(tempDir, nil)
+		peb, e := pebble.New(tempDir, true, nil)
+		err = e
+		valueStore = dhash.New(peb, true)
 	default:
 		t.Fatal("vsType must be storethehash or pebble")
 	}
@@ -610,7 +613,11 @@ func TestMultiCodec(t *testing.T) {
 	case "storethehash":
 		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
 	case "pebble":
-		valueStore, err = pebble.New(tempDir, nil)
+		peb, e := pebble.New(tempDir, true, nil)
+		err = e
+		if err != nil {
+			valueStore = dhash.New(peb, true)
+		}
 	}
 	if err != nil {
 		t.Fatal(err)

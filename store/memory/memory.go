@@ -207,24 +207,20 @@ func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	}, nil
 }
 
-func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
+func (it *memoryIter) Next() ([]byte, [][]byte, error) {
 	key, val, done := it.iter.Next()
 	if done {
 		it.values = nil
 		return nil, nil, io.EOF
 	}
 
-	m := multihash.Multihash(key)
-	vals, ok := val.([]*indexer.Value)
+	// m := multihash.Multihash(key)
+	_, ok := val.([]*indexer.Value)
 	if !ok {
-		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())
+		return nil, nil, fmt.Errorf("unexpected type stored by %q", key)
 	}
 
-	it.values = it.values[:0]
-	for _, v := range vals {
-		it.values = append(it.values, *v)
-	}
-	return m, it.values, nil
+	return nil, nil, nil
 }
 
 func (it *memoryIter) Close() error { return nil }

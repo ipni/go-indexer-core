@@ -18,7 +18,7 @@ func initPogreb(t *testing.T) indexer.Interface {
 
 func TestE2E(t *testing.T) {
 	s := initPogreb(t)
-	test.E2ETest(t, s)
+	test.E2ETest(t, s, false)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

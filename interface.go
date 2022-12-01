@@ -55,12 +55,55 @@ type Interface interface {
 	Stats() (*Stats, error)
 }
 
+type Datastore interface {
+	// NewBatch starts a new batch operation that is specific to the datastore implementation
+	NewBatch() interface{}
+
+	// CommitBatch commits a batch that is specific to the datastore implementation
+	CommitBatch(batch interface{}) error
+
+	// CloseBatch closes a batch that is specific to the datastore implementation
+	CloseBatch(batch interface{}) error
+
+	// GetValue returns a value associated with the value key
+	GetValue(valKey []byte) (*Value, error)
+
+	// GetValueKeys returns value keys associated with the multihash
+	GetValueKeys(multihash multihash.Multihash) ([][]byte, bool, error)
+
+	// PutValue puts a value into the datastore and associates it with the value key using provided batch.
+	// Returns a newly assigned value key.
+	PutValue(value Value, batch interface{}) ([]byte, error)
+
+	// PutValueKey puts a new mapping from multihash to the value key using provided batch
+	PutValueKey(multihash multihash.Multihash, valKey []byte, batch interface{}) error
+
+	// RemoveValue removes a value from the datastore
+	RemoveValue(value *Value) error
+
+	// RemoveValueKey removes a value key associated with the multihash
+	RemoveValueKey(mh multihash.Multihash, valKey []byte, batch interface{}) error
+
+	// ValueKey creates a value key for the given value. Different datastpre might have different ways of composing that.
+	ValueKey(value *Value) ([]byte, error)
+
+	Size() (int64, error)
+
+	Flush() error
+
+	Close() error
+
+	Iter() (Iterator, error)
+
+	Stats() (*Stats, error)
+}
+
 // Iterator iterates multihashes and values in the value store. Any write
 // operation invalidates the iterator.
 type Iterator interface {
 	// Next returns the next multihash and the value it indexer. Returns io.EOF
 	// when finished iterating.
-	Next() (multihash.Multihash, []Value, error)
+	Next() ([]byte, [][]byte, error)
 
 	// Close closes the iterator releasing any resources that may be occupied by it.
 	// The iterator will no longer be usable after a call to this function and is

@@ -64,7 +64,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 // See: https://github.com/ipni/go-indexer-core/issues/94
 func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
 
-	offset := len(value) % marshalledValueKeyLength
+	offset := len(value) % v.c.valKeyLen
 
 	if offset < 0 {
 		return errors.New("invalid marshalled value key")
