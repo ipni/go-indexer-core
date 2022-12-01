@@ -25,7 +25,7 @@ const (
 
 // prepare reads a multihash list and imports it into the value store getting it
 // ready for benchmarking.
-func prepare(s indexer.Interface, size string, t *testing.T) {
+func prepare(s indexer.Interface, size string, m *metrics, t *testing.T) {
 	testFile := fmt.Sprint(testDataDir, size, testDataExt)
 	file, err := os.OpenFile(testFile, os.O_RDONLY, 0644)
 	if err != nil {
@@ -50,7 +50,9 @@ func prepare(s indexer.Interface, size string, t *testing.T) {
 			ContextID:     []byte(mh),
 			MetadataBytes: metadataBytes,
 		}
+		now := time.Now()
 		err = s.Put(value, mh)
+		m.putTime.add(time.Since(now).Microseconds())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +96,7 @@ func readAll(s indexer.Interface, size string, m *metrics, t *testing.T) {
 // Benchmark the average time per get by all multihashes and the total storage used.
 func BenchReadAll(s indexer.Interface, size string, t *testing.T) {
 	m := initMetrics()
-	prepare(s, size, t)
+	prepare(s, size, m, t)
 	readAll(s, size, m, t)
 	err := s.Flush()
 	if err != nil {
@@ -212,18 +214,21 @@ func (m *metric) avg() float64 {
 
 type metrics struct {
 	getTime *metric
+	putTime *metric
 }
 
 func initMetrics() *metrics {
 	return &metrics{
 		getTime: &metric{},
+		putTime: &metric{},
 	}
 }
 
 func report(s indexer.Interface, m *metrics, storage bool, t *testing.T) {
 	memSize, _ := s.Size()
-	avgT := m.getTime.avg() / 1000
-	t.Log("Avg time per get (ms):", avgT)
+	t.Log("Avg time per get (ms):", m.getTime.avg()/1000)
+	t.Log("Avg time per put (ms):", m.putTime.avg()/1000)
+
 	if storage {
 		sizeMB := float64(memSize) / 1000000
 		t.Log("Memory size (MB):", sizeMB)

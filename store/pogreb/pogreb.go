@@ -19,6 +19,7 @@ import (
 
 	"github.com/akrylysov/pogreb"
 	"github.com/filecoin-project/go-indexer-core"
+	"github.com/filecoin-project/go-indexer-core/dhash"
 	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
 	"github.com/gammazero/keymutex"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -38,16 +39,24 @@ var (
 )
 
 type pStorage struct {
+	// if true then pogreb will use a second hash over the multihash as the index key
+	// and will also encrypt the value keys using the key derived from the original multihash
+	encrypt bool
 	dir     string
 	store   *pogreb.DB
 	mlk     *keymutex.KeyMutex
 	valLock sync.RWMutex
 	vcodec  indexer.ValueCodec
+	// a temmporary solution to be able to iterate the database as if it was unencrypted.
+	// dehasher returns an unhashed value by it's sha256 hash.
+	// TODO: that doesn't look good
+	dehasher func([]byte) []byte
 }
 
 type pogrebIter struct {
-	iter *pogreb.ItemIterator
-	s    *pStorage
+	iter     *pogreb.ItemIterator
+	s        *pStorage
+	dehasher func([]byte) []byte
 }
 
 // New creates a new indexer.Interface implemented by a pogreb-based value
@@ -56,7 +65,7 @@ type pogrebIter struct {
 // The given indexer.ValueCodec is used to serialize and deserialize values.
 // If it is set to nil, indexer.BinaryWithJsonFallbackCodec is used which
 // will gracefully migrate the codec from JSON to Binary format.
-func New(dir string) (indexer.Interface, error) {
+func New(dir string, encrypt bool, dehasher func([]byte) []byte) (indexer.Interface, error) {
 	vsInfo, err := vsinfo.Load(dir, "pogreb")
 	if err != nil {
 		return nil, err
@@ -74,15 +83,17 @@ func New(dir string) (indexer.Interface, error) {
 	}
 
 	return &pStorage{
-		dir:    dir,
-		store:  s,
-		mlk:    keymutex.New(0),
-		vcodec: vcodec,
+		encrypt:  encrypt,
+		dir:      dir,
+		store:    s,
+		dehasher: dehasher,
+		mlk:      keymutex.New(0),
+		vcodec:   vcodec,
 	}, nil
 }
 
 func (s *pStorage) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	return s.get(makeIndexKey(m))
+	return s.get(m)
 }
 
 func (s *pStorage) Put(value indexer.Value, mhs ...multihash.Multihash) error {
@@ -216,8 +227,9 @@ func (s *pStorage) Iter() (indexer.Iterator, error) {
 		return nil, err
 	}
 	return &pogrebIter{
-		iter: s.store.Items(),
-		s:    s,
+		iter:     s.store.Items(),
+		s:        s,
+		dehasher: s.dehasher,
 	}, nil
 }
 
@@ -240,8 +252,13 @@ func (it *pogrebIter) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
+		var passphrase []byte
+		if it.dehasher != nil {
+			// Cut out the index prefix
+			passphrase = it.dehasher(key[len(indexKeyPrefix):])
+		}
 		// Get the value for each value key
-		values, err := it.s.getValues(key, valueKeys)
+		values, err := it.s.getValues(key, valueKeys, passphrase)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot get values for multihash: %w", err)
 		}
@@ -267,7 +284,9 @@ func (s *pStorage) getValueKeys(k []byte) ([][]byte, error) {
 	return s.vcodec.UnmarshalValueKeys(valueKeysData)
 }
 
-func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
+func (s *pStorage) get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
+	k := makeIndexKey(mh, s.encrypt)
+
 	valueKeys, err := s.getValueKeys(k)
 	if err != nil {
 		return nil, false, err
@@ -277,7 +296,7 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 	}
 
 	// Get the value for each value key.
-	values, err := s.getValues(k, valueKeys)
+	values, err := s.getValues(k, valueKeys, mh)
 	if err != nil {
 		return nil, false, fmt.Errorf("cannot get values for multihash: %w", err)
 	}
@@ -290,10 +309,14 @@ func (s *pStorage) get(k []byte) ([]indexer.Value, bool, error) {
 }
 
 func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
-	k := makeIndexKey(m)
+	k := makeIndexKey(m, s.encrypt)
 
 	s.lock(k)
 	defer s.unlock(k)
+
+	if s.encrypt {
+		valKey = encryptValKey(valKey, m)
+	}
 
 	existingValKeys, err := s.getValueKeys(k)
 	if err != nil {
@@ -322,7 +345,7 @@ func (s *pStorage) putIndex(m multihash.Multihash, valKey []byte) error {
 }
 
 func (s *pStorage) removeIndex(m multihash.Multihash, value indexer.Value) error {
-	k := makeIndexKey(m)
+	k := makeIndexKey(m, s.encrypt)
 
 	s.lock(k)
 	defer s.unlock(k)
@@ -335,7 +358,12 @@ func (s *pStorage) removeIndex(m multihash.Multihash, value indexer.Value) error
 	valKey := makeValueKey(value)
 
 	for i := range valueKeys {
-		if bytes.Equal(valKey, valueKeys[i]) {
+		existingValKey := valueKeys[i]
+		if s.encrypt {
+			existingValKey = decryptedValKeySlice(existingValKey)
+		}
+
+		if bytes.Equal(valKey, existingValKey) {
 			if len(valueKeys) == 1 {
 				return s.store.Delete(k)
 			}
@@ -409,13 +437,18 @@ func (s *pStorage) unlock(k []byte) {
 	s.mlk.UnlockBytes(k)
 }
 
-func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, error) {
+func (s *pStorage) getValues(key []byte, valueKeys [][]byte, passphrase []byte) ([]indexer.Value, error) {
 	values := make([]indexer.Value, 0, len(valueKeys))
 
 	s.valLock.RLock()
 	for i := 0; i < len(valueKeys); {
+		valKey := valueKeys[i]
+		if s.encrypt {
+			valKey = decryptedValKeySlice(valKey)
+		}
+
 		// Fetch value from datastore
-		valData, err := s.store.Get(valueKeys[i])
+		valData, err := s.store.Get(valKey)
 		if err != nil {
 			s.valLock.RUnlock()
 			return nil, fmt.Errorf("cannot get value: %w", err)
@@ -466,8 +499,11 @@ func (s *pStorage) getValues(key []byte, valueKeys [][]byte) ([]indexer.Value, e
 	return values, nil
 }
 
-func makeIndexKey(m multihash.Multihash) []byte {
+func makeIndexKey(m multihash.Multihash, encrypt bool) []byte {
 	mhb := []byte(m)
+	if encrypt {
+		mhb = dhash.SecondSHA(m)
+	}
 	var b bytes.Buffer
 	b.Grow(len(indexKeyPrefix) + len(mhb))
 	b.Write(indexKeyPrefix)
@@ -491,4 +527,28 @@ func makeValueKey(value indexer.Value) []byte {
 	b.Write(valueKeyPrefix)
 	b.Write(h.Sum(nil))
 	return b.Bytes()
+}
+
+// encryptValKey appends an encrypted data (salt, nonce, payload) to the original value key.
+// This is done so that the decryption operation isn't required on lookups as it's the most time consuming.
+// Lookup of an index value by its encrypted key can be done by taking the first PrefixLength + HashLength bytes of the key.
+// While bytes after  PrefixLength + HashLength can be returned as an encrypted value to the user.
+func encryptValKey(valKey, passphrase []byte) []byte {
+	// Encrypt value with the original multihash
+	salt, nonce, encrypted, err := dhash.EncryptAES(valKey[len(valueKeyPrefix):], passphrase)
+	if err != nil {
+		panic(err)
+	}
+
+	var b bytes.Buffer
+	b.Grow(len(valKey) + len(salt) + len(nonce) + len(encrypted))
+	b.Write(valKey)
+	b.Write(salt)
+	b.Write(nonce)
+	b.Write(encrypted)
+	return b.Bytes()
+}
+
+func decryptedValKeySlice(encValKey []byte) []byte {
+	return encValKey[:len(valueKeyPrefix)+valueKeySize]
 }

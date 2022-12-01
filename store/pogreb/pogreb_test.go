@@ -8,8 +8,8 @@ import (
 	"github.com/filecoin-project/go-indexer-core/store/test"
 )
 
-func initPogreb(t *testing.T) indexer.Interface {
-	s, err := pogreb.New(t.TempDir())
+func initPogreb(t *testing.T, encrypt bool) indexer.Interface {
+	s, err := pogreb.New(t.TempDir(), encrypt, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func initPogreb(t *testing.T) indexer.Interface {
 }
 
 func TestE2E(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.E2ETest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func TestE2E(t *testing.T) {
 }
 
 func TestParallel(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.ParallelUpdateTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestParallel(t *testing.T) {
 }
 
 func TestSize(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.SizeTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestSize(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.RemoveTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.RemoveProviderContextTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestRemoveProviderContext(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	test.RemoveProviderTest(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestRemoveProvider(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	s := initPogreb(t)
+	s := initPogreb(t, true)
 	err := s.Close()
 	if err != nil {
 		t.Fatal(err)

@@ -187,7 +187,7 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 
 func newPogrebSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
-		return pogreb.New(b.TempDir())
+		return pogreb.New(b.TempDir(), true, nil)
 	}
 }
 

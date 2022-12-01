@@ -9,7 +9,7 @@ import (
 )
 
 func initBenchStore(b *testing.B) indexer.Interface {
-	s, err := pogreb.New(b.TempDir())
+	s, err := pogreb.New(b.TempDir(), true, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -27,15 +27,16 @@ func BenchmarkParallelGet(b *testing.B) {
 // TEST_STORAGE=true go test -v -timeout=30m
 func TestBenchSingle10MB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initPogreb(t), "10MB", t)
+	test.BenchReadAll(initPogreb(t, false), "10MB", t)
+	test.BenchReadAll(initPogreb(t, true), "10MB", t)
 }
 
 func TestBenchSingle100MB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initPogreb(t), "100MB", t)
+	test.BenchReadAll(initPogreb(t, true), "100MB", t)
 }
 
 func TestBenchSingle1GB(t *testing.T) {
 	test.SkipStorage(t)
-	test.BenchReadAll(initPogreb(t), "1GB", t)
+	test.BenchReadAll(initPogreb(t, true), "1GB", t)
 }
