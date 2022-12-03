@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/bench"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/bench"
 	"github.com/multiformats/go-varint"
 )
 

@@ -1,7 +1,7 @@
 # go-indexer-core
 [![](https://img.shields.io/badge/made%20by-Protocol%20Labs-blue.svg?style=flat-square)](https://protocol.ai)
-[![Go Reference](https://pkg.go.dev/badge/github.com/filecoin-project/go-indexer-core.svg)](https://pkg.go.dev/github.com/filecoin-project/go-indexer-core)
-[![Coverage Status](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main/graph/badge.svg)](https://codecov.io/gh/filecoin-project/go-indexer-core/branch/main)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ipni/go-indexer-core.svg)](https://pkg.go.dev/github.com/ipni/go-indexer-core)
+[![Coverage Status](https://codecov.io/gh/ipni/go-indexer-core/branch/main/graph/badge.svg)](https://codecov.io/gh/ipni/go-indexer-core/branch/main)
 > Storage specialized for indexing provider content
 
 The indexer-core is a key-value store that is optimized for storing large numbers of multihashes mapping to relatively few provider data objects. A multihash (CID without codec) uniquely identifies a piece of content, and the provider data describes where and how to retrieve the content.
@@ -26,15 +26,15 @@ See Usage Example for details.
 
 ## Install
 ```sh
- go get github.com/filecoin-project/go-indexer-core
+ go get github.com/ipni/go-indexer-core
  ```
  
  ## Usage
  ```go
- import "github.com/filecoin-project/go-indexer-core"
+ import "github.com/ipni/go-indexer-core"
 ```
 
-See [pkg.go.dev documentation](https://pkg.go.dev/github.com/filecoin-project/go-indexer-core)
+See [pkg.go.dev documentation](https://pkg.go.dev/github.com/ipni/go-indexer-core)
 
 ### Example
 ```go
@@ -44,12 +44,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
-	"github.com/filecoin-project/go-indexer-core/engine"
-	"github.com/filecoin-project/go-indexer-core/store/pogreb"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/cache"
+	"github.com/ipni/go-indexer-core/cache/radixcache"
+	"github.com/ipni/go-indexer-core/engine"
+	"github.com/ipni/go-indexer-core/store/pogreb"
+	"github.com/ipni/go-indexer-core/store/storethehash"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )

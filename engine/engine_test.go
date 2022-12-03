@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/cache"
-	"github.com/filecoin-project/go-indexer-core/cache/radixcache"
-	"github.com/filecoin-project/go-indexer-core/store/pebble"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
-	"github.com/filecoin-project/go-indexer-core/store/test"
-	"github.com/filecoin-project/go-indexer-core/store/vsinfo"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/cache"
+	"github.com/ipni/go-indexer-core/cache/radixcache"
+	"github.com/ipni/go-indexer-core/store/pebble"
+	"github.com/ipni/go-indexer-core/store/storethehash"
+	"github.com/ipni/go-indexer-core/store/test"
+	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 

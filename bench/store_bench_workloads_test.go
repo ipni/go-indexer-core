@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core/bench"
+	"github.com/ipni/go-indexer-core/bench"
 )
 
 type workload struct {

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	sth "github.com/ipld/go-storethehash/store"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/store/storethehash"
 )
 
 func BenchmarkStore_Sth_PutConcurrency_W0_1(b *testing.B) {

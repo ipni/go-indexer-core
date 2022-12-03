@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
+	"github.com/ipni/go-indexer-core"
 	"github.com/multiformats/go-multihash"
 )
 

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/filecoin-project/go-indexer-core"
+	"github.com/ipni/go-indexer-core"
 )
 
 const (
