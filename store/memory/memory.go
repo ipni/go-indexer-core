@@ -197,8 +197,13 @@ func (s *memoryStore) Iter() (indexer.Iterator, error) {
 }
 
 func (s *memoryStore) Stats() (*indexer.Stats, error) {
+	var count uint64
+	s.mutex.Lock()
+	count = uint64(s.rtree.Len())
+	s.mutex.Unlock()
+
 	return &indexer.Stats{
-		MultihashCount: uint64(s.rtree.Len()),
+		MultihashCount: count,
 	}, nil
 }
 
