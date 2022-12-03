@@ -1,4 +1,4 @@
-module github.com/filecoin-project/go-indexer-core
+module github.com/ipni/go-indexer-core
 
 go 1.18
 

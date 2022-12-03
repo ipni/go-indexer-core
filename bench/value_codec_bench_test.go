@@ -3,8 +3,8 @@ package bench_test
 import (
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/bench"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/bench"
 )
 
 func BenchmarkBinaryValueCodec_MarshalValue(b *testing.B) {

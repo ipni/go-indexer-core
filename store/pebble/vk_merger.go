@@ -61,7 +61,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 // re-marshalled. This assures that any such records are opportunistically unmarshalled and
 // de-duplicated whenever they are read or changed.
 //
-// See: https://github.com/filecoin-project/go-indexer-core/issues/94
+// See: https://github.com/ipni/go-indexer-core/issues/94
 func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
 
 	offset := len(value) % marshalledValueKeyLength

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	indexer "github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
-	"github.com/filecoin-project/go-indexer-core/store/test"
+	indexer "github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/store/storethehash"
+	"github.com/ipni/go-indexer-core/store/test"
 )
 
 func initBenchStore(b *testing.B, putConcurrency int) indexer.Interface {

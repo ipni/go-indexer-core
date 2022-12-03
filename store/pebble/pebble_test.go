@@ -4,9 +4,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/bench"
-	"github.com/filecoin-project/go-indexer-core/store/test"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/bench"
+	"github.com/ipni/go-indexer-core/store/test"
 )
 
 func initPebble(t *testing.T) indexer.Interface {

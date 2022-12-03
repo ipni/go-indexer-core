@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
 	"github.com/ipfs/go-cid"
+	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 

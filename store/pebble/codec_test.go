@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/filecoin-project/go-indexer-core"
+	"github.com/ipni/go-indexer-core"
 )
 
 func TestCodec_MarshalledValueKeyLength(t *testing.T) {

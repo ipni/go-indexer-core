@@ -9,12 +9,12 @@ import (
 
 	pb2 "github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/bloom"
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store/memory"
-	"github.com/filecoin-project/go-indexer-core/store/pebble"
-	"github.com/filecoin-project/go-indexer-core/store/pogreb"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
 	sth "github.com/ipld/go-storethehash/store"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/store/memory"
+	"github.com/ipni/go-indexer-core/store/pebble"
+	"github.com/ipni/go-indexer-core/store/pogreb"
+	"github.com/ipni/go-indexer-core/store/storethehash"
 )
 
 func BenchmarkStore_PebblePut_W0(b *testing.B) {

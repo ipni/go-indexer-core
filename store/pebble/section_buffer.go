@@ -3,7 +3,7 @@ package pebble
 import (
 	"io"
 
-	"github.com/filecoin-project/go-indexer-core"
+	"github.com/ipni/go-indexer-core"
 	"github.com/multiformats/go-varint"
 )
 

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-indexer-core"
-	"github.com/filecoin-project/go-indexer-core/store/storethehash"
-	"github.com/filecoin-project/go-indexer-core/store/test"
 	sth "github.com/ipld/go-storethehash/store"
+	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/store/storethehash"
+	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
