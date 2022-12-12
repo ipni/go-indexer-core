@@ -78,44 +78,6 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	return values, len(values) > 0, nil
 }
 
-// func (s *DHash) valueKey(v *indexer.Value) ([]byte, error) {
-// 	keygen := s.p.leaseBlake3Keyer()
-// 	defer keygen.Close()
-// 	ph, ch, err := keygen.valueKeyPayload(v)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return append(ph, ch...), nil
-// }
-
-// // valueKey returns the key by which an indexer.Value is identified
-// func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
-// 	ph, ch, err := b.valueKeyPayload(v)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	vk := b.leaseValueKeyWithPrefix(len(ph)+len(ch), md)
-// 	vk.append(ph...)
-// 	vk.append(ch...)
-// 	return vk, nil
-// }
-
-// valueKeyPayload returns hashed pieces of the value key payload
-// func (b *blake3Keyer) valueKeyPayload(v *indexer.Value) ([]byte, []byte, error) {
-// 	b.hasher.Reset()
-// 	if _, err := b.hasher.Write([]byte(v.ProviderID)); err != nil {
-// 		return nil, nil, err
-// 	}
-// 	ph := b.hasher.Sum(nil)
-
-// 	b.hasher.Reset()
-// 	if _, err := b.hasher.Write(v.ContextID); err != nil {
-// 		return nil, nil, err
-// 	}
-// 	ch := b.hasher.Sum(nil)
-// 	return ph, ch, nil
-// }
-
 func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	if len(v.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
@@ -123,12 +85,12 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	b := d.ds.NewBatch()
 	defer d.ds.CloseBatch(b)
 
-	vkPayload, err := d.valueKeyer.Key(&v)
+	vk, err := d.valueKeyer.Key(&v)
 	if err != nil {
 		return err
 	}
 
-	err = d.ds.PutValue(vkPayload, v, b)
+	err = d.ds.PutValue(vk, v, b)
 	if err != nil {
 		return err
 	}
@@ -163,7 +125,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 			// Read multihash index
 			mhi := binary.LittleEndian.Uint32(key[32:])
 			// Encrypt value key with the original multihash
-			nonce, encrypted, err := encryptAES(vkPayload, mhs[mhi])
+			nonce, encrypted, err := encryptAES(vk, mhs[mhi])
 			if err != nil {
 				return err
 			}
@@ -173,7 +135,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 				return err
 			}
 		} else {
-			err = d.ds.PutValueKey(key, vkPayload, b)
+			err = d.ds.PutValueKey(key, vk, b)
 			if err != nil {
 				return err
 			}

@@ -557,7 +557,7 @@ func TestMultiCodec(t *testing.T) {
 	case "storethehash":
 		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
 	case "pebble":
-		peb, e := pebble.New(tempDir, true, nil)
+		peb, e := pebble.New(tempDir, nil)
 		err = e
 		valueStore = dhash.New(peb, true)
 	default:
@@ -613,7 +613,7 @@ func TestMultiCodec(t *testing.T) {
 	case "storethehash":
 		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
 	case "pebble":
-		peb, e := pebble.New(tempDir, true, nil)
+		peb, e := pebble.New(tempDir, nil)
 		err = e
 		if err != nil {
 			valueStore = dhash.New(peb, true)

@@ -12,28 +12,13 @@ const (
 	// marshalledValueKeyLength length is the default key length plus the length of the prefix i.e. 1, plus
 	// the length of its varint length which is also 1.
 	marshalledValueKeyLength = defaultKeyerLength + 1 + 1
-	// marshalledDhashValueKeyLength is size of encrypted valuekey (which is always 20 bytes)  plus the length of the prefix i.e. 1, plus
-	// the length of its varint length which is also 1.
-	marshalledDhashValueKeyLength = 48 + 1 + 1
 )
 
 // codec offers marshalling compatible with indexer.BinaryValueCodec format but optimised for use
 // in pebble; it does not make copies when possible and returns reusable pooled sectionBuffer,
 // key and keyList to reduce memory footprint where possible.
 type codec struct {
-	p         *pool
-	valKeyLen int
-}
-
-func newCodec(p *pool) *codec {
-	return newCodecWithKeyLen(p, marshalledValueKeyLength)
-}
-
-func newCodecWithKeyLen(p *pool, valKeyLen int) *codec {
-	return &codec{
-		p:         p,
-		valKeyLen: valKeyLen,
-	}
+	p *pool
 }
 
 func (c *codec) marshalValue(v *indexer.Value) ([]byte, io.Closer, error) {
@@ -76,39 +61,39 @@ func (c *codec) unmarshalValue(b []byte) (*indexer.Value, error) {
 	return &v, nil
 }
 
-func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
+func (c *codec) marshalValueKeyHashKeys(vk [][]byte) ([]byte, io.Closer, error) {
 	buf := c.p.leaseSectionBuff()
-	buf.maybeGrow(c.valKeyLen * len(vk))
+	buf.maybeGrow(marshalledValueKeyLength * len(vk))
 	for _, v := range vk {
 		buf.writeSection(v)
 	}
 	return buf.buf, buf, nil
 }
 
-func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
+func (c *codec) unmarshalValueKeyHashKeys(b []byte) (*keyList, error) {
 	l := len(b)
 	if l == 0 {
 		return nil, nil
 	}
-	vkl := l / c.valKeyLen
+	vkl := l / marshalledValueKeyLength
 	if vkl < 1 {
-		return nil, fmt.Errorf("marshalled value-key length %d is shorter than expected minimum %d", l, c.valKeyLen)
+		return nil, fmt.Errorf("marshalled value-key length %d is shorter than expected minimum %d", l, marshalledValueKeyLength)
 	}
 	vks := c.p.leaseKeyList()
 	vks.maybeGrow(vkl)
 	for i := 0; i < vkl; i++ {
 		vk := c.p.leaseKey()
-		offset := c.valKeyLen * i
-		vk.append(b[offset+1 : offset+c.valKeyLen]...)
+		offset := marshalledValueKeyLength * i
+		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
 		prefix := vk.prefix()
-		if prefix != valueKeyPrefix {
+		if prefix != valueKeyHashPrefix {
 			log.Debugf("unexpected key prefix for key: %v", vk)
 			_ = vk.Close()
 			continue
 		}
 		vks.append(vk)
 	}
-	if l%c.valKeyLen != 0 {
+	if l%marshalledValueKeyLength != 0 {
 		return vks, indexer.ErrCodecOverflow
 	}
 	return vks, nil

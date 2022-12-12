@@ -182,7 +182,7 @@ func newPebbleSubject(b *testing.B, doubleHashing bool) func() (indexer.Interfac
 		pebbleOpts.Levels[numLevels-1].FilterPolicy = nil
 		pebbleOpts.Cache = pb2.NewCache(1 << 30) // 1 GiB
 
-		peb, err := pebble.New(b.TempDir(), doubleHashing, pebbleOpts)
+		peb, err := pebble.New(b.TempDir(), pebbleOpts)
 		if err != nil {
 			return nil, err
 		}

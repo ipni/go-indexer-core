@@ -28,10 +28,9 @@ type (
 		multihashKey(mh multihash.Multihash) (*key, error)
 		multihashesKeyRange() (start, end *key, err error)
 		keyToMultihash(*key) (multihash.Multihash, error)
-		// keyToValKey extracts value key payload from the value key
-		keyToValKey(*key) ([]byte, error)
 		// valueKeyFromPayload creates value key from payload pieces
-		valueKey(payload []byte, md bool) *key
+		valueKey(payload []byte) *key
+		valueKeyHashKey(payload []byte, md bool) *key
 	}
 	blake3Keyer struct {
 		p *pool
@@ -49,6 +48,8 @@ const (
 	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
 	// it should be removed during merge. See: valueKeysValueMerger.
 	mergeDeleteKeyPrefix
+
+	valueKeyHashPrefix
 )
 
 // prefix returns the keyPrefix of this key by checking its first byte.
@@ -64,6 +65,8 @@ func (k *key) prefix() keyPrefix {
 		return valueKeyPrefix
 	case byte(mergeDeleteKeyPrefix):
 		return mergeDeleteKeyPrefix
+	case byte(valueKeyHashPrefix):
+		return valueKeyHashPrefix
 	default:
 		return unknownKeyPrefix
 	}
@@ -167,23 +170,26 @@ func (b *blake3Keyer) multihashesKeyRange() (start, end *key, err error) {
 	return
 }
 
-func (b *blake3Keyer) leaseValueKeyWithPrefix(len int, md bool) *key {
-	vk := b.p.leaseKey()
-	klen := 1 + len
-	if md {
-		vk.maybeGrow(1 + klen)
-		vk.append(byte(mergeDeleteKeyPrefix))
-	} else {
-		vk.maybeGrow(klen)
-	}
-	vk.append(byte(valueKeyPrefix))
-	return vk
+func (b *blake3Keyer) valueKey(payload []byte) *key {
+	k := b.p.leaseKey()
+	k.maybeGrow(1 + len(payload))
+	k.append(byte(valueKeyPrefix))
+	k.append(payload...)
+	return k
 }
 
-func (b *blake3Keyer) valueKey(payload []byte, md bool) *key {
-	vk := b.leaseValueKeyWithPrefix(len(payload), md)
-	vk.append(payload...)
-	return vk
+func (b *blake3Keyer) valueKeyHashKey(payload []byte, md bool) *key {
+	k := b.p.leaseKey()
+	klen := 1 + len(payload)
+	if md {
+		k.maybeGrow(1 + klen)
+		k.append(byte(mergeDeleteKeyPrefix))
+	} else {
+		k.maybeGrow(klen)
+	}
+	k.append(byte(valueKeyHashPrefix))
+	k.append(payload...)
+	return k
 }
 
 // multihashKey returns the key by which a multihash is identified
@@ -206,18 +212,6 @@ func (b *blake3Keyer) keyToMultihash(k *key) (multihash.Multihash, error) {
 		return mh, nil
 	default:
 		return nil, errors.New("multihash key prefix mismatch")
-	}
-}
-
-func (b *blake3Keyer) keyToValKey(k *key) ([]byte, error) {
-	switch k.prefix() {
-	case valueKeyPrefix:
-		keyData := k.buf[1:]
-		c := make([]byte, len(keyData))
-		copy(c, keyData)
-		return c, nil
-	default:
-		return nil, errors.New("value key key prefix mismatch")
 	}
 }
 

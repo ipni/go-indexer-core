@@ -17,13 +17,15 @@ func TestCodec_MarshalledValueKeyLength(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	subject := newCodec(p)
-	valueKey := bk.valueKey(k, false)
-	gotKyes, _, err := subject.marshalValueKeys([][]byte{valueKey.buf})
+	subject := &codec{
+		p: p,
+	}
+	valueKey := bk.valueKeyHashKey(k, false)
+	gotKyes, _, err := subject.marshalValueKeyHashKeys([][]byte{valueKey.buf})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gotKyes) != subject.valKeyLen {
+	if len(gotKyes) != marshalledValueKeyLength {
 		t.Fatal()
 	}
 }
@@ -31,29 +33,31 @@ func TestCodec_MarshalledValueKeyLength(t *testing.T) {
 func TestCodec_ValueKeysMarshalling(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
-	subject := newCodec(p)
+	subject := &codec{
+		p: p,
+	}
 	vk := indexer.NewKeyer()
 
 	k, err := vk.Key(value1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk1 := bk.valueKey(k, false)
+	vk1 := bk.valueKeyHashKey(k, false)
 
 	k, err = vk.Key(value2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk2 := bk.valueKey(k, false)
+	vk2 := bk.valueKeyHashKey(k, false)
 
 	k, err = vk.Key(value3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk3 := bk.valueKey(k, false)
+	vk3 := bk.valueKeyHashKey(k, false)
 
 	vks := [][]byte{vk1.buf, vk2.buf, vk3.buf}
-	gotKeys, _, err := subject.marshalValueKeys(vks)
+	gotKeys, _, err := subject.marshalValueKeyHashKeys(vks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +70,7 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 		t.Fatal()
 	}
 
-	gotKeyList, err := subject.unmarshalValueKeys(gotKeys)
+	gotKeyList, err := subject.unmarshalValueKeyHashKeys(gotKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +90,9 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 
 func TestCodec_ValueMarshalling(t *testing.T) {
 	binCodec := indexer.BinaryValueCodec{}
-	subject := newCodec(newPool())
+	subject := &codec{
+		p: newPool(),
+	}
 	tests := []struct {
 		name  string
 		value *indexer.Value

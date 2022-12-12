@@ -11,7 +11,7 @@ import (
 )
 
 func initPebble(t *testing.T, doubleHashing bool) indexer.Interface {
-	s, err := New(t.TempDir(), doubleHashing, nil)
+	s, err := New(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func testClose(t *testing.T, doubleHashing bool) {
 
 func TestStats(t *testing.T) {
 	dir := t.TempDir()
-	ds, err := New(dir, true, nil)
+	ds, err := New(dir, nil)
 	if err != nil {
 		t.Fatal()
 	}

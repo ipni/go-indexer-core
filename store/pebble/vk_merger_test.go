@@ -17,7 +17,9 @@ var (
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	p := newPool()
 	keyer := indexer.NewKeyer()
-	cdc := newCodec(p)
+	cdc := &codec{
+		p: p,
+	}
 	bk := p.leaseBlake3Keyer()
 	k, err := bk.multihashKey(multihash.Multihash("fish"))
 	if err != nil {
@@ -28,19 +30,19 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	if err != nil {
 		t.Fatal()
 	}
-	a := bk.valueKey(valKey, false)
+	a := bk.valueKeyHashKey(valKey, false)
 
 	valKey, err = keyer.Key(value2)
 	if err != nil {
 		t.Fatal()
 	}
-	b := bk.valueKey(valKey, false)
+	b := bk.valueKeyHashKey(valKey, false)
 
 	valKey, err = keyer.Key(value3)
 	if err != nil {
 		t.Fatal()
 	}
-	c := bk.valueKey(valKey, false)
+	c := bk.valueKeyHashKey(valKey, false)
 
 	subject := newValueKeysMerger(cdc)
 	oneMerge, err := subject.Merge(k.buf, a.buf)
@@ -81,27 +83,29 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	mh := multihash.Multihash("lobster")
 	keyer := indexer.NewKeyer()
 	p := newPool()
-	cdc := newCodec(p)
+	cdc := &codec{
+		p: p,
+	}
 	bk := p.leaseBlake3Keyer()
 
 	valKey, err := keyer.Key(value1)
 	if err != nil {
 		t.Fatal()
 	}
-	vk1 := bk.valueKey(valKey, false)
+	vk1 := bk.valueKeyHashKey(valKey, false)
 
 	valKey, err = keyer.Key(value2)
 	if err != nil {
 		t.Fatal()
 	}
-	vk2 := bk.valueKey(valKey, false)
-	dvk2 := bk.valueKey(valKey, true)
+	vk2 := bk.valueKeyHashKey(valKey, false)
+	dvk2 := bk.valueKeyHashKey(valKey, true)
 
 	valKey, err = keyer.Key(value3)
 	if err != nil {
 		t.Fatal()
 	}
-	vk3 := bk.valueKey(valKey, false)
+	vk3 := bk.valueKeyHashKey(valKey, false)
 
 	subject := newValueKeysMerger(cdc)
 	mk, err := bk.multihashKey(mh)
@@ -140,7 +144,9 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	p := newPool()
-	cdc := newCodec(p)
+	cdc := &codec{
+		p: p,
+	}
 	keyer := indexer.NewKeyer()
 	bk := p.leaseBlake3Keyer()
 	mh := multihash.Multihash("lobster")
@@ -153,19 +159,19 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal()
 	}
-	vk1 := bk.valueKey(valKey, false)
+	vk1 := bk.valueKeyHashKey(valKey, false)
 
 	valKey, err = keyer.Key(value2)
 	if err != nil {
 		t.Fatal()
 	}
-	vk2 := bk.valueKey(valKey, false)
+	vk2 := bk.valueKeyHashKey(valKey, false)
 
 	valKey, err = keyer.Key(value3)
 	if err != nil {
 		t.Fatal()
 	}
-	vk3 := bk.valueKey(valKey, false)
+	vk3 := bk.valueKeyHashKey(valKey, false)
 
 	// Repeatedly marshall the marshalled value
 	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk2.buf, vk3.buf})

@@ -52,7 +52,7 @@ func Test_blake3Keyer(t *testing.T) {
 		}
 	})
 
-	t.Run("valueKey", func(t *testing.T) {
+	t.Run("valueKeyHashKey", func(t *testing.T) {
 		var err error
 		keyer := indexer.NewKeyer()
 		k, err := keyer.Key(value2)
@@ -60,9 +60,9 @@ func Test_blake3Keyer(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		vk = subject.valueKey(k, false)
+		vk = subject.valueKeyHashKey(k, false)
 
-		if vk.prefix() != valueKeyPrefix {
+		if vk.prefix() != valueKeyHashPrefix {
 			t.Fatal()
 		}
 	})
@@ -74,7 +74,7 @@ func Test_blake3Keyer(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		dvk := subject.valueKey(k, true)
+		dvk := subject.valueKeyHashKey(k, true)
 		if dvk.prefix() != mergeDeleteKeyPrefix {
 			t.Fatal()
 		}
