@@ -73,19 +73,16 @@ type Datastore interface {
 
 	// PutValue puts a value into the datastore and associates it with the value key using provided batch.
 	// Returns a newly assigned value key.
-	PutValue(value Value, batch interface{}) ([]byte, error)
+	PutValue(valKey []byte, value Value, batch interface{}) error
 
 	// PutValueKey puts a new mapping from multihash to the value key using provided batch
 	PutValueKey(multihash multihash.Multihash, valKey []byte, batch interface{}) error
 
 	// RemoveValue removes a value from the datastore
-	RemoveValue(value *Value) error
+	RemoveValue(valKey []byte) error
 
 	// RemoveValueKey removes a value key associated with the multihash
 	RemoveValueKey(mh multihash.Multihash, valKey []byte, batch interface{}) error
-
-	// ValueKey creates a value key for the given value. Different datastpre might have different ways of composing that.
-	ValueKey(value *Value) ([]byte, error)
 
 	Size() (int64, error)
 

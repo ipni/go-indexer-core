@@ -10,10 +10,6 @@ import (
 
 func Test_blake3Keyer(t *testing.T) {
 	var vk *key
-	v := &indexer.Value{
-		ProviderID: "fish",
-		ContextID:  []byte("lobster"),
-	}
 
 	p := newPool()
 	subject := p.leaseBlake3Keyer()
@@ -58,39 +54,27 @@ func Test_blake3Keyer(t *testing.T) {
 
 	t.Run("valueKey", func(t *testing.T) {
 		var err error
-		vk, err = subject.valueKey(v, false)
+		keyer := indexer.NewKeyer()
+		k, err := keyer.Key(value2)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		vk = subject.valueKey(k, false)
+
 		if vk.prefix() != valueKeyPrefix {
 			t.Fatal()
 		}
 	})
 
-	t.Run("valuesByProviderKeyRange", func(t *testing.T) {
-		start, end, err := subject.valuesByProviderKeyRange(v.ProviderID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.HasPrefix(vk.buf, start.buf) {
-			t.Fatal()
-		}
-		if !bytes.Equal(end.buf, start.next().buf) {
-			t.Fatal()
-		}
-		if start.prefix() != valueKeyPrefix {
-			t.Fatal()
-		}
-		if end.prefix() != valueKeyPrefix {
-			t.Fatal()
-		}
-	})
-
 	t.Run("valueKeyMergeDelete", func(t *testing.T) {
-		dvk, err := subject.valueKey(v, true)
+		keyer := indexer.NewKeyer()
+		k, err := keyer.Key(value2)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		dvk := subject.valueKey(k, true)
 		if dvk.prefix() != mergeDeleteKeyPrefix {
 			t.Fatal()
 		}

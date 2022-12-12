@@ -11,11 +11,14 @@ import (
 func TestCodec_MarshalledValueKeyLength(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
-	subject := newCodec(p)
-	valueKey, err := bk.valueKey(value1, false)
+	vk := indexer.NewKeyer()
+	k, err := vk.Key(value1)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	subject := newCodec(p)
+	valueKey := bk.valueKey(k, false)
 	gotKyes, _, err := subject.marshalValueKeys([][]byte{valueKey.buf})
 	if err != nil {
 		t.Fatal(err)
@@ -29,18 +32,25 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
 	subject := newCodec(p)
-	vk1, err := bk.valueKey(value1, false)
+	vk := indexer.NewKeyer()
+
+	k, err := vk.Key(value1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk2, err := bk.valueKey(value2, false)
+	vk1 := bk.valueKey(k, false)
+
+	k, err = vk.Key(value2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk3, err := bk.valueKey(value3, false)
+	vk2 := bk.valueKey(k, false)
+
+	k, err = vk.Key(value3)
 	if err != nil {
 		t.Fatal(err)
 	}
+	vk3 := bk.valueKey(k, false)
 
 	vks := [][]byte{vk1.buf, vk2.buf, vk3.buf}
 	gotKeys, _, err := subject.marshalValueKeys(vks)

@@ -11,8 +11,10 @@ import (
 const (
 	// marshalledValueKeyLength length is the default key length plus the length of the prefix i.e. 1, plus
 	// the length of its varint length which is also 1.
-	marshalledValueKeyLength      = defaultKeyerLength + 1 + 1
-	marshalledDhashValueKeyLength = dhashKeyerLength + 1 + 1
+	marshalledValueKeyLength = defaultKeyerLength + 1 + 1
+	// marshalledDhashValueKeyLength is size of encrypted valuekey (which is always 20 bytes)  plus the length of the prefix i.e. 1, plus
+	// the length of its varint length which is also 1.
+	marshalledDhashValueKeyLength = 48 + 1 + 1
 )
 
 // codec offers marshalling compatible with indexer.BinaryValueCodec format but optimised for use

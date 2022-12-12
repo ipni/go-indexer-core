@@ -8,6 +8,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-varint"
+	"lukechampine.com/blake3"
 )
 
 var (
@@ -70,7 +71,36 @@ type (
 		BinaryValueCodec
 		JsonValueCodec
 	}
+
+	ValueKeyer struct {
+		hasher *blake3.Hasher
+	}
 )
+
+func NewKeyer() *ValueKeyer {
+	return &ValueKeyer{
+		hasher: blake3.New(10, nil),
+	}
+}
+
+func (k *ValueKeyer) Key(v *Value) ([]byte, error) {
+	k.hasher.Reset()
+	if _, err := k.hasher.Write([]byte(v.ProviderID)); err != nil {
+		return nil, err
+	}
+	ph := k.hasher.Sum(nil)
+
+	k.hasher.Reset()
+	if _, err := k.hasher.Write([]byte(v.ContextID)); err != nil {
+		return nil, err
+	}
+	ch := k.hasher.Sum(nil)
+
+	valKey := make([]byte, 0, len(ph)+len(ch))
+	valKey = append(valKey, ph...)
+	valKey = append(valKey, ch...)
+	return valKey, nil
+}
 
 // Match return true if both values have the same ProviderID and ContextID.
 func (v Value) Match(other Value) bool {

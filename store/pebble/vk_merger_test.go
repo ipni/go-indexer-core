@@ -16,24 +16,31 @@ var (
 
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	p := newPool()
+	keyer := indexer.NewKeyer()
 	cdc := newCodec(p)
 	bk := p.leaseBlake3Keyer()
 	k, err := bk.multihashKey(multihash.Multihash("fish"))
 	if err != nil {
 		t.Fatal()
 	}
-	a, err := bk.valueKey(value1, false)
+
+	valKey, err := keyer.Key(value1)
 	if err != nil {
 		t.Fatal()
 	}
-	b, err := bk.valueKey(value2, false)
+	a := bk.valueKey(valKey, false)
+
+	valKey, err = keyer.Key(value2)
 	if err != nil {
 		t.Fatal()
 	}
-	c, err := bk.valueKey(value3, false)
+	b := bk.valueKey(valKey, false)
+
+	valKey, err = keyer.Key(value3)
 	if err != nil {
 		t.Fatal()
 	}
+	c := bk.valueKey(valKey, false)
 
 	subject := newValueKeysMerger(cdc)
 	oneMerge, err := subject.Merge(k.buf, a.buf)
@@ -72,26 +79,29 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	mh := multihash.Multihash("lobster")
+	keyer := indexer.NewKeyer()
 	p := newPool()
 	cdc := newCodec(p)
 	bk := p.leaseBlake3Keyer()
 
-	vk1, err := bk.valueKey(value1, false)
+	valKey, err := keyer.Key(value1)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
-	vk2, err := bk.valueKey(value2, false)
+	vk1 := bk.valueKey(valKey, false)
+
+	valKey, err = keyer.Key(value2)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
-	dvk2, err := bk.valueKey(value2, true)
+	vk2 := bk.valueKey(valKey, false)
+	dvk2 := bk.valueKey(valKey, true)
+
+	valKey, err = keyer.Key(value3)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
-	vk3, err := bk.valueKey(value3, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	vk3 := bk.valueKey(valKey, false)
 
 	subject := newValueKeysMerger(cdc)
 	mk, err := bk.multihashKey(mh)
@@ -131,6 +141,7 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	p := newPool()
 	cdc := newCodec(p)
+	keyer := indexer.NewKeyer()
 	bk := p.leaseBlake3Keyer()
 	mh := multihash.Multihash("lobster")
 	k, err := bk.multihashKey(mh)
@@ -138,18 +149,23 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		t.Fatal()
 	}
 
-	vk1, err := bk.valueKey(value1, false)
+	valKey, err := keyer.Key(value1)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
-	vk2, err := bk.valueKey(value2, false)
+	vk1 := bk.valueKey(valKey, false)
+
+	valKey, err = keyer.Key(value2)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
-	vk3, err := bk.valueKey(value3, false)
+	vk2 := bk.valueKey(valKey, false)
+
+	valKey, err = keyer.Key(value3)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal()
 	}
+	vk3 := bk.valueKey(valKey, false)
 
 	// Repeatedly marshall the marshalled value
 	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk2.buf, vk3.buf})
