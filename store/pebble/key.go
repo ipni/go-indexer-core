@@ -28,8 +28,10 @@ type (
 		multihashKey(mh multihash.Multihash) (*key, error)
 		multihashesKeyRange() (start, end *key, err error)
 		keyToMultihash(*key) (multihash.Multihash, error)
-		// valueKeyFromPayload creates value key from payload pieces
+		// valueKey returns a key for valueKey -> Value lookup
 		valueKey(payload []byte) *key
+		// TODO: think of a better name
+		// valueKeyHashKey returns a key for hash(valueKey) -> valueKey lookup
 		valueKeyHashKey(payload []byte, md bool) *key
 	}
 	blake3Keyer struct {

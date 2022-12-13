@@ -86,9 +86,10 @@ func (s *store) GetValueKeys(mh multihash.Multihash) ([][]byte, bool, error) {
 		return nil, false, err
 	}
 
-	// vkhb will contain a list of valueKey hashes, that need to be mapped to valueKeys before returning.
+	// vkhb contains a list of valueKey hashes, that need to be mapped to valueKeys before returning.
 	vkhb, vkhbClose, err := s.db.Get(mhk.buf)
 	_ = mhk.Close()
+
 	if err == pebble.ErrNotFound {
 		return nil, false, nil
 	}
@@ -96,6 +97,7 @@ func (s *store) GetValueKeys(mh multihash.Multihash) ([][]byte, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
+
 	vkhbcpy := make([]byte, len(vkhb))
 	copy(vkhbcpy, vkhb) // TODO think if we really need to copy
 	_ = vkhbClose.Close()
@@ -112,6 +114,7 @@ func (s *store) GetValueKeys(mh multihash.Multihash) ([][]byte, bool, error) {
 
 	result := make([][]byte, len(vkhs.keys))
 	for i, vkh := range vkhs.keys {
+		// Get full value key by its hash
 		vk, c, err := s.db.Get(vkh.buf)
 		if err != nil {
 			return nil, false, err
@@ -191,14 +194,6 @@ func (s *store) PutValue(valKey []byte, v indexer.Value, batch interface{}) erro
 	return b.Set(vk.buf, vs, pebble.NoSync)
 }
 
-func (s *store) valueKeyHash(valKey []byte) ([]byte, error) {
-	s.hasher.Reset()
-	if _, err := s.hasher.Write(valKey); err != nil {
-		return nil, err
-	}
-	return s.hasher.Sum(nil), nil
-}
-
 func (s *store) PutValueKey(mh multihash.Multihash, valKey []byte, batch interface{}) error {
 	b := batch.(*pebble.Batch)
 
@@ -221,7 +216,7 @@ func (s *store) PutValueKey(mh multihash.Multihash, valKey []byte, batch interfa
 	}
 
 	mhk, err := keygen.multihashKey(mh)
-	defer func() { _ = mhk.Close() }()
+	defer mhk.Close()
 
 	if err != nil {
 		return err
@@ -405,4 +400,13 @@ func (i *iterator) Close() error {
 		return ierr
 	}
 	return serr
+}
+
+// valueKeyHash calculates a blake3 hash over the original value key to be stored in the index
+func (s *store) valueKeyHash(valKey []byte) ([]byte, error) {
+	s.hasher.Reset()
+	if _, err := s.hasher.Write(valKey); err != nil {
+		return nil, err
+	}
+	return s.hasher.Sum(nil), nil
 }

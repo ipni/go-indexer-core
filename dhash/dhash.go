@@ -54,6 +54,7 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	values := make([]indexer.Value, 0, len(vkPayloads))
 
 	for _, vkPayload := range vkPayloads {
+		// Decrypt each value key if doubele hashing is used
 		if d.doubleHashing {
 			decrypted, err := decryptAES(vkPayload[:nonceLen], vkPayload[nonceLen:], []byte(mh))
 			if err != nil {
@@ -63,6 +64,7 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 			vkPayload = decrypted
 		}
 
+		// Look up value with the decrypted payload
 		val, err := d.ds.GetValue(vkPayload)
 		if err != nil {
 			return nil, false, err
@@ -102,8 +104,9 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 			continue
 		}
 		// In the double hashing mode calculate second hash over the original multihash.
-		// Append the original index to the resulting value in order to be able to get back to the multihash for encryption after sorting.
-		// 32 bytes for SHA256 and 4 bytes for index
+		// Append the index from the multihash array to the resulting value in order to be able to get back to the multihash for encryption after sorting.
+		// Keep in mind - double hashed array will have different order than the original one after sorting.
+		// 32 bytes for SHA256 and 4 bytes for index.
 		key := make([]byte, 0, 36)
 		key = SecondSHA(mhs[i], key)
 		// TODO: Is it the best way to change len?
@@ -130,7 +133,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 				return err
 			}
 			mhk := key[:32]
-			err = d.ds.PutValueKey(mhk, append(nonce, encrypted...), b)
+			err = d.ds.PutValueKey(mhk, encValueKey(nonce, encrypted), b)
 			if err != nil {
 				return err
 			}
@@ -145,6 +148,8 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 }
 
 func (d *DHash) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
+	// TODO: opportunistically delete garbage key value keys by checking a list
+	//       of removed providers during merge.
 	if d.doubleHashing {
 		return d.removeDoubleHashing(v, mhs...)
 	} else {
@@ -180,15 +185,14 @@ func (d *DHash) removeDoubleHashing(v indexer.Value, mhs ...multihash.Multihash)
 		if err != nil {
 			return err
 		}
-		d.ds.RemoveValueKey(SecondSHA(mh, nil), append(nonce, encrypted...), b)
+		d.ds.RemoveValueKey(SecondSHA(mh, nil), encValueKey(nonce, encrypted), b)
 	}
 
-	// TODO: opportunistically delete garbage key value keys by checking a list
-	//       of removed providers during merge.
 	return d.ds.CommitBatch(b)
 }
 
 func (d *DHash) RemoveProvider(ctx context.Context, p peer.ID) error {
+	// Delete provider is not supported because range queries by peerID aren't possibe over the encrypted data
 	return errors.New("delete provider not supported")
 }
 
@@ -276,4 +280,9 @@ func SecondSHA(payload, dest []byte) []byte {
 // deriveKey derives encryptioin key from passphrase using SHA256
 func deriveKey(passphrase []byte) []byte {
 	return SecondSHA(append([]byte("AESGCM"), passphrase...), nil)
+}
+
+// encValueKey builds an encrypted value key from nonce and encrypted payload
+func encValueKey(nonce, encrypted []byte) []byte {
+	return append(nonce, encrypted...)
 }
