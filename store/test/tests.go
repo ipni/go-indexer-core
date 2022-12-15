@@ -10,8 +10,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
-
-	base58 "github.com/mr-tron/base58/base58"
+	"github.com/mr-tron/base58"
 )
 
 // TODO: rewrite these tests with test-runner so that they are individually re-runnable

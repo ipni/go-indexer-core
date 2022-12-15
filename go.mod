@@ -20,9 +20,8 @@ require (
 	go.opencensus.io v0.23.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
 	lukechampine.com/blake3 v1.1.7
+	github.com/mr-tron/base58 v1.2.0
 )
-
-require github.com/mr-tron/base58 v1.2.0
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect
