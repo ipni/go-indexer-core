@@ -22,6 +22,8 @@ require (
 	lukechampine.com/blake3 v1.1.7
 )
 
+require github.com/mr-tron/base58 v1.2.0
+
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -42,7 +44,6 @@ require (
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
 	github.com/multiformats/go-multiaddr v0.7.0 // indirect
