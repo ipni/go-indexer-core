@@ -61,7 +61,7 @@ func (c *codec) unmarshalValue(b []byte) (*indexer.Value, error) {
 	return &v, nil
 }
 
-func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
+func (c *codec) marshalValueKeyHashKeys(vk [][]byte) ([]byte, io.Closer, error) {
 	buf := c.p.leaseSectionBuff()
 	buf.maybeGrow(marshalledValueKeyLength * len(vk))
 	for _, v := range vk {
@@ -70,7 +70,7 @@ func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
 	return buf.buf, buf, nil
 }
 
-func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
+func (c *codec) unmarshalValueKeyHashKeys(b []byte) (*keyList, error) {
 	l := len(b)
 	if l == 0 {
 		return nil, nil
@@ -86,7 +86,7 @@ func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 		offset := marshalledValueKeyLength * i
 		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
 		prefix := vk.prefix()
-		if prefix != valueKeyPrefix {
+		if prefix != valueKeyHashPrefix {
 			log.Debugf("unexpected key prefix for key: %v", vk)
 			_ = vk.Close()
 			continue

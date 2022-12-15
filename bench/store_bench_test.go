@@ -11,7 +11,8 @@ import (
 	"github.com/cockroachdb/pebble/bloom"
 	sth "github.com/ipld/go-storethehash/store"
 	"github.com/ipni/go-indexer-core"
-	"github.com/ipni/go-indexer-core/dhash"
+	"github.com/ipni/go-indexer-core/store/dhash"
+	dspebble "github.com/ipni/go-indexer-core/store/dhash/pebble"
 	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipni/go-indexer-core/store/pogreb"
@@ -19,35 +20,67 @@ import (
 )
 
 func BenchmarkStore_PebblePut_W0(b *testing.B) {
-	benchmarkStorePut(b, newPebbleSubject(b, true), workload0(b))
+	benchmarkStorePut(b, newPebbleSubject(b), workload0(b))
 }
 
 func BenchmarkStore_PebbleGet_W0(b *testing.B) {
-	benchmarkStoreGet(b, newPebbleSubject(b, true), workload0(b))
+	benchmarkStoreGet(b, newPebbleSubject(b), workload0(b))
 }
 
 func BenchmarkStore_PebblePut_W1(b *testing.B) {
-	benchmarkStorePut(b, newPebbleSubject(b, true), workload1(b))
+	benchmarkStorePut(b, newPebbleSubject(b), workload1(b))
 }
 
 func BenchmarkStore_PebbleGet_W1(b *testing.B) {
-	benchmarkStoreGet(b, newPebbleSubject(b, true), workload1(b))
+	benchmarkStoreGet(b, newPebbleSubject(b), workload1(b))
 }
 
 func BenchmarkStore_PebblePut_W2(b *testing.B) {
-	benchmarkStorePut(b, newPebbleSubject(b, true), workload2(b))
+	benchmarkStorePut(b, newPebbleSubject(b), workload2(b))
 }
 
 func BenchmarkStore_PebbleGet_W2(b *testing.B) {
-	benchmarkStoreGet(b, newPebbleSubject(b, true), workload2(b))
+	benchmarkStoreGet(b, newPebbleSubject(b), workload2(b))
 }
 
 func BenchmarkStore_PebblePut_W3(b *testing.B) {
-	benchmarkStorePut(b, newPebbleSubject(b, true), workload3(b))
+	benchmarkStorePut(b, newPebbleSubject(b), workload3(b))
 }
 
 func BenchmarkStore_PebbleGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, newPebbleSubject(b, true), workload3(b))
+	benchmarkStoreGet(b, newPebbleSubject(b), workload3(b))
+}
+
+func BenchmarkStore_DHashPut_W0(b *testing.B) {
+	benchmarkStorePut(b, newDHashSubject(b), workload0(b))
+}
+
+func BenchmarkStore_DHashGet_W0(b *testing.B) {
+	benchmarkStoreGet(b, newDHashSubject(b), workload0(b))
+}
+
+func BenchmarkStore_DHashPut_W1(b *testing.B) {
+	benchmarkStorePut(b, newDHashSubject(b), workload1(b))
+}
+
+func BenchmarkStore_DHashGet_W1(b *testing.B) {
+	benchmarkStoreGet(b, newDHashSubject(b), workload1(b))
+}
+
+func BenchmarkStore_DHashPut_W2(b *testing.B) {
+	benchmarkStorePut(b, newDHashSubject(b), workload2(b))
+}
+
+func BenchmarkStore_DHashGet_W2(b *testing.B) {
+	benchmarkStoreGet(b, newDHashSubject(b), workload2(b))
+}
+
+func BenchmarkStore_DHashPut_W3(b *testing.B) {
+	benchmarkStorePut(b, newDHashSubject(b), workload3(b))
+}
+
+func BenchmarkStore_DHashGet_W3(b *testing.B) {
+	benchmarkStoreGet(b, newDHashSubject(b), workload3(b))
 }
 
 func BenchmarkStore_PogrebPut_W0(b *testing.B) {
@@ -115,80 +148,90 @@ func BenchmarkStore_StorethehashGet_W3(b *testing.B) {
 }
 
 func BenchmarkStore_MemoryPut_W0(b *testing.B) {
-	benchmarkStorePut(b, newMemorySubject(), workload0(b))
+	benchmarkStorePut(b, newMemorySubject, workload0(b))
 }
 
 func BenchmarkStore_MemoryGet_W0(b *testing.B) {
-	benchmarkStoreGet(b, newMemorySubject(), workload0(b))
+	benchmarkStoreGet(b, newMemorySubject, workload0(b))
 }
 
 func BenchmarkStore_MemoryPut_W1(b *testing.B) {
-	benchmarkStorePut(b, newMemorySubject(), workload1(b))
+	benchmarkStorePut(b, newMemorySubject, workload1(b))
 }
 
 func BenchmarkStore_MemoryGet_W1(b *testing.B) {
-	benchmarkStoreGet(b, newMemorySubject(), workload1(b))
+	benchmarkStoreGet(b, newMemorySubject, workload1(b))
 }
 
 func BenchmarkStore_MemoryPut_W2(b *testing.B) {
-	benchmarkStorePut(b, newMemorySubject(), workload2(b))
+	benchmarkStorePut(b, newMemorySubject, workload2(b))
 }
 
 func BenchmarkStore_MemoryGet_W2(b *testing.B) {
-	benchmarkStoreGet(b, newMemorySubject(), workload2(b))
+	benchmarkStoreGet(b, newMemorySubject, workload2(b))
 }
 
 func BenchmarkStore_MemoryPut_W3(b *testing.B) {
-	benchmarkStorePut(b, newMemorySubject(), workload3(b))
+	benchmarkStorePut(b, newMemorySubject, workload3(b))
 }
 
 func BenchmarkStore_MemoryGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, newMemorySubject(), workload3(b))
+	benchmarkStoreGet(b, newMemorySubject, workload3(b))
 }
 
-func newPebbleSubject(b *testing.B, doubleHashing bool) func() (indexer.Interface, error) {
+func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
-		// Default options copied from cockroachdb with the addition of 1GiB cache.
-		// See:
-		// - https://github.com/cockroachdb/cockroach/blob/v22.1.6/pkg/storage/pebble.go#L479
-		pebbleOpts := &pb2.Options{
-			BytesPerSync:                10 << 20, // 10 MiB
-			WALBytesPerSync:             10 << 20, // 10 MiB
-			MaxConcurrentCompactions:    10,
-			MemTableSize:                64 << 20, // 64 MiB
-			MemTableStopWritesThreshold: 4,
-			LBaseMaxBytes:               64 << 20, // 64 MiB
-			L0CompactionThreshold:       2,
-			L0StopWritesThreshold:       1000,
-			WALMinSyncInterval:          func() time.Duration { return 30 * time.Second },
-		}
+		return pebble.New(b.TempDir(), pebbleOpts())
+	}
+}
 
-		pebbleOpts.Experimental.ReadCompactionRate = 10 << 20 // 20 MiB
-		pebbleOpts.Experimental.MinDeletionRate = 128 << 20   // 128 MiB
+func newDHashSubject(b *testing.B) func() (indexer.Interface, error) {
+	return func() (indexer.Interface, error) {
 
-		const numLevels = 7
-		pebbleOpts.Levels = make([]pb2.LevelOptions, numLevels)
-		for i := 0; i < numLevels; i++ {
-			l := &pebbleOpts.Levels[i]
-			l.BlockSize = 32 << 10       // 32 KiB
-			l.IndexBlockSize = 256 << 10 // 256 KiB
-			l.FilterPolicy = bloom.FilterPolicy(10)
-			l.FilterType = pb2.TableFilter
-			if i > 0 {
-				l.TargetFileSize = pebbleOpts.Levels[i-1].TargetFileSize * 2
-			}
-			l.EnsureDefaults()
-		}
-		pebbleOpts.Levels[numLevels-1].FilterPolicy = nil
-		pebbleOpts.Cache = pb2.NewCache(1 << 30) // 1 GiB
-
-		peb, err := pebble.New(b.TempDir(), pebbleOpts)
+		ds, err := dspebble.New(b.TempDir(), pebbleOpts())
 		if err != nil {
 			return nil, err
 		}
 
-		return dhash.New(peb, doubleHashing), nil
+		return dhash.New(ds), nil
 	}
+}
+
+func pebbleOpts() *pb2.Options {
+	// Default options copied from cockroachdb with the addition of 1GiB cache.
+	// See:
+	// - https://github.com/cockroachdb/cockroach/blob/v22.1.6/pkg/storage/pebble.go#L479
+	pebbleOpts := &pb2.Options{
+		BytesPerSync:                10 << 20, // 10 MiB
+		WALBytesPerSync:             10 << 20, // 10 MiB
+		MaxConcurrentCompactions:    10,
+		MemTableSize:                64 << 20, // 64 MiB
+		MemTableStopWritesThreshold: 4,
+		LBaseMaxBytes:               64 << 20, // 64 MiB
+		L0CompactionThreshold:       2,
+		L0StopWritesThreshold:       1000,
+		WALMinSyncInterval:          func() time.Duration { return 30 * time.Second },
+	}
+
+	pebbleOpts.Experimental.ReadCompactionRate = 10 << 20 // 20 MiB
+	pebbleOpts.Experimental.MinDeletionRate = 128 << 20   // 128 MiB
+
+	const numLevels = 7
+	pebbleOpts.Levels = make([]pb2.LevelOptions, numLevels)
+	for i := 0; i < numLevels; i++ {
+		l := &pebbleOpts.Levels[i]
+		l.BlockSize = 32 << 10       // 32 KiB
+		l.IndexBlockSize = 256 << 10 // 256 KiB
+		l.FilterPolicy = bloom.FilterPolicy(10)
+		l.FilterType = pb2.TableFilter
+		if i > 0 {
+			l.TargetFileSize = pebbleOpts.Levels[i-1].TargetFileSize * 2
+		}
+		l.EnsureDefaults()
+	}
+	pebbleOpts.Levels[numLevels-1].FilterPolicy = nil
+	pebbleOpts.Cache = pb2.NewCache(1 << 30) // 1 GiB
+	return pebbleOpts
 }
 
 func newPogrebSubject(b *testing.B) func() (indexer.Interface, error) {
@@ -208,10 +251,8 @@ func sthSubject(b *testing.B) func() (indexer.Interface, error) {
 	}
 }
 
-func newMemorySubject() func() (indexer.Interface, error) {
-	return func() (indexer.Interface, error) {
-		return memory.New(), nil
-	}
+func newMemorySubject() (indexer.Interface, error) {
+	return memory.New(), nil
 }
 
 func benchmarkStorePut(b *testing.B, newSubject func() (indexer.Interface, error), w *workload) {

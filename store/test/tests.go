@@ -8,7 +8,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/ipni/go-indexer-core"
-	"github.com/ipni/go-indexer-core/dhash"
+	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	base58 "github.com/mr-tron/base58/base58"
@@ -152,7 +152,7 @@ func E2ETest(t *testing.T, s indexer.Interface, doubleHashing bool) {
 			t.Fatalf("Iteration error: %s", err)
 		}
 
-		mb58 := base58.Encode(m)
+		mb58 := m.B58String()
 		t.Logf("Visited: %s", mb58)
 		_, already := seen[mb58]
 		if already {

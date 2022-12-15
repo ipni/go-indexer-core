@@ -4,10 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/ipni/go-indexer-core"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"lukechampine.com/blake3"
 )
 
 var (
@@ -31,12 +28,16 @@ type (
 		multihashKey(mh multihash.Multihash) (*key, error)
 		multihashesKeyRange() (start, end *key, err error)
 		keyToMultihash(*key) (multihash.Multihash, error)
-		valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error)
-		valueKey(value *indexer.Value, md bool) (*key, error)
+		// valueKey returns a key for valueKey -> Value lookup
+		// payload represents a value key that is produced by indexer.ValueKeyer
+		valueKey(payload []byte) *key
+		// TODO: think of a better name
+		// valueKeyHashKey returns a key for hash(valueKey) -> valueKey lookup
+		// payload is a 20 bytes long hash over valueKey
+		valueKeyHashKey(payload []byte, md bool) *key
 	}
 	blake3Keyer struct {
-		hasher *blake3.Hasher
-		p      *pool
+		p *pool
 	}
 )
 
@@ -51,6 +52,9 @@ const (
 	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
 	// it should be removed during merge. See: valueKeysValueMerger.
 	mergeDeleteKeyPrefix
+	// valueKeyPrefix represents the prefix of a key that is associated to value key
+	// records.
+	valueKeyHashPrefix
 )
 
 // prefix returns the keyPrefix of this key by checking its first byte.
@@ -66,6 +70,8 @@ func (k *key) prefix() keyPrefix {
 		return valueKeyPrefix
 	case byte(mergeDeleteKeyPrefix):
 		return mergeDeleteKeyPrefix
+	case byte(valueKeyHashPrefix):
+		return valueKeyHashPrefix
 	default:
 		return unknownKeyPrefix
 	}
@@ -154,23 +160,8 @@ func newBlake3Keyer(l int, p *pool) *blake3Keyer {
 		// key length while maintaining the ability to lookup values
 		// key-range by provider ID since all such keys will have the
 		// same prefix.
-		hasher: blake3.New(l/2, nil),
-		p:      p,
+		p: p,
 	}
-}
-
-// valuesByProviderKeyRange returns the key range that contains all the indexer.Value records
-// that belong to the given provider ID.
-func (b *blake3Keyer) valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error) {
-	b.hasher.Reset()
-	if _, err := b.hasher.Write([]byte(pid)); err != nil {
-		return nil, nil, err
-	}
-
-	start = b.p.leaseKey()
-	start.append(b.hasher.Sum([]byte{byte(valueKeyPrefix)})...)
-	end = start.next()
-	return
 }
 
 // multihashesKeyRange returns the key range that contains all the records identified by
@@ -185,31 +176,30 @@ func (b *blake3Keyer) multihashesKeyRange() (start, end *key, err error) {
 }
 
 // valueKey returns the key by which an indexer.Value is identified
-func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
-	b.hasher.Reset()
-	if _, err := b.hasher.Write([]byte(v.ProviderID)); err != nil {
-		return nil, err
-	}
-	pidk := b.hasher.Sum(nil)
+// payload represents a value key that is produced by indexer.ValueKeyer
+func (b *blake3Keyer) valueKey(payload []byte) *key {
+	k := b.p.leaseKey()
+	k.maybeGrow(1 + len(payload))
+	k.append(byte(valueKeyPrefix))
+	k.append(payload...)
+	return k
+}
 
-	b.hasher.Reset()
-	if _, err := b.hasher.Write(v.ContextID); err != nil {
-		return nil, err
-	}
-	ctxk := b.hasher.Sum(nil)
+// valueKeyHashKey returns the key by which value key is identified
+// payload is a 20 bytes long hash over valueKey
 
-	vk := b.p.leaseKey()
-	klen := 1 + len(pidk) + len(ctxk)
+func (b *blake3Keyer) valueKeyHashKey(payload []byte, md bool) *key {
+	k := b.p.leaseKey()
+	klen := 1 + len(payload)
 	if md {
-		vk.maybeGrow(1 + klen)
-		vk.append(byte(mergeDeleteKeyPrefix))
+		k.maybeGrow(1 + klen)
+		k.append(byte(mergeDeleteKeyPrefix))
 	} else {
-		vk.maybeGrow(klen)
+		k.maybeGrow(klen)
 	}
-	vk.append(byte(valueKeyPrefix))
-	vk.append(pidk...)
-	vk.append(ctxk...)
-	return vk, nil
+	k.append(byte(valueKeyHashPrefix))
+	k.append(payload...)
+	return k
 }
 
 // multihashKey returns the key by which a multihash is identified
@@ -231,12 +221,11 @@ func (b *blake3Keyer) keyToMultihash(k *key) (multihash.Multihash, error) {
 		copy(mh, keyData)
 		return mh, nil
 	default:
-		return nil, errors.New("key prefix mismatch")
+		return nil, errors.New("multihash key prefix mismatch")
 	}
 }
 
 func (b *blake3Keyer) Close() error {
-	b.hasher.Reset()
 	b.p.blake3KeyerPool.Put(b)
 	return nil
 }

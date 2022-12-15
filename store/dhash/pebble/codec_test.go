@@ -8,17 +8,20 @@ import (
 	"github.com/ipni/go-indexer-core"
 )
 
-func TestCodec_MarshalledValueKeyLength(t *testing.T) {
+func TestCodec_MarshalledValueKeyHashLength(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
-	subject := codec{
-		p: p,
-	}
-	valueKey, err := bk.valueKey(value1, false)
+	vk := indexer.NewKeyer()
+	k, err := vk.Key(value1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotKyes, _, err := subject.marshalValueKeys([][]byte{valueKey.buf})
+
+	subject := &codec{
+		p: p,
+	}
+	valueKey := bk.valueKeyHashKey(k, false)
+	gotKyes, _, err := subject.marshalValueKeyHashKeys([][]byte{valueKey.buf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,27 +30,34 @@ func TestCodec_MarshalledValueKeyLength(t *testing.T) {
 	}
 }
 
-func TestCodec_ValueKeysMarshalling(t *testing.T) {
+func TestCodec_ValueKeyHashesMarshalling(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
-	subject := codec{
+	subject := &codec{
 		p: p,
 	}
-	vk1, err := bk.valueKey(value1, false)
+	vk := indexer.NewKeyer()
+
+	k, err := vk.Key(value1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk2, err := bk.valueKey(value2, false)
+	vk1 := bk.valueKeyHashKey(k, false)
+
+	k, err = vk.Key(value2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vk3, err := bk.valueKey(value3, false)
+	vk2 := bk.valueKeyHashKey(k, false)
+
+	k, err = vk.Key(value3)
 	if err != nil {
 		t.Fatal(err)
 	}
+	vk3 := bk.valueKeyHashKey(k, false)
 
 	vks := [][]byte{vk1.buf, vk2.buf, vk3.buf}
-	gotKeys, _, err := subject.marshalValueKeys(vks)
+	gotKeys, _, err := subject.marshalValueKeyHashKeys(vks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +70,7 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 		t.Fatal()
 	}
 
-	gotKeyList, err := subject.unmarshalValueKeys(gotKeys)
+	gotKeyList, err := subject.unmarshalValueKeyHashKeys(gotKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +90,7 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 
 func TestCodec_ValueMarshalling(t *testing.T) {
 	binCodec := indexer.BinaryValueCodec{}
-	subject := codec{
+	subject := &codec{
 		p: newPool(),
 	}
 	tests := []struct {

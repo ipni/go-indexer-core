@@ -198,6 +198,16 @@ func (e *Engine) Iter() (indexer.Iterator, error) {
 	return e.valueStore.Iter()
 }
 
+func (e *Engine) GetValueKeys(secondHash multihash.Multihash) ([][]byte, bool, error) {
+	// TODO: add caching
+	return e.valueStore.GetValueKeys(secondHash)
+}
+
+func (e *Engine) GetValue(valKey []byte) (*indexer.Value, error) {
+	// TODO: add caching
+	return e.valueStore.GetValue(valKey)
+}
+
 func (e *Engine) updateCacheStats() {
 	st := e.resultCache.Stats()
 	var prevStats *cache.Stats

@@ -163,6 +163,14 @@ func (s *pStorage) RemoveProvider(ctx context.Context, providerID peer.ID) error
 	return nil
 }
 
+func (s *pStorage) GetValueKeys(secondHash multihash.Multihash) ([][]byte, bool, error) {
+	panic("not implemented")
+}
+
+func (s *pStorage) GetValue(valKey []byte) (*indexer.Value, error) {
+	panic("not implemented")
+}
+
 func (s *pStorage) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
 	valKey := makeValueKey(indexer.Value{
 		ProviderID: providerID,
@@ -221,7 +229,7 @@ func (s *pStorage) Iter() (indexer.Iterator, error) {
 	}, nil
 }
 
-func (it *pogrebIter) Next() ([]byte, [][]byte, error) {
+func (it *pogrebIter) Next() (multihash.Multihash, [][]byte, error) {
 	for {
 		key, valKeysData, err := it.iter.Next()
 		if err != nil {

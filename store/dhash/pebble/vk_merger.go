@@ -47,7 +47,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	switch prefix {
 	case mergeDeleteKeyPrefix:
 		v.addToDeletes(value[1:])
-	case valueKeyPrefix:
+	case valueKeyHashPrefix:
 		v.addToMerges(value)
 	default:
 		return v.mergeMarshalled(value)
@@ -71,7 +71,7 @@ func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
 	}
 
 	// The given value is marshalled value-keys; decode it and populate merge values.
-	vks, err := v.c.unmarshalValueKeys(value[offset:])
+	vks, err := v.c.unmarshalValueKeyHashKeys(value[offset:])
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (v *valueKeysValueMerger) Finish(_ bool) ([]byte, io.Closer, error) {
 			v.merges[one], v.merges[other] = v.merges[other], v.merges[one]
 		}
 	}
-	return v.c.marshalValueKeys(v.merges)
+	return v.c.marshalValueKeyHashKeys(v.merges)
 }
 
 func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool, io.Closer, error) {

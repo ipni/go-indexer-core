@@ -32,8 +32,9 @@ type memoryStore struct {
 }
 
 type memoryIter struct {
-	iter   *radixtree.Iterator
-	values []indexer.Value
+	iter      *radixtree.Iterator
+	valueKeys [][]byte
+	keyer     *indexer.ValueKeyer
 }
 
 var _ indexer.Interface = (*memoryStore)(nil)
@@ -186,13 +187,22 @@ func (s *memoryStore) Size() (int64, error) {
 	return 0, nil
 }
 
+func (s *memoryStore) GetValueKeys(secondHash multihash.Multihash) ([][]byte, bool, error) {
+	panic("not supported")
+}
+
+func (s *memoryStore) GetValue(valKey []byte) (*indexer.Value, error) {
+	panic("not supported")
+}
+
 func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
 func (s *memoryStore) Iter() (indexer.Iterator, error) {
 	return &memoryIter{
-		iter: s.rtree.NewIterator(),
+		iter:  s.rtree.NewIterator(),
+		keyer: indexer.NewKeyer(),
 	}, nil
 }
 
@@ -207,20 +217,28 @@ func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	}, nil
 }
 
-func (it *memoryIter) Next() ([]byte, [][]byte, error) {
+func (it *memoryIter) Next() (multihash.Multihash, [][]byte, error) {
 	key, val, done := it.iter.Next()
 	if done {
-		it.values = nil
+		it.valueKeys = nil
 		return nil, nil, io.EOF
 	}
 
-	// m := multihash.Multihash(key)
-	_, ok := val.([]*indexer.Value)
+	m := multihash.Multihash(key)
+	vals, ok := val.([]*indexer.Value)
 	if !ok {
 		return nil, nil, fmt.Errorf("unexpected type stored by %q", key)
 	}
 
-	return nil, nil, nil
+	it.valueKeys = it.valueKeys[:0]
+	for _, v := range vals {
+		valKey, err := it.keyer.Key(v)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error calculating value key %v", err)
+		}
+		it.valueKeys = append(it.valueKeys, valKey)
+	}
+	return m, it.valueKeys, nil
 }
 
 func (it *memoryIter) Close() error { return nil }

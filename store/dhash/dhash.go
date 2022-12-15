@@ -12,6 +12,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/store"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
@@ -25,25 +26,21 @@ var (
 	log = logging.Logger("store/dhash")
 )
 
+// DHash is an implementation of the indexer interface that introduces Reader Privacy mechanics around the underlying Datastore.
 type DHash struct {
-	doubleHashing bool
-	ds            indexer.Datastore
-	valueKeyer    *indexer.ValueKeyer
+	ds         store.Interface
+	valueKeyer *indexer.ValueKeyer
 }
 
-func New(ds indexer.Datastore, doubleHashing bool) *DHash {
+func New(ds store.Interface) *DHash {
 	return &DHash{
-		ds:            ds,
-		doubleHashing: doubleHashing,
-		valueKeyer:    indexer.NewKeyer(),
+		ds:         ds,
+		valueKeyer: indexer.NewKeyer(),
 	}
 }
 
 func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
-	mhb := []byte(mh)
-	if d.doubleHashing {
-		mhb = SecondSHA(mhb, nil)
-	}
+	mhb := SecondSHA(mh, nil)
 	vkPayloads, found, err := d.ds.GetValueKeys(mhb)
 	if err != nil || !found {
 		return nil, false, err
@@ -54,15 +51,13 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	values := make([]indexer.Value, 0, len(vkPayloads))
 
 	for _, vkPayload := range vkPayloads {
-		// Decrypt each value key if doubele hashing is used
-		if d.doubleHashing {
-			decrypted, err := decryptAES(vkPayload[:nonceLen], vkPayload[nonceLen:], []byte(mh))
-			if err != nil {
-				log.Errorw("can't decrypt value key", "err", err)
-				return nil, false, err
-			}
-			vkPayload = decrypted
+		// Decrypt each value key
+		decrypted, err := decryptAES(vkPayload[:nonceLen], vkPayload[nonceLen:], []byte(mh))
+		if err != nil {
+			log.Errorw("can't decrypt value key", "err", err)
+			return nil, false, err
 		}
+		vkPayload = decrypted
 
 		// Look up value with the decrypted payload
 		val, err := d.ds.GetValue(vkPayload)
@@ -99,11 +94,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 
 	keys := make([][]byte, len(mhs))
 	for i := range mhs {
-		if !d.doubleHashing {
-			keys[i] = mhs[i]
-			continue
-		}
-		// In the double hashing mode calculate second hash over the original multihash.
+		// Calculate second hash over the original multihash.
 		// Append the index from the multihash array to the resulting value in order to be able to get back to the multihash for encryption after sorting.
 		// Keep in mind - double hashed array will have different order than the original one after sorting.
 		// 32 bytes for SHA256 and 4 bytes for index.
@@ -124,48 +115,15 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	})
 
 	for _, key := range keys {
-		if d.doubleHashing {
-			// Read multihash index
-			mhi := binary.LittleEndian.Uint32(key[32:])
-			// Encrypt value key with the original multihash
-			nonce, encrypted, err := encryptAES(vk, mhs[mhi])
-			if err != nil {
-				return err
-			}
-			mhk := key[:32]
-			err = d.ds.PutValueKey(mhk, encValueKey(nonce, encrypted), b)
-			if err != nil {
-				return err
-			}
-		} else {
-			err = d.ds.PutValueKey(key, vk, b)
-			if err != nil {
-				return err
-			}
+		// Read multihash index
+		mhi := binary.LittleEndian.Uint32(key[32:])
+		// Encrypt value key with the original multihash
+		nonce, encrypted, err := encryptAES(vk, mhs[mhi])
+		if err != nil {
+			return err
 		}
-	}
-	return d.ds.CommitBatch(b)
-}
-
-func (d *DHash) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
-	// TODO: opportunistically delete garbage key value keys by checking a list
-	//       of removed providers during merge.
-	if d.doubleHashing {
-		return d.removeDoubleHashing(v, mhs...)
-	} else {
-		return d.removeRegular(v, mhs...)
-	}
-}
-
-func (d *DHash) removeRegular(v indexer.Value, mhs ...multihash.Multihash) error {
-	vk, err := d.valueKeyer.Key(&v)
-	if err != nil {
-		return err
-	}
-	b := d.ds.NewBatch()
-	defer d.ds.CloseBatch(b)
-	for _, mh := range mhs {
-		err := d.ds.RemoveValueKey(mh, vk, b)
+		mhk := key[:32]
+		err = d.ds.PutValueKey(mhk, encValueKey(nonce, encrypted), b)
 		if err != nil {
 			return err
 		}
@@ -173,7 +131,9 @@ func (d *DHash) removeRegular(v indexer.Value, mhs ...multihash.Multihash) error
 	return d.ds.CommitBatch(b)
 }
 
-func (d *DHash) removeDoubleHashing(v indexer.Value, mhs ...multihash.Multihash) error {
+func (d *DHash) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
+	// TODO: opportunistically delete garbage key value keys by checking a list
+	// of removed providers during merge.
 	vkPayload, err := d.valueKeyer.Key(&v)
 	if err != nil {
 		return err
@@ -225,6 +185,14 @@ func (d *DHash) Iter() (indexer.Iterator, error) {
 
 func (d *DHash) Stats() (*indexer.Stats, error) {
 	return d.ds.Stats()
+}
+
+func (d *DHash) GetValueKeys(secondHash multihash.Multihash) ([][]byte, bool, error) {
+	return d.ds.GetValueKeys(secondHash)
+}
+
+func (d *DHash) GetValue(valKey []byte) (*indexer.Value, error) {
+	return d.ds.GetValue(valKey)
 }
 
 // encryptAES uses AESGCM to encrypt the payload with the passphrase and a nonce derived from it.

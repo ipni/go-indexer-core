@@ -312,7 +312,7 @@ func (s *SthStorage) Iter() (indexer.Iterator, error) {
 	}, nil
 }
 
-func (it *sthIterator) Next() ([]byte, [][]byte, error) {
+func (it *sthIterator) Next() (multihash.Multihash, [][]byte, error) {
 	for {
 		// Retruns io.EOF error when done.
 		key, valueData, err := it.storeIter.Next()
@@ -341,6 +341,14 @@ func (it *sthIterator) Next() ([]byte, [][]byte, error) {
 
 		return mhb, valueKeys, nil
 	}
+}
+
+func (s *SthStorage) GetValueKeys(secondHash multihash.Multihash) ([][]byte, bool, error) {
+	panic("not implemented")
+}
+
+func (s *SthStorage) GetValue(valKey []byte) (*indexer.Value, error) {
+	panic("not implemented")
 }
 
 func (it *sthIterator) Close() error { return nil }
