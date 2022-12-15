@@ -5,6 +5,7 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
+// Main interface to be implemented by datastores that support Reader Privacy
 type Interface interface {
 	// NewBatch starts a new batch operation that is specific to the datastore implementation
 	NewBatch() interface{}
