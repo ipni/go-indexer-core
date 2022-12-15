@@ -18,7 +18,8 @@ const (
 // in pebble; it does not make copies when possible and returns reusable pooled sectionBuffer,
 // key and keyList to reduce memory footprint where possible.
 type codec struct {
-	p *pool
+	p      *pool
+	prefix keyPrefix
 }
 
 func (c *codec) marshalValue(v *indexer.Value) ([]byte, io.Closer, error) {
@@ -86,7 +87,7 @@ func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 		offset := marshalledValueKeyLength * i
 		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
 		prefix := vk.prefix()
-		if prefix != valueKeyPrefix {
+		if prefix != c.prefix {
 			log.Debugf("unexpected key prefix for key: %v", vk)
 			_ = vk.Close()
 			continue

@@ -54,7 +54,8 @@ type (
 func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	p := newPool()
 	c := &codec{
-		p: p,
+		p:      p,
+		prefix: valueKeyPrefix,
 	}
 	if opts == nil {
 		opts = &pebble.Options{}

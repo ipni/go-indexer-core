@@ -16,7 +16,10 @@ var (
 
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	p := newPool()
-	cdc := &codec{p: p}
+	cdc := &codec{
+		p:      p,
+		prefix: valueKeyPrefix,
+	}
 	bk := p.leaseBlake3Keyer()
 	k, err := bk.multihashKey(multihash.Multihash("fish"))
 	if err != nil {
@@ -73,7 +76,10 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	mh := multihash.Multihash("lobster")
 	p := newPool()
-	cdc := &codec{p: p}
+	cdc := &codec{
+		p:      p,
+		prefix: valueKeyPrefix,
+	}
 	bk := p.leaseBlake3Keyer()
 
 	vk1, err := bk.valueKey(value1, false)
@@ -131,7 +137,10 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 
 	p := newPool()
-	cdc := &codec{p: p}
+	cdc := &codec{
+		p:      p,
+		prefix: valueKeyPrefix,
+	}
 	bk := p.leaseBlake3Keyer()
 	mh := multihash.Multihash("lobster")
 	k, err := bk.multihashKey(mh)

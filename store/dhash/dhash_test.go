@@ -7,12 +7,12 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/ipni/go-indexer-core/store/dhash"
-	"github.com/ipni/go-indexer-core/store/dhash/pebble"
+	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipni/go-indexer-core/store/test"
 )
 
 func initDHash(t *testing.T) indexer.Interface {
-	s, err := pebble.New(t.TempDir(), nil)
+	s, err := pebble.NewDatastore(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestClose(t *testing.T) {
 
 func TestStats(t *testing.T) {
 	dir := t.TempDir()
-	s, err := pebble.New(dir, nil)
+	s, err := pebble.NewDatastore(dir, nil)
 	if err != nil {
 		t.Fatal()
 	}

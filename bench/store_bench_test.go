@@ -12,7 +12,6 @@ import (
 	sth "github.com/ipld/go-storethehash/store"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/store/dhash"
-	dspebble "github.com/ipni/go-indexer-core/store/dhash/pebble"
 	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipni/go-indexer-core/store/pogreb"
@@ -188,7 +187,7 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 func newDHashSubject(b *testing.B) func() (indexer.Interface, error) {
 	return func() (indexer.Interface, error) {
 
-		ds, err := dspebble.New(b.TempDir(), pebbleOpts())
+		ds, err := pebble.NewDatastore(b.TempDir(), pebbleOpts())
 		if err != nil {
 			return nil, err
 		}

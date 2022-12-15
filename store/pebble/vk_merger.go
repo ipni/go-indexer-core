@@ -47,7 +47,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	switch prefix {
 	case mergeDeleteKeyPrefix:
 		v.addToDeletes(value[1:])
-	case valueKeyPrefix:
+	case v.c.prefix:
 		v.addToMerges(value)
 	default:
 		return v.mergeMarshalled(value)

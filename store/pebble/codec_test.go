@@ -12,7 +12,8 @@ func TestCodec_MarshalledValueKeyLength(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
 	subject := codec{
-		p: p,
+		p:      p,
+		prefix: valueKeyPrefix,
 	}
 	valueKey, err := bk.valueKey(value1, false)
 	if err != nil {
@@ -31,7 +32,8 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 	p := newPool()
 	bk := p.leaseBlake3Keyer()
 	subject := codec{
-		p: p,
+		p:      p,
+		prefix: valueKeyPrefix,
 	}
 	vk1, err := bk.valueKey(value1, false)
 	if err != nil {
@@ -81,7 +83,8 @@ func TestCodec_ValueKeysMarshalling(t *testing.T) {
 func TestCodec_ValueMarshalling(t *testing.T) {
 	binCodec := indexer.BinaryValueCodec{}
 	subject := codec{
-		p: newPool(),
+		p:      newPool(),
+		prefix: valueKeyPrefix,
 	}
 	tests := []struct {
 		name  string

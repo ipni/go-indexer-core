@@ -33,6 +33,8 @@ type (
 		keyToMultihash(*key) (multihash.Multihash, error)
 		valuesByProviderKeyRange(pid peer.ID) (start, end *key, err error)
 		valueKey(value *indexer.Value, md bool) (*key, error)
+		valueKeyHashKey(payload []byte, md bool) *key
+		valueKeyFromPayload(payload []byte) *key
 	}
 	blake3Keyer struct {
 		hasher *blake3.Hasher
@@ -51,6 +53,9 @@ const (
 	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
 	// it should be removed during merge. See: valueKeysValueMerger.
 	mergeDeleteKeyPrefix
+	// valueKeyPrefix represents the prefix of a key that is associated to value key
+	// records.
+	valueKeyHashPrefix
 )
 
 // prefix returns the keyPrefix of this key by checking its first byte.
@@ -66,6 +71,8 @@ func (k *key) prefix() keyPrefix {
 		return valueKeyPrefix
 	case byte(mergeDeleteKeyPrefix):
 		return mergeDeleteKeyPrefix
+	case byte(valueKeyHashPrefix):
+		return valueKeyHashPrefix
 	default:
 		return unknownKeyPrefix
 	}
@@ -182,6 +189,33 @@ func (b *blake3Keyer) multihashesKeyRange() (start, end *key, err error) {
 	start.append(byte(multihashKeyPrefix))
 	end = start.next()
 	return
+}
+
+// valueKey returns the key by which an indexer.Value is identified
+// payload represents a value key that is produced by indexer.ValueKeyer
+func (b *blake3Keyer) valueKeyFromPayload(payload []byte) *key {
+	k := b.p.leaseKey()
+	k.maybeGrow(1 + len(payload))
+	k.append(byte(valueKeyPrefix))
+	k.append(payload...)
+	return k
+}
+
+// valueKeyHashKey returns the key by which value key is identified
+// payload is a 20 bytes long hash over valueKey
+
+func (b *blake3Keyer) valueKeyHashKey(payload []byte, md bool) *key {
+	k := b.p.leaseKey()
+	klen := 1 + len(payload)
+	if md {
+		k.maybeGrow(1 + klen)
+		k.append(byte(mergeDeleteKeyPrefix))
+	} else {
+		k.maybeGrow(klen)
+	}
+	k.append(byte(valueKeyHashPrefix))
+	k.append(payload...)
+	return k
 }
 
 // valueKey returns the key by which an indexer.Value is identified
