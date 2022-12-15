@@ -212,7 +212,7 @@ func (s *dhstore) PutValueKey(mh multihash.Multihash, valKey []byte, batch inter
 	}
 
 	mhk, err := keygen.multihashKey(mh)
-	defer mhk.Close()
+	defer func() { _ = mhk.Close() }()
 
 	if err != nil {
 		return err
