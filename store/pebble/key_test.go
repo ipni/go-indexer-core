@@ -67,21 +67,6 @@ func Test_blake3Keyer(t *testing.T) {
 		}
 	})
 
-	t.Run("valueKeyHashKey", func(t *testing.T) {
-		var err error
-		keyer := indexer.NewKeyer()
-		k, err := keyer.Key(value2)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		vk = subject.valueKeyHashKey(k, false)
-
-		if vk.prefix() != valueKeyHashPrefix {
-			t.Fatal()
-		}
-	})
-
 	t.Run("valuesByProviderKeyRange", func(t *testing.T) {
 		start, end, err := subject.valuesByProviderKeyRange(v.ProviderID)
 		if err != nil {
@@ -110,6 +95,21 @@ func Test_blake3Keyer(t *testing.T) {
 			t.Fatal()
 		}
 		if !bytes.Equal(vk.buf, dvk.buf[1:]) {
+			t.Fatal()
+		}
+	})
+
+	t.Run("valueKeyHashKey", func(t *testing.T) {
+		var err error
+		keyer := indexer.NewKeyer()
+		k, err := keyer.Key(value2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		vk = subject.valueKeyHashKey(k, false)
+
+		if vk.prefix() != valueKeyHashPrefix {
 			t.Fatal()
 		}
 	})
