@@ -3,6 +3,7 @@
 package bench_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -362,7 +363,7 @@ func benchmarkStoreGetHashed(b *testing.B, newSubject func() (indexer.Interface,
 	}
 	flush(b, subject)
 
-	// keyer := indexer.NewKeyer()
+	keyer := indexer.NewKeyer()
 
 	b.SetBytes(int64(w.size))
 	b.ReportAllocs()
@@ -373,26 +374,26 @@ func benchmarkStoreGetHashed(b *testing.B, newSubject func() (indexer.Interface,
 			Entries:
 				for _, e := range want.Entries {
 					sh := dhash.SecondSHA(e, nil)
-					if _, found, err := subject.GetValueKeys(sh); err != nil {
+					if gotValues, found, err := subject.GetValueKeys(sh); err != nil {
 						b.Fatal(err)
 					} else if !found {
 						b.Fatalf("failed to find %s", e.B58String())
 					} else {
-						// for _, got := range gotValues {
-						// 	decrypted, err := dhash.DecryptValueKey(got, []byte(e))
-						// 	if err != nil {
-						// 		b.Fatal(err)
-						// 	}
-						// 	pidGot, chGot := keyer.SplitKey(decrypted)
-						// 	chWant, err := keyer.Hash(want.ContextID)
-						// 	if err != nil {
-						// 		b.Fatal(err)
-						// 	}
-						// 	if want.ProviderID == pidGot && bytes.Equal(chWant, chGot) {
-						// 		continue Entries
-						// 	}
-						// }
-						// b.Fatalf("failed to find value %v for entry %s", want, e.B58String())
+						for _, got := range gotValues {
+							decrypted, err := dhash.DecryptValueKey(got, []byte(e))
+							if err != nil {
+								b.Fatal(err)
+							}
+							pidGot, chGot := keyer.SplitKey(decrypted)
+							chWant, err := keyer.Hash(want.ContextID)
+							if err != nil {
+								b.Fatal(err)
+							}
+							if want.ProviderID == pidGot && bytes.Equal(chWant, chGot) {
+								continue Entries
+							}
+						}
+						b.Fatalf("failed to find value %v for entry %s", want, e.B58String())
 						continue Entries
 					}
 				}
