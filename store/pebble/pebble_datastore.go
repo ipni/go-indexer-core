@@ -74,18 +74,13 @@ func NewDatastore(path string, opts *pebble.Options) (dstore.Interface, error) {
 
 func (s *dhstore) GetValueKeys(mh multihash.Multihash) ([][]byte, bool, error) {
 	keygen := s.p.leaseBlake3Keyer()
-	defer keygen.Close()
-
-	// Calculate multihash key
 	mhk, err := keygen.multihashKey(mh)
+	_ = keygen.Close()
 	if err != nil {
 		return nil, false, err
 	}
-
-	// vkhb contains a list of valueKey hashes, that need to be mapped to valueKeys before returning.
 	vkhb, vkhbClose, err := s.db.Get(mhk.buf)
 	_ = mhk.Close()
-
 	if err == pebble.ErrNotFound {
 		return nil, false, nil
 	}
@@ -93,34 +88,26 @@ func (s *dhstore) GetValueKeys(mh multihash.Multihash) ([][]byte, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
-
-	vkhbcpy := make([]byte, len(vkhb))
-	copy(vkhbcpy, vkhb) // TODO think if we really need to copy
-	_ = vkhbClose.Close()
-
-	vkhs, err := s.vcodec.unmarshalValueKeys(vkhbcpy)
+	vkhs, err := s.vcodec.unmarshalValueKeys(vkhb)
 	if err != nil {
 		return nil, false, err
 	}
+	_ = vkhbClose.Close()
 	defer vkhs.Close()
 
-	if len(vkhs.keys) == 0 {
-		return nil, false, nil
-	}
-
-	result := make([][]byte, len(vkhs.keys))
-	for i, vkh := range vkhs.keys {
-		// Get full value key by its hash
+	result := make([][]byte, 0, len(vkhs.keys))
+	for _, vkh := range vkhs.keys {
 		vk, c, err := s.db.Get(vkh.buf)
 		if err != nil {
 			return nil, false, err
 		}
 		vkCpy := make([]byte, len(vk))
 		copy(vkCpy, vk)
-		result[i] = vkCpy
 		_ = c.Close()
+
+		result = append(result, vkCpy[:])
 	}
-	return result, true, nil
+	return result, len(result) != 0, nil
 }
 
 func (s *dhstore) GetValue(valKey []byte) (*indexer.Value, error) {
@@ -171,8 +158,8 @@ func (s *dhstore) PutValue(valKey []byte, v indexer.Value, batch interface{}) er
 	}
 
 	keygen := s.p.leaseBlake3Keyer()
-	defer keygen.Close()
 	vk := keygen.valueKeyFromPayload(valKey)
+	_ = keygen.Close()
 	defer vk.Close()
 
 	vs, c, err := s.vcodec.marshalValue(&v)
@@ -200,10 +187,13 @@ func (s *dhstore) PutValueKey(mh multihash.Multihash, valKey []byte, batch inter
 	}
 
 	keygen := s.p.leaseBlake3Keyer()
-	defer keygen.Close()
-
 	vkhKey := keygen.valueKeyHashKey(vkh, false)
-	defer vkhKey.Close()
+	mhk, err := keygen.multihashKey(mh)
+	_ = keygen.Close()
+
+	if err != nil {
+		return err
+	}
 
 	// Persist a mapping from the hashed value key to the original value key
 	err = b.Set(vkhKey.buf, valKey, pebble.NoSync)
@@ -211,15 +201,13 @@ func (s *dhstore) PutValueKey(mh multihash.Multihash, valKey []byte, batch inter
 		return err
 	}
 
-	mhk, err := keygen.multihashKey(mh)
-	defer func() { _ = mhk.Close() }()
-
-	if err != nil {
-		return err
-	}
 	if err := b.Merge(mhk.buf, vkhKey.buf, pebble.NoSync); err != nil {
 		return err
 	}
+
+	_ = vkhKey.Close()
+	_ = mhk.Close()
+
 	return nil
 }
 

@@ -52,7 +52,7 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 
 	for _, vkPayload := range vkPayloads {
 		// Decrypt each value key
-		decrypted, err := decryptAES(vkPayload[:nonceLen], vkPayload[nonceLen:], []byte(mh))
+		decrypted, err := DecryptValueKey(vkPayload, []byte(mh))
 		if err != nil {
 			log.Errorw("can't decrypt value key", "err", err)
 			return nil, false, err
@@ -82,7 +82,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	b := d.ds.NewBatch()
 	defer d.ds.CloseBatch(b)
 
-	vk, err := d.valueKeyer.Key(&v)
+	vk, err := d.valueKeyer.Key(&v, nil)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 func (d *DHash) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 	// TODO: opportunistically delete garbage key value keys by checking a list
 	// of removed providers during merge.
-	vkPayload, err := d.valueKeyer.Key(&v)
+	vkPayload, err := d.valueKeyer.Key(&v, nil)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (d *DHash) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
 	valKey, err := d.valueKeyer.Key(&indexer.Value{
 		ProviderID: pid,
 		ContextID:  ctxID,
-	})
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -220,6 +220,10 @@ func encryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 	encrypted := aesgcm.Seal(nil, nonce, []byte(payload), nil)
 
 	return nonce, encrypted, nil
+}
+
+func DecryptValueKey(valKey, passphrase []byte) ([]byte, error) {
+	return decryptAES(valKey[:nonceLen], valKey[nonceLen:], passphrase)
 }
 
 // decryptAES decrypts AES payload using the nonce and the passphrase

@@ -232,7 +232,7 @@ func (it *memoryIter) Next() (multihash.Multihash, [][]byte, error) {
 
 	it.valueKeys = it.valueKeys[:0]
 	for _, v := range vals {
-		valKey, err := it.keyer.Key(v)
+		valKey, err := it.keyer.Key(v, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error calculating value key %v", err)
 		}

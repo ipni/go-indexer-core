@@ -58,12 +58,20 @@ func BenchmarkStore_DHashGet_W0(b *testing.B) {
 	benchmarkStoreGet(b, newDHashSubject(b), workload0(b))
 }
 
+func BenchmarkStore_DHashGet_Hashed_W0(b *testing.B) {
+	benchmarkStoreGetHashed(b, newDHashSubject(b), workload0(b))
+}
+
 func BenchmarkStore_DHashPut_W1(b *testing.B) {
 	benchmarkStorePut(b, newDHashSubject(b), workload1(b))
 }
 
 func BenchmarkStore_DHashGet_W1(b *testing.B) {
 	benchmarkStoreGet(b, newDHashSubject(b), workload1(b))
+}
+
+func BenchmarkStore_DHashGet_Hashed_W1(b *testing.B) {
+	benchmarkStoreGetHashed(b, newDHashSubject(b), workload1(b))
 }
 
 func BenchmarkStore_DHashPut_W2(b *testing.B) {
@@ -74,12 +82,20 @@ func BenchmarkStore_DHashGet_W2(b *testing.B) {
 	benchmarkStoreGet(b, newDHashSubject(b), workload2(b))
 }
 
+func BenchmarkStore_DHashGet_Hashed_W2(b *testing.B) {
+	benchmarkStoreGetHashed(b, newDHashSubject(b), workload2(b))
+}
+
 func BenchmarkStore_DHashPut_W3(b *testing.B) {
 	benchmarkStorePut(b, newDHashSubject(b), workload3(b))
 }
 
 func BenchmarkStore_DHashGet_W3(b *testing.B) {
 	benchmarkStoreGet(b, newDHashSubject(b), workload3(b))
+}
+
+func BenchmarkStore_DHashGet_Hashed_W3(b *testing.B) {
+	benchmarkStoreGetHashed(b, newDHashSubject(b), workload3(b))
 }
 
 func BenchmarkStore_PogrebPut_W0(b *testing.B) {
@@ -318,6 +334,66 @@ func benchmarkStoreGet(b *testing.B, newSubject func() (indexer.Interface, error
 							}
 						}
 						b.Fatalf("failed to find value %v for entry %s", want, e.B58String())
+					}
+				}
+			}
+		}
+	})
+	b.StopTimer()
+	reportSize(b, subject)
+}
+
+func benchmarkStoreGetHashed(b *testing.B, newSubject func() (indexer.Interface, error), w *workload) {
+	subject, err := newSubject()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() {
+		if err := subject.Close(); err != nil {
+			b.Fatal()
+		}
+	}()
+
+	// Populate the subject with data in preparation for Get benchmark
+	for _, v := range w.values {
+		if err := subject.Put(v.Value, v.Entries...); err != nil {
+			b.Fatal(err)
+		}
+	}
+	flush(b, subject)
+
+	// keyer := indexer.NewKeyer()
+
+	b.SetBytes(int64(w.size))
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for _, want := range w.values {
+			Entries:
+				for _, e := range want.Entries {
+					sh := dhash.SecondSHA(e, nil)
+					if _, found, err := subject.GetValueKeys(sh); err != nil {
+						b.Fatal(err)
+					} else if !found {
+						b.Fatalf("failed to find %s", e.B58String())
+					} else {
+						// for _, got := range gotValues {
+						// 	decrypted, err := dhash.DecryptValueKey(got, []byte(e))
+						// 	if err != nil {
+						// 		b.Fatal(err)
+						// 	}
+						// 	pidGot, chGot := keyer.SplitKey(decrypted)
+						// 	chWant, err := keyer.Hash(want.ContextID)
+						// 	if err != nil {
+						// 		b.Fatal(err)
+						// 	}
+						// 	if want.ProviderID == pidGot && bytes.Equal(chWant, chGot) {
+						// 		continue Entries
+						// 	}
+						// }
+						// b.Fatalf("failed to find value %v for entry %s", want, e.B58String())
+						continue Entries
 					}
 				}
 			}

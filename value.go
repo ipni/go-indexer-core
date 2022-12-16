@@ -21,6 +21,10 @@ var (
 	ErrCodecOverflow = errors.New("overflow")
 )
 
+const (
+	blake3HashLength = 10
+)
+
 type (
 	// Value is the value of an index entry that is stored for each multihash in
 	// the indexer.
@@ -78,28 +82,37 @@ type (
 )
 
 func NewKeyer() *ValueKeyer {
-	return &ValueKeyer{
-		hasher: blake3.New(10, nil),
+	vk := &ValueKeyer{
+		hasher: blake3.New(blake3HashLength, nil),
 	}
+	return vk
 }
 
-func (k *ValueKeyer) Key(v *Value) ([]byte, error) {
-	k.hasher.Reset()
-	if _, err := k.hasher.Write([]byte(v.ProviderID)); err != nil {
+func (k *ValueKeyer) Key(v *Value, dest []byte) ([]byte, error) {
+	ch, err := k.Hash(v.ContextID)
+	if err != nil {
 		return nil, err
 	}
-	ph := k.hasher.Sum(nil)
 
+	if dest == nil {
+		dest = make([]byte, 0, len(v.ProviderID)+len(ch))
+	}
+	dest = append(dest, v.ProviderID...)
+	dest = append(dest, ch...)
+	return dest, nil
+}
+
+func (k *ValueKeyer) Hash(payload []byte) ([]byte, error) {
 	k.hasher.Reset()
-	if _, err := k.hasher.Write([]byte(v.ContextID)); err != nil {
+	if _, err := k.hasher.Write(payload); err != nil {
 		return nil, err
 	}
-	ch := k.hasher.Sum(nil)
+	return k.hasher.Sum(nil), nil
+}
 
-	valKey := make([]byte, 0, len(ph)+len(ch))
-	valKey = append(valKey, ph...)
-	valKey = append(valKey, ch...)
-	return valKey, nil
+func (k *ValueKeyer) SplitKey(valKey []byte) (peer.ID, []byte) {
+	return peer.ID(valKey[:len(valKey)-blake3HashLength]), valKey[len(valKey)-blake3HashLength:]
+
 }
 
 // Match return true if both values have the same ProviderID and ContextID.
