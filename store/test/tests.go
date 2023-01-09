@@ -168,7 +168,11 @@ func E2ETest(t *testing.T, s indexer.Interface, doubleHashing bool) {
 	for i := range batch {
 		var b58 string
 		if doubleHashing {
-			b58 = base58.Encode(dhash.SecondSHA(batch[i], nil))
+			sh, err := dhash.SecondMultihash(batch[i])
+			if err != nil {
+				panic(err)
+			}
+			b58 = base58.Encode(sh)
 		} else {
 			b58 = base58.Encode(batch[i])
 		}

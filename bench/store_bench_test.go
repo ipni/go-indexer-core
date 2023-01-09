@@ -373,7 +373,10 @@ func benchmarkStoreGetHashed(b *testing.B, newSubject func() (indexer.Interface,
 			for _, want := range w.values {
 			Entries:
 				for _, e := range want.Entries {
-					sh := dhash.SecondSHA(e, nil)
+					sh, err := dhash.SecondMultihash(e)
+					if err != nil {
+						panic(err)
+					}
 					if gotValues, found, err := subject.GetValueKeys(sh); err != nil {
 						b.Fatal(err)
 					} else if !found {

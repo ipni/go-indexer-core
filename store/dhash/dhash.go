@@ -40,7 +40,10 @@ func New(ds store.Interface) *DHash {
 }
 
 func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
-	mhb := SecondSHA(mh, nil)
+	mhb, err := SecondMultihash(mh)
+	if err != nil {
+		return nil, false, err
+	}
 	vkPayloads, found, err := d.ds.GetValueKeys(mhb)
 	if err != nil || !found {
 		return nil, false, err
@@ -97,12 +100,16 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 		// Calculate second hash over the original multihash.
 		// Append the index from the multihash array to the resulting value in order to be able to get back to the multihash for encryption after sorting.
 		// Keep in mind - double hashed array will have different order than the original one after sorting.
-		// 32 bytes for SHA256 and 4 bytes for index.
-		key := make([]byte, 0, 36)
-		key = SecondSHA(mhs[i], key)
+		// 34 bytes for multihash and 4 bytes for index.
+		mh, err := SecondMultihash(mhs[i])
+		if err != nil {
+			return err
+		}
+		key := make([]byte, 0, len(mh)+4)
+		key = append(key, mh...)
 		// TODO: Is it the best way to change len?
 		key = append(key, 0xb, 0xb, 0xb, 0xb)
-		binary.LittleEndian.PutUint32(key[32:], uint32(i))
+		binary.LittleEndian.PutUint32(key[len(mh):], uint32(i))
 		keys[i] = key
 	}
 
@@ -115,14 +122,15 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	})
 
 	for _, key := range keys {
+		separator := len(key) - 4
 		// Read multihash index
-		mhi := binary.LittleEndian.Uint32(key[32:])
+		mhi := binary.LittleEndian.Uint32(key[separator:])
 		// Encrypt value key with the original multihash
 		nonce, encrypted, err := encryptAES(vk, mhs[mhi])
 		if err != nil {
 			return err
 		}
-		mhk := key[:32]
+		mhk := key[:separator]
 		err = d.ds.PutValueKey(mhk, encValueKey(nonce, encrypted), b)
 		if err != nil {
 			return err
@@ -145,7 +153,11 @@ func (d *DHash) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 		if err != nil {
 			return err
 		}
-		d.ds.RemoveValueKey(SecondSHA(mh, nil), encValueKey(nonce, encrypted), b)
+		smh, err := SecondMultihash(mh)
+		if err != nil {
+			return err
+		}
+		d.ds.RemoveValueKey(smh, encValueKey(nonce, encrypted), b)
 	}
 
 	return d.ds.CommitBatch(b)
@@ -247,6 +259,16 @@ func SecondSHA(payload, dest []byte) []byte {
 	h := sha256.New()
 	h.Write(payload)
 	return h.Sum(dest)
+}
+
+// SecondMultihash calculates SHA256 over the multihash and wraps it into another multihash with DBL_SHA256 codec
+func SecondMultihash(mh multihash.Multihash) (multihash.Multihash, error) {
+	digest := SecondSHA(mh, nil)
+	mh, err := multihash.Encode(digest, multihash.DBL_SHA2_256)
+	if err != nil {
+		return nil, err
+	}
+	return mh, nil
 }
 
 // deriveKey derives encryptioin key from passphrase using SHA256
