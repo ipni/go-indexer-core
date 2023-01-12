@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sync/atomic"
@@ -151,14 +150,6 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-func makeDhValueKey(value indexer.Value) []byte {
-	var b bytes.Buffer
-	b.Grow(len(string(value.ProviderID)) + len(value.ContextID))
-	b.WriteString(string(value.ProviderID))
-	b.Write(value.ContextID)
-	return b.Bytes()
-}
-
 func (e *Engine) storeDh(value indexer.Value, mhs []multihash.Multihash) error {
 	var mergeIndexReqs []dhstore.MergeIndexRequest
 	var putMetaReqs []dhstore.PutMetadataRequest
@@ -177,7 +168,7 @@ func (e *Engine) storeDh(value indexer.Value, mhs []multihash.Multihash) error {
 			return err
 		}
 
-		valueKey := makeDhValueKey(value)
+		valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
 		// Encrypt value key with original multihash.
 		encValueKey, err := dhash.EncryptValueKey(valueKey, []byte(mh))
 		if err != nil {

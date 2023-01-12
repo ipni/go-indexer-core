@@ -1,6 +1,7 @@
 package dhash
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
@@ -113,7 +114,11 @@ func EncryptMetadata(metadata, passphrase []byte) ([]byte, error) {
 
 // CreateValueKey creates value key from peer ID and context ID
 func CreateValueKey(pid peer.ID, ctxID []byte) []byte {
-	return append([]byte(pid), ctxID...)
+	var b bytes.Buffer
+	b.Grow(len(string(pid)) + len(ctxID))
+	b.WriteString(string(pid))
+	b.Write(ctxID)
+	return b.Bytes()
 }
 
 // SplitValueKey splits value key into original components
