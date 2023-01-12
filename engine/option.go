@@ -1,28 +1,47 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+)
 
 // config contains all options for configuring Engine.
 type config struct {
 	cacheOnPut bool
+	dhstoreURL string
 }
 
 type Option func(*config) error
 
-// apply applies the given options to this config.
-func (c *config) apply(opts []Option) error {
+// getOpts creates a config and applies Options to it.
+func getOpts(opts []Option) (config, error) {
+	var cfg config
+
 	for i, opt := range opts {
-		if err := opt(c); err != nil {
-			return fmt.Errorf("option %d failed: %s", i, err)
+		if err := opt(&cfg); err != nil {
+			return config{}, fmt.Errorf("option %d error: %s", i, err)
 		}
 	}
-	return nil
+	return cfg, nil
 }
 
-// CacheOnPut sets whether or not entries are cached on Put.
-func CacheOnPut(on bool) Option {
+// WithCacheOnPut sets whether or not entries are cached on Put.
+func WithCacheOnPut(on bool) Option {
 	return func(c *config) error {
 		c.cacheOnPut = on
+		return nil
+	}
+}
+
+// WithDhStore sets the base URL for the dhstore service, and tells the core to
+// send its values to the dhstore.
+func WithDhStore(dhsURL string) Option {
+	return func(c *config) error {
+		u, err := url.Parse(dhsURL)
+		if err != nil {
+			return err
+		}
+		c.dhstoreURL = u.String()
 		return nil
 	}
 }

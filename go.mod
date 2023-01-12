@@ -33,6 +33,7 @@ require (
 	github.com/gammazero/deque v0.2.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
+	github.com/ipni/dhstore v0.0.0-20230112144046-8ff997ffb734 // indirect
 	github.com/klauspost/compress v1.15.10 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
 	github.com/kr/pretty v0.2.0 // indirect

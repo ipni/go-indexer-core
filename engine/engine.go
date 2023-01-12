@@ -1,13 +1,17 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
+	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/metrics"
+	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
@@ -19,6 +23,7 @@ type Engine struct {
 	resultCache cache.Interface
 	valueStore  indexer.Interface
 	cacheOnPut  bool
+	dhstoreURL  string
 
 	prevCacheStats atomic.Value
 }
@@ -28,8 +33,7 @@ var _ indexer.Interface = &Engine{}
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
-	var cfg config
-	err := cfg.apply(options)
+	cfg, err := getOpts(options)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -41,6 +45,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		resultCache: resultCache,
 		valueStore:  valueStore,
 		cacheOnPut:  cfg.cacheOnPut,
+		dhstoreURL:  cfg.dhstoreURL,
 	}
 }
 
@@ -54,6 +59,15 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	if e.resultCache == nil {
 		// If no result cache, get from value store.
 		return e.valueStore.Get(m)
+	}
+
+	// Return not found for any double-hashed multihash.
+	dm, err := multihash.Decode([]byte(m))
+	if err != nil {
+		return nil, false, err
+	}
+	if dm.Code == multihash.DBL_SHA2_256 {
+		return nil, false, nil
 	}
 
 	// Check if multihash in resultCache.
@@ -125,11 +139,78 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.resultCache.Put(value, addToCache...)
 		e.updateCacheStats()
 	}
+
+	if e.dhstoreURL != "" {
+		e.storeDh(value, mhs)
+	}
 	err := e.valueStore.Put(value, mhs...)
 	if err != nil {
 		return err
 	}
 	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	return nil
+}
+
+func makeDhValueKey(value indexer.Value) []byte {
+	var b bytes.Buffer
+	b.Grow(len(string(value.ProviderID)) + len(value.ContextID))
+	b.WriteString(string(value.ProviderID))
+	b.Write(value.ContextID)
+	return b.Bytes()
+}
+
+func (e *Engine) storeDh(value indexer.Value, mhs []multihash.Multihash) error {
+	var mergeIndexReqs []dhstore.MergeIndexRequest
+	var putMetaReqs []dhstore.PutMetadataRequest
+
+	for _, mh := range mhs {
+		dm, err := multihash.Decode([]byte(mh))
+		if err != nil {
+			return err
+		}
+		if dm.Code == multihash.DBL_SHA2_256 {
+			return errors.New("put double-hashed index not supported")
+		}
+
+		mh2, err := dhash.SecondMultihash(mh)
+		if err != nil {
+			return err
+		}
+
+		valueKey := makeDhValueKey(value)
+		// Encrypt value key with original multihash.
+		encValueKey, err := dhash.EncryptValueKey(valueKey, []byte(mh))
+		if err != nil {
+			return err
+		}
+
+		dhMerge := dhstore.MergeIndexRequest{
+			Key:   mh2,
+			Value: encValueKey,
+		}
+
+		encMetadata, err := dhash.EncryptMetadata(value.MetadataBytes, valueKey)
+		if err != nil {
+			return err
+		}
+
+		// Create metadata key
+		vkHash := dhash.SHA256(valueKey, nil)
+
+		dhPut := dhstore.PutMetadataRequest{
+			Key:   vkHash,
+			Value: encMetadata,
+		}
+
+		mergeIndexReqs = append(mergeIndexReqs, dhMerge)
+		putMetaReqs = append(putMetaReqs, dhPut)
+	}
+
+	return e.batchSendDh(mergeIndexReqs, putMetaReqs)
+}
+
+func (e *Engine) batchSendDh(mergeIndexReqs []dhstore.MergeIndexRequest, putMetaReqs []dhstore.PutMetadataRequest) error {
+	// Send batches of requests to dhstore service.
 	return nil
 }
 
