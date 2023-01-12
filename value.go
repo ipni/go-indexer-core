@@ -102,6 +102,34 @@ func (k *ValueKeyer) Key(v *Value, dest []byte) ([]byte, error) {
 	return dest, nil
 }
 
+func (k *ValueKeyer) CompressedKey(v *Value, dest []byte) ([]byte, error) {
+	ch, err := k.Hash(v.ContextID)
+	if err != nil {
+		return nil, err
+	}
+
+	ph, err := k.Hash([]byte(v.ProviderID))
+	if err != nil {
+		return nil, err
+	}
+	if dest == nil {
+		dest = make([]byte, 0, len(ph)+len(ch))
+	}
+	dest = append(dest, ph...)
+	dest = append(dest, ch...)
+	return dest, nil
+}
+
+func (k *ValueKeyer) Compress(valKey []byte) ([]byte, error) {
+	ctxIDHash := valKey[len(valKey)-blake3HashLength:]
+	pid := valKey[:len(valKey)-blake3HashLength]
+	pidHash, err := k.Hash(pid)
+	if err != nil {
+		return nil, err
+	}
+	return append(pidHash, ctxIDHash...), nil
+}
+
 func (k *ValueKeyer) Hash(payload []byte) ([]byte, error) {
 	k.hasher.Reset()
 	if _, err := k.hasher.Write(payload); err != nil {

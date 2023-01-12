@@ -55,15 +55,19 @@ func (d *DHash) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 
 	for _, vkPayload := range vkPayloads {
 		// Decrypt each value key
-		decrypted, err := DecryptValueKey(vkPayload, []byte(mh))
+		decrypted, err := DecryptValueKey(vkPayload, mh)
 		if err != nil {
 			log.Errorw("can't decrypt value key", "err", err)
 			return nil, false, err
 		}
 		vkPayload = decrypted
+		compressedVk, err := d.valueKeyer.Compress(vkPayload)
+		if err != nil {
+			return nil, false, err
+		}
 
 		// Look up value with the decrypted payload
-		val, err := d.ds.GetValue(vkPayload)
+		val, err := d.ds.GetValue(compressedVk)
 		if err != nil {
 			return nil, false, err
 		}
@@ -90,7 +94,12 @@ func (d *DHash) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 		return err
 	}
 
-	err = d.ds.PutValue(vk, v, b)
+	compressedVk, err := d.valueKeyer.Compress(vk)
+	if err != nil {
+		return err
+	}
+
+	err = d.ds.PutValue(compressedVk, v, b)
 	if err != nil {
 		return err
 	}
@@ -169,7 +178,7 @@ func (d *DHash) RemoveProvider(ctx context.Context, p peer.ID) error {
 }
 
 func (d *DHash) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
-	valKey, err := d.valueKeyer.Key(&indexer.Value{
+	valKey, err := d.valueKeyer.CompressedKey(&indexer.Value{
 		ProviderID: pid,
 		ContextID:  ctxID,
 	}, nil)
