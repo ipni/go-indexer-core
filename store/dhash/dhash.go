@@ -12,6 +12,8 @@ import (
 const (
 	// nonceLen defines length of the nonce to use for AESGCM encryption
 	nonceLen = 12
+	// keysize defines the size of multihash key
+	keysize = 32
 )
 
 // SecondSHA returns SHA256 over the payload
@@ -23,8 +25,8 @@ func SHA256(payload, dest []byte) []byte {
 
 // SecondMultihash calculates SHA256 over the multihash and wraps it into another multihash with DBL_SHA256 codec
 func SecondMultihash(mh multihash.Multihash) (multihash.Multihash, error) {
-	digest := SHA256(mh, nil)
-	mh, err := multihash.Encode(digest, multihash.DBL_SHA2_256)
+	prefix := []byte("CR_DOUBLEHASH")
+	mh, err := multihash.Sum(append(prefix, mh...), multihash.DBL_SHA2_256, keysize)
 	if err != nil {
 		return nil, err
 	}
