@@ -7,35 +7,12 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"lukechampine.com/blake3"
 )
 
 const (
 	// nonceLen defines length of the nonce to use for AESGCM encryption
 	nonceLen = 12
-	// blake3HashLength defines length of the blake 3 hash
-	blake3HashLength = 10
 )
-
-type Keyer struct {
-	hasher *blake3.Hasher
-}
-
-func NewKeyer() *Keyer {
-	vk := &Keyer{
-		hasher: blake3.New(blake3HashLength, nil),
-	}
-	return vk
-}
-
-// Hash calculates blake3 hash over the payload
-func (k *Keyer) Hash(payload []byte) ([]byte, error) {
-	k.hasher.Reset()
-	if _, err := k.hasher.Write(payload); err != nil {
-		return nil, err
-	}
-	return k.hasher.Sum(nil), nil
-}
 
 // SecondSHA returns SHA256 over the payload
 func SHA256(payload, dest []byte) []byte {
