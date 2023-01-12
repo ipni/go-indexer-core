@@ -117,6 +117,21 @@ func EncryptValueKey(valKey, passphrase []byte) ([]byte, error) {
 	return append(nonce, encValKey...), nil
 }
 
+// DecryptMetadata decrypts metdata using the provided passphrase
+func DecryptMetadata(encMetadata, passphrase []byte) ([]byte, error) {
+	return DecryptAES(encMetadata[:nonceLen], encMetadata[nonceLen:], passphrase)
+}
+
+// EncryptMetadata encrypts metadata using the provided passphrase
+func EncryptMetadata(metadata, passphrase []byte) ([]byte, error) {
+	nonce, encValKey, err := EncryptAES(metadata, passphrase)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(nonce, encValKey...), nil
+}
+
 // CreateValueKey creates value key from peer ID and context ID
 func CreateValueKey(pid peer.ID, ctxID []byte) []byte {
 	return append([]byte(pid), ctxID...)
