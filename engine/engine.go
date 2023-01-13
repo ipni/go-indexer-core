@@ -79,7 +79,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	}
 
 	// Return not found for any double-hashed multihash.
-	dm, err := multihash.Decode([]byte(m))
+	dm, err := multihash.Decode(m)
 	if err != nil {
 		return nil, false, err
 	}
