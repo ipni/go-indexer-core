@@ -1,8 +1,12 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -22,12 +26,17 @@ type Engine struct {
 	resultCache cache.Interface
 	valueStore  indexer.Interface
 	cacheOnPut  bool
-	dhstoreURL  string
 
 	prevCacheStats atomic.Value
+
+	httpClient http.Client
+	dhMergeURL string
+	dhMetaURL  string
 }
 
 var _ indexer.Interface = &Engine{}
+
+const dhBatchSize = 1024
 
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
@@ -40,11 +49,20 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 	if valueStore == nil {
 		panic("valueStore is required")
 	}
+
+	var dhMergeURL, dhMetaURL string
+	if cfg.dhstoreURL != "" {
+		dhMergeURL = cfg.dhstoreURL + "/mh"
+		dhMetaURL = cfg.dhstoreURL + "/metadata"
+	}
+
 	return &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
 		cacheOnPut:  cfg.cacheOnPut,
-		dhstoreURL:  cfg.dhstoreURL,
+
+		dhMergeURL: dhMergeURL,
+		dhMetaURL:  dhMetaURL,
 	}
 }
 
@@ -139,8 +157,8 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.updateCacheStats()
 	}
 
-	if e.dhstoreURL != "" {
-		e.storeDh(value, mhs)
+	if e.dhMergeURL != "" {
+		e.storeDh(context.Background(), value, mhs)
 	}
 	err := e.valueStore.Put(value, mhs...)
 	if err != nil {
@@ -150,10 +168,24 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-func (e *Engine) storeDh(value indexer.Value, mhs []multihash.Multihash) error {
-	var mergeIndexReqs []dhstore.MergeIndexRequest
-	var putMetaReqs []dhstore.PutMetadataRequest
+func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multihash.Multihash) error {
+	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
 
+	encMetadata, err := dhash.EncryptMetadata(value.MetadataBytes, valueKey)
+	if err != nil {
+		return err
+	}
+
+	metaReq := dhstore.PutMetadataRequest{
+		Key:   dhash.SHA256(valueKey, nil),
+		Value: encMetadata,
+	}
+	err = e.sendDhMetadata(ctx, metaReq)
+	if err != nil {
+		return err
+	}
+
+	mergeReqs := make([]dhstore.MergeIndexRequest, 0, dhBatchSize)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode([]byte(mh))
 		if err != nil {
@@ -168,40 +200,86 @@ func (e *Engine) storeDh(value indexer.Value, mhs []multihash.Multihash) error {
 			return err
 		}
 
-		valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
 		// Encrypt value key with original multihash.
 		encValueKey, err := dhash.EncryptValueKey(valueKey, []byte(mh))
 		if err != nil {
 			return err
 		}
 
-		dhMerge := dhstore.MergeIndexRequest{
+		mergeReq := dhstore.MergeIndexRequest{
 			Key:   mh2,
 			Value: encValueKey,
 		}
 
-		encMetadata, err := dhash.EncryptMetadata(value.MetadataBytes, valueKey)
+		mergeReqs = append(mergeReqs, mergeReq)
+		if len(mergeReqs) == cap(mergeReqs) {
+			err = e.batchSendDhMerge(ctx, mergeReqs)
+			if err != nil {
+				return err
+			}
+			mergeReqs = mergeReqs[:0]
+		}
+	}
+
+	// Send remaining merge requests.
+	if len(mergeReqs) != 0 {
+		err = e.batchSendDhMerge(ctx, mergeReqs)
 		if err != nil {
 			return err
 		}
-
-		// Create metadata key
-		vkHash := dhash.SHA256(valueKey, nil)
-
-		dhPut := dhstore.PutMetadataRequest{
-			Key:   vkHash,
-			Value: encMetadata,
-		}
-
-		mergeIndexReqs = append(mergeIndexReqs, dhMerge)
-		putMetaReqs = append(putMetaReqs, dhPut)
 	}
 
-	return e.batchSendDh(mergeIndexReqs, putMetaReqs)
+	return nil
 }
 
-func (e *Engine) batchSendDh(mergeIndexReqs []dhstore.MergeIndexRequest, putMetaReqs []dhstore.PutMetadataRequest) error {
-	// Send batches of requests to dhstore service.
+func (e *Engine) sendDhMetadata(ctx context.Context, putMetaReq dhstore.PutMetadataRequest) error {
+	data, err := json.Marshal(&putMetaReq)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMetaURL, bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rsp, err := e.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
+	}
+
+	return nil
+}
+
+func (e *Engine) batchSendDhMerge(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
+	data, err := json.Marshal(mergeReqs)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMergeURL, bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	rsp, err := e.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
+	}
+
 	return nil
 }
 
