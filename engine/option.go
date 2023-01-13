@@ -9,6 +9,7 @@ import (
 type config struct {
 	cacheOnPut bool
 	dhstoreURL string
+	vsNoNewMH  bool
 }
 
 type Option func(*config) error
@@ -44,6 +45,16 @@ func WithDHStore(dhsURL string) Option {
 			}
 			c.dhstoreURL = u.String()
 		}
+		return nil
+	}
+}
+
+// WithVSNoNewMH blocks putting new multihashes into the value store when set
+// to true. New indexes will still be send to the DHStore service if one is
+// configured.
+func WithVSNoNewMH(ok bool) Option {
+	return func(c *config) error {
+		c.vsNoNewMH = ok
 		return nil
 	}
 }

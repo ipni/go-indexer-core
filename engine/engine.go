@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
@@ -19,6 +20,8 @@ import (
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
 )
+
+var log = logging.Logger("indexer-core")
 
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store.
@@ -32,6 +35,7 @@ type Engine struct {
 	httpClient http.Client
 	dhMergeURL string
 	dhMetaURL  string
+	vsNoNewMH  bool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -63,6 +67,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 
 		dhMergeURL: dhMergeURL,
 		dhMetaURL:  dhMetaURL,
+		vsNoNewMH:  opts.vsNoNewMH,
 	}
 }
 
@@ -102,6 +107,29 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 				e.resultCache.Put(v[i], m)
 			}
 			e.updateCacheStats()
+
+			if e.dhMergeURL != "" {
+				for i := range v {
+					metaReq, valKey, err := makeDHMetadataRequest(v[i])
+					if err != nil {
+						log.Errorw("Cannot make dhstore metadata request", "err", err)
+						continue
+					}
+					mergeReq, err := makeDHMergeRequest(m, valKey)
+					if err != nil {
+						log.Errorw("Cannot make dhstore merge request", "err", err)
+						continue
+					}
+					if err = e.sendDHMetadata(ctx, metaReq); err != nil {
+						log.Errorw("Cannot send dhstore metadata request", "err", err)
+						continue
+					}
+					if err = e.sendDHMerges(ctx, []dhstore.MergeIndexRequest{mergeReq}); err != nil {
+						log.Errorw("Cannot send dhstore merge request", "err", err)
+						continue
+					}
+				}
+			}
 		}
 	} else {
 		stats.Record(ctx, metrics.CacheHits.M(1))
@@ -157,12 +185,18 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.updateCacheStats()
 	}
 
-	err := e.valueStore.Put(value, mhs...)
+	var err error
+	if e.vsNoNewMH {
+		err = e.valueStore.Put(value)
+	} else {
+		err = e.valueStore.Put(value, mhs...)
+	}
 	if err != nil {
 		return err
 	}
+
 	if e.dhMergeURL != "" {
-		err = e.storeDh(context.Background(), value, mhs)
+		err = e.storeDH(context.Background(), value, mhs)
 		if err != nil {
 			return err
 		}
@@ -171,19 +205,45 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	return nil
 }
 
-func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multihash.Multihash) error {
+func makeDHMetadataRequest(value indexer.Value) (dhstore.PutMetadataRequest, []byte, error) {
 	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
 
 	encMetadata, err := dhash.EncryptMetadata(value.MetadataBytes, valueKey)
 	if err != nil {
+		return dhstore.PutMetadataRequest{}, nil, err
+	}
+
+	return dhstore.PutMetadataRequest{
+		Key:   dhash.SHA256(valueKey, nil),
+		Value: encMetadata,
+	}, valueKey, nil
+}
+
+func makeDHMergeRequest(mh multihash.Multihash, valueKey []byte) (dhstore.MergeIndexRequest, error) {
+	mh2, err := dhash.SecondMultihash(mh)
+	if err != nil {
+		return dhstore.MergeIndexRequest{}, err
+	}
+
+	// Encrypt value key with original multihash.
+	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
+	if err != nil {
+		return dhstore.MergeIndexRequest{}, err
+	}
+
+	return dhstore.MergeIndexRequest{
+		Key:   mh2,
+		Value: encValueKey,
+	}, nil
+}
+
+func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multihash.Multihash) error {
+	metaReq, valueKey, err := makeDHMetadataRequest(value)
+	if err != nil {
 		return err
 	}
 
-	metaReq := dhstore.PutMetadataRequest{
-		Key:   dhash.SHA256(valueKey, nil),
-		Value: encMetadata,
-	}
-	err = e.sendDhMetadata(ctx, metaReq)
+	err = e.sendDHMetadata(ctx, metaReq)
 	if err != nil {
 		return err
 	}
@@ -198,25 +258,14 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 			return errors.New("put double-hashed index not supported")
 		}
 
-		mh2, err := dhash.SecondMultihash(mh)
+		mergeReq, err := makeDHMergeRequest(mh, valueKey)
 		if err != nil {
 			return err
-		}
-
-		// Encrypt value key with original multihash.
-		encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
-		if err != nil {
-			return err
-		}
-
-		mergeReq := dhstore.MergeIndexRequest{
-			Key:   mh2,
-			Value: encValueKey,
 		}
 
 		mergeReqs = append(mergeReqs, mergeReq)
 		if len(mergeReqs) == cap(mergeReqs) {
-			err = e.sendDhMerges(ctx, mergeReqs)
+			err = e.sendDHMerges(ctx, mergeReqs)
 			if err != nil {
 				return err
 			}
@@ -226,7 +275,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 
 	// Send remaining merge requests.
 	if len(mergeReqs) != 0 {
-		err = e.sendDhMerges(ctx, mergeReqs)
+		err = e.sendDHMerges(ctx, mergeReqs)
 		if err != nil {
 			return err
 		}
@@ -235,7 +284,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 	return nil
 }
 
-func (e *Engine) sendDhMetadata(ctx context.Context, putMetaReq dhstore.PutMetadataRequest) error {
+func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetadataRequest) error {
 	data, err := json.Marshal(&putMetaReq)
 	if err != nil {
 		return err
@@ -260,7 +309,7 @@ func (e *Engine) sendDhMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
-func (e *Engine) sendDhMerges(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
+func (e *Engine) sendDHMerges(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
 	data, err := json.Marshal(mergeReqs)
 	if err != nil {
 		return err
