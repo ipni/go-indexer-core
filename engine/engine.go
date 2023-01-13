@@ -187,7 +187,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 
 	mergeReqs := make([]dhstore.MergeIndexRequest, 0, dhBatchSize)
 	for _, mh := range mhs {
-		dm, err := multihash.Decode([]byte(mh))
+		dm, err := multihash.Decode(mh)
 		if err != nil {
 			return err
 		}
@@ -201,7 +201,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 		}
 
 		// Encrypt value key with original multihash.
-		encValueKey, err := dhash.EncryptValueKey(valueKey, []byte(mh))
+		encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
 		if err != nil {
 			return err
 		}
