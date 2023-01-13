@@ -41,7 +41,7 @@ const dhBatchSize = 1024
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
-	cfg, err := getOpts(options)
+	opts, err := getOpts(options)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -51,15 +51,15 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 	}
 
 	var dhMergeURL, dhMetaURL string
-	if cfg.dhstoreURL != "" {
-		dhMergeURL = cfg.dhstoreURL + "/mh"
-		dhMetaURL = cfg.dhstoreURL + "/metadata"
+	if opts.dhstoreURL != "" {
+		dhMergeURL = opts.dhstoreURL + "/mh"
+		dhMetaURL = opts.dhstoreURL + "/metadata"
 	}
 
 	return &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
-		cacheOnPut:  cfg.cacheOnPut,
+		cacheOnPut:  opts.cacheOnPut,
 
 		dhMergeURL: dhMergeURL,
 		dhMetaURL:  dhMetaURL,
