@@ -33,15 +33,17 @@ func WithCacheOnPut(on bool) Option {
 	}
 }
 
-// WithDhStore sets the base URL for the dhstore service, and tells the core to
+// WithDHStore sets the base URL for the dhstore service, and tells the core to
 // send its values to the dhstore.
-func WithDhStore(dhsURL string) Option {
+func WithDHStore(dhsURL string) Option {
 	return func(c *config) error {
-		u, err := url.Parse(dhsURL)
-		if err != nil {
-			return err
+		if dhsURL != "" {
+			u, err := url.Parse(dhsURL)
+			if err != nil {
+				return err
+			}
+			c.dhstoreURL = u.String()
 		}
-		c.dhstoreURL = u.String()
 		return nil
 	}
 }

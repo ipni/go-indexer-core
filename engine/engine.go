@@ -157,12 +157,15 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.updateCacheStats()
 	}
 
-	if e.dhMergeURL != "" {
-		e.storeDh(context.Background(), value, mhs)
-	}
 	err := e.valueStore.Put(value, mhs...)
 	if err != nil {
 		return err
+	}
+	if e.dhMergeURL != "" {
+		err = e.storeDh(context.Background(), value, mhs)
+		if err != nil {
+			return err
+		}
 	}
 	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
 	return nil
@@ -213,7 +216,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 
 		mergeReqs = append(mergeReqs, mergeReq)
 		if len(mergeReqs) == cap(mergeReqs) {
-			err = e.batchSendDhMerge(ctx, mergeReqs)
+			err = e.sendDhMerges(ctx, mergeReqs)
 			if err != nil {
 				return err
 			}
@@ -223,7 +226,7 @@ func (e *Engine) storeDh(ctx context.Context, value indexer.Value, mhs []multiha
 
 	// Send remaining merge requests.
 	if len(mergeReqs) != 0 {
-		err = e.batchSendDhMerge(ctx, mergeReqs)
+		err = e.sendDhMerges(ctx, mergeReqs)
 		if err != nil {
 			return err
 		}
@@ -257,7 +260,7 @@ func (e *Engine) sendDhMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
-func (e *Engine) batchSendDhMerge(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
+func (e *Engine) sendDhMerges(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
 	data, err := json.Marshal(mergeReqs)
 	if err != nil {
 		return err
