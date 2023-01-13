@@ -5,18 +5,23 @@ import (
 	"net/url"
 )
 
+const defaultDHBatchSize = 1024
+
 // config contains all options for configuring Engine.
 type config struct {
-	cacheOnPut bool
-	dhstoreURL string
-	vsNoNewMH  bool
+	cacheOnPut  bool
+	dhBatchSize int
+	dhstoreURL  string
+	vsNoNewMH   bool
 }
 
 type Option func(*config) error
 
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
-	var cfg config
+	cfg := config{
+		dhBatchSize: defaultDHBatchSize,
+	}
 
 	for i, opt := range opts {
 		if err := opt(&cfg); err != nil {
@@ -30,6 +35,17 @@ func getOpts(opts []Option) (config, error) {
 func WithCacheOnPut(on bool) Option {
 	return func(c *config) error {
 		c.cacheOnPut = on
+		return nil
+	}
+}
+
+// WithDHBatchSize configures the batch size when sending batches of merge
+// requests to DHStore. A value < 1 results in the default size.
+func WithDHBatchSize(size int) Option {
+	return func(c *config) error {
+		if size > 1 {
+			c.dhBatchSize = size
+		}
 		return nil
 	}
 }

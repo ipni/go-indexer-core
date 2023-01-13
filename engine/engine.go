@@ -32,15 +32,14 @@ type Engine struct {
 
 	prevCacheStats atomic.Value
 
-	httpClient http.Client
-	dhMergeURL string
-	dhMetaURL  string
-	vsNoNewMH  bool
+	dhBatchSize int
+	dhMergeURL  string
+	dhMetaURL   string
+	httpClient  http.Client
+	vsNoNewMH   bool
 }
 
 var _ indexer.Interface = &Engine{}
-
-const dhBatchSize = 1024
 
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
@@ -65,9 +64,10 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		valueStore:  valueStore,
 		cacheOnPut:  opts.cacheOnPut,
 
-		dhMergeURL: dhMergeURL,
-		dhMetaURL:  dhMetaURL,
-		vsNoNewMH:  opts.vsNoNewMH,
+		dhBatchSize: opts.dhBatchSize,
+		dhMergeURL:  dhMergeURL,
+		dhMetaURL:   dhMetaURL,
+		vsNoNewMH:   opts.vsNoNewMH,
 	}
 }
 
@@ -248,7 +248,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 		return err
 	}
 
-	mergeReqs := make([]dhstore.MergeIndexRequest, 0, dhBatchSize)
+	mergeReqs := make([]dhstore.MergeIndexRequest, 0, e.dhBatchSize)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
 		if err != nil {
