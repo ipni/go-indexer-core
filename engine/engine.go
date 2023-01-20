@@ -1,17 +1,27 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"sync/atomic"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/metrics"
+	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
 )
+
+var log = logging.Logger("indexer-core")
 
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store.
@@ -21,6 +31,12 @@ type Engine struct {
 	cacheOnPut  bool
 
 	prevCacheStats atomic.Value
+
+	dhBatchSize int
+	dhMergeURL  string
+	dhMetaURL   string
+	httpClient  http.Client
+	vsNoNewMH   bool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -28,8 +44,7 @@ var _ indexer.Interface = &Engine{}
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
 func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
-	var cfg config
-	err := cfg.apply(options)
+	opts, err := getOpts(options)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -37,10 +52,22 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 	if valueStore == nil {
 		panic("valueStore is required")
 	}
+
+	var dhMergeURL, dhMetaURL string
+	if opts.dhstoreURL != "" {
+		dhMergeURL = opts.dhstoreURL + "/mh"
+		dhMetaURL = opts.dhstoreURL + "/metadata"
+	}
+
 	return &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
-		cacheOnPut:  cfg.cacheOnPut,
+		cacheOnPut:  opts.cacheOnPut,
+
+		dhBatchSize: opts.dhBatchSize,
+		dhMergeURL:  dhMergeURL,
+		dhMetaURL:   dhMetaURL,
+		vsNoNewMH:   opts.vsNoNewMH,
 	}
 }
 
@@ -54,6 +81,15 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	if e.resultCache == nil {
 		// If no result cache, get from value store.
 		return e.valueStore.Get(m)
+	}
+
+	// Return not found for any double-hashed multihash.
+	dm, err := multihash.Decode(m)
+	if err != nil {
+		return nil, false, err
+	}
+	if dm.Code == multihash.DBL_SHA2_256 {
+		return nil, false, nil
 	}
 
 	// Check if multihash in resultCache.
@@ -71,6 +107,29 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 				e.resultCache.Put(v[i], m)
 			}
 			e.updateCacheStats()
+
+			if e.dhMergeURL != "" {
+				for i := range v {
+					metaReq, valKey, err := makeDHMetadataRequest(v[i])
+					if err != nil {
+						log.Errorw("Cannot make dhstore metadata request", "err", err)
+						continue
+					}
+					mergeReq, err := makeDHMergeRequest(m, valKey)
+					if err != nil {
+						log.Errorw("Cannot make dhstore merge request", "err", err)
+						continue
+					}
+					if err = e.sendDHMetadata(ctx, metaReq); err != nil {
+						log.Errorw("Cannot send dhstore metadata request", "err", err)
+						continue
+					}
+					if err = e.sendDHMerges(ctx, []dhstore.MergeIndexRequest{mergeReq}); err != nil {
+						log.Errorw("Cannot send dhstore merge request", "err", err)
+						continue
+					}
+				}
+			}
 		}
 	} else {
 		stats.Record(ctx, metrics.CacheHits.M(1))
@@ -125,11 +184,154 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.resultCache.Put(value, addToCache...)
 		e.updateCacheStats()
 	}
-	err := e.valueStore.Put(value, mhs...)
+
+	var err error
+	if e.vsNoNewMH {
+		err = e.valueStore.Put(value)
+	} else {
+		err = e.valueStore.Put(value, mhs...)
+	}
 	if err != nil {
 		return err
 	}
+
+	if e.dhMergeURL != "" {
+		err = e.storeDH(context.Background(), value, mhs)
+		if err != nil {
+			return err
+		}
+	}
 	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	return nil
+}
+
+func makeDHMetadataRequest(value indexer.Value) (dhstore.PutMetadataRequest, []byte, error) {
+	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
+
+	encMetadata, err := dhash.EncryptMetadata(value.MetadataBytes, valueKey)
+	if err != nil {
+		return dhstore.PutMetadataRequest{}, nil, err
+	}
+
+	return dhstore.PutMetadataRequest{
+		Key:   dhash.SHA256(valueKey, nil),
+		Value: encMetadata,
+	}, valueKey, nil
+}
+
+func makeDHMergeRequest(mh multihash.Multihash, valueKey []byte) (dhstore.MergeIndexRequest, error) {
+	mh2, err := dhash.SecondMultihash(mh)
+	if err != nil {
+		return dhstore.MergeIndexRequest{}, err
+	}
+
+	// Encrypt value key with original multihash.
+	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
+	if err != nil {
+		return dhstore.MergeIndexRequest{}, err
+	}
+
+	return dhstore.MergeIndexRequest{
+		Key:   mh2,
+		Value: encValueKey,
+	}, nil
+}
+
+func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multihash.Multihash) error {
+	metaReq, valueKey, err := makeDHMetadataRequest(value)
+	if err != nil {
+		return err
+	}
+
+	err = e.sendDHMetadata(ctx, metaReq)
+	if err != nil {
+		return err
+	}
+
+	mergeReqs := make([]dhstore.MergeIndexRequest, 0, e.dhBatchSize)
+	for _, mh := range mhs {
+		dm, err := multihash.Decode(mh)
+		if err != nil {
+			return err
+		}
+		if dm.Code == multihash.DBL_SHA2_256 {
+			return errors.New("put double-hashed index not supported")
+		}
+
+		mergeReq, err := makeDHMergeRequest(mh, valueKey)
+		if err != nil {
+			return err
+		}
+
+		mergeReqs = append(mergeReqs, mergeReq)
+		if len(mergeReqs) == cap(mergeReqs) {
+			err = e.sendDHMerges(ctx, mergeReqs)
+			if err != nil {
+				return err
+			}
+			mergeReqs = mergeReqs[:0]
+		}
+	}
+
+	// Send remaining merge requests.
+	if len(mergeReqs) != 0 {
+		err = e.sendDHMerges(ctx, mergeReqs)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetadataRequest) error {
+	data, err := json.Marshal(&putMetaReq)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMetaURL, bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rsp, err := e.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
+	}
+
+	return nil
+}
+
+func (e *Engine) sendDHMerges(ctx context.Context, mergeReqs []dhstore.MergeIndexRequest) error {
+	data, err := json.Marshal(mergeReqs)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMergeURL, bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	rsp, err := e.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
+	}
+
 	return nil
 }
 

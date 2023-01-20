@@ -14,6 +14,7 @@ require (
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipld/go-storethehash v0.3.13
+	github.com/ipni/dhstore v0.0.0-20230112144046-8ff997ffb734
 	github.com/libp2p/go-libp2p v0.23.2
 	github.com/multiformats/go-multihash v0.2.1
 	github.com/multiformats/go-varint v0.0.6

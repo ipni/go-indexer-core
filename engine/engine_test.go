@@ -25,7 +25,7 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return New(resultCache, valueStore, CacheOnPut(cacheOnPut))
+	return New(resultCache, valueStore, WithCacheOnPut(cacheOnPut))
 }
 
 func TestPassthrough(t *testing.T) {
