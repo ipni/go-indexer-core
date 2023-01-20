@@ -55,7 +55,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 
 	var dhMergeURL, dhMetaURL string
 	if opts.dhstoreURL != "" {
-		dhMergeURL = opts.dhstoreURL + "/mh"
+		dhMergeURL = opts.dhstoreURL + "/multihash"
 		dhMetaURL = opts.dhstoreURL + "/metadata"
 	}
 
