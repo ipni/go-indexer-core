@@ -290,6 +290,8 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 		return err
 	}
 
+	log.Infow("Sending metadata to dhstore", "method", http.MethodPut, "url", e.dhMetaURL, "data", string(data))
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMetaURL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
@@ -318,6 +320,8 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 	if err != nil {
 		return err
 	}
+
+	log.Infow("Sending merges to dhstore", "method", http.MethodPut, "url", e.dhMergeURL, "count", len(merges))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMergeURL, bytes.NewBuffer(data))
 	if err != nil {
