@@ -290,7 +290,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 		return err
 	}
 
-	log.Infow("Sending metadata to dhstore", "method", http.MethodPut, "url", e.dhMetaURL, "data", data)
+	log.Infow("Sending metadata to dhstore", "method", http.MethodPut, "url", e.dhMetaURL, "data", string(data))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMetaURL, bytes.NewBuffer(data))
 	if err != nil {
