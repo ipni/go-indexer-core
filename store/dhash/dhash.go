@@ -123,9 +123,16 @@ func CreateValueKey(pid peer.ID, ctxID []byte) []byte {
 
 // SplitValueKey splits value key into original components
 func SplitValueKey(valKey []byte) (peer.ID, []byte, error) {
-	pid, err := peer.IDFromBytes(valKey)
+	// Extract multihiash from the value key before converting it to peer.ID.
+	// Extracting peer.ID directly would fail the length check. There is no overhead in doing that as
+	// none of the operations allocates new memory.
+	l, mh, err := multihash.MHFromBytes(valKey)
 	if err != nil {
 		return "", nil, err
 	}
-	return pid, valKey[pid.Size():], nil
+	pid, err := peer.IDFromBytes(mh)
+	if err != nil {
+		return "", nil, err
+	}
+	return pid, valKey[l:], nil
 }
