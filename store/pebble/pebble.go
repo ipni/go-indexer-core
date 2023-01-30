@@ -135,7 +135,6 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 
 	keygen := s.p.leaseBlake3Keyer()
 	vk, err := keygen.valueKey(&v, false)
-	_ = keygen.Close()
 	if err != nil {
 		return err
 	}
@@ -154,9 +153,11 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	for _, mh := range mhs {
 		mhk, err := keygen.multihashKey(mh)
 		if err != nil {
+			_ = keygen.Close()
 			return err
 		}
 		if err := b.Merge(mhk.buf, vk.buf, pebble.NoSync); err != nil {
+			_ = keygen.Close()
 			return err
 		}
 		_ = mhk.Close()
