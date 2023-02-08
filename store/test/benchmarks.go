@@ -163,7 +163,7 @@ func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
-	rand.Seed(time.Now().UnixNano())
+	rng := rand.New(rand.NewSource(1413))
 
 	// Benchmark the average request time for different number of go routines.
 	for rout := 10; rout <= 100; rout += 10 {
@@ -175,7 +175,7 @@ func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
 				go func(wg *sync.WaitGroup, ch chan bool) {
 					// Each go routine starts fetching multihashes from different offset.
 					// TODO: Request follow a zipf distribution.
-					off := rand.Int()
+					off := rng.Int()
 					// Wait for all routines to be started
 					<-ch
 					for i := 0; i < b.N; i++ {
