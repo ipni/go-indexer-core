@@ -68,6 +68,9 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		dhMergeURL:  dhMergeURL,
 		dhMetaURL:   dhMetaURL,
 		vsNoNewMH:   opts.vsNoNewMH,
+		httpClient: http.Client{
+			Timeout: opts.timeout,
+		},
 	}
 }
 
