@@ -69,7 +69,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		dhMetaURL:   dhMetaURL,
 		vsNoNewMH:   opts.vsNoNewMH,
 		httpClient: http.Client{
-			Timeout: opts.timeout,
+			Timeout: opts.httpClientTimeout,
 		},
 	}
 }

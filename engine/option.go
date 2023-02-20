@@ -11,11 +11,11 @@ const defaultHttpTimeout = 5 * time.Second
 
 // config contains all options for configuring Engine.
 type config struct {
-	cacheOnPut  bool
-	dhBatchSize int
-	dhstoreURL  string
-	vsNoNewMH   bool
-	timeout     time.Duration
+	cacheOnPut        bool
+	dhBatchSize       int
+	dhstoreURL        string
+	vsNoNewMH         bool
+	httpClientTimeout time.Duration
 }
 
 type Option func(*config) error
@@ -23,8 +23,8 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		dhBatchSize: defaultDHBatchSize,
-		timeout:     defaultHttpTimeout,
+		dhBatchSize:       defaultDHBatchSize,
+		httpClientTimeout: defaultHttpTimeout,
 	}
 
 	for i, opt := range opts {
@@ -79,10 +79,10 @@ func WithVSNoNewMH(ok bool) Option {
 	}
 }
 
-// WithHttpTimeout sets http timeout for queries to DHStore
-func WithHttpTimeout(timeout time.Duration) Option {
+// WithHttpClientTimeout sets http timeout for queries to DHStore
+func WithHttpClientTimeout(timeout time.Duration) Option {
 	return func(cfg *config) error {
-		cfg.timeout = timeout
+		cfg.httpClientTimeout = timeout
 		return nil
 	}
 }
