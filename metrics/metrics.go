@@ -26,6 +26,9 @@ var (
 	IngestMultihashes = stats.Int64("core/ingest_multihashes", "Number of multihashes put into the indexer", stats.UnitDimensionless)
 	RemovedProviders  = stats.Int64("core/removed_providers", "Number of providers removed from indexer", stats.UnitDimensionless)
 	StoreSize         = stats.Int64("core/storage_size", "Bytes of storage used to store the indexed content", stats.UnitBytes)
+
+	DHMultihashLatency = stats.Float64("core/dh_multihash_latency", "Time that the indexer spends on sending encrypted multihashes to dhstore", stats.UnitMilliseconds)
+	DHMetadataLatency  = stats.Float64("core/dh_metadata_latency", "Time that the indexer spends on sending encrypted metadata to dhstore", stats.UnitMilliseconds)
 )
 
 // Views
@@ -72,6 +75,16 @@ var (
 		Measure:     StoreSize,
 		Aggregation: view.LastValue(),
 	}
+
+	dhMultihashLatency = &view.View{
+		Measure:     DHMultihashLatency,
+		Aggregation: view.Distribution(0, 1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 1000, 2000, 5000),
+	}
+
+	dhMetadataLatency = &view.View{
+		Measure:     DHMetadataLatency,
+		Aggregation: view.Distribution(0, 1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 1000, 2000, 5000),
+	}
 )
 
 // DefaultViews with all views in it.
@@ -86,6 +99,8 @@ var DefaultViews = []*view.View{
 	ingestMultihashesView,
 	removedProvidersView,
 	storeSizeView,
+	dhMultihashLatency,
+	dhMetadataLatency,
 }
 
 func MsecSince(startTime time.Time) float64 {

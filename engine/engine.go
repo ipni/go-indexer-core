@@ -246,10 +246,12 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 		return err
 	}
 
+	start := time.Now()
 	err = e.sendDHMetadata(ctx, metaReq)
 	if err != nil {
 		return err
 	}
+	stats.Record(context.Background(), metrics.DHMetadataLatency.M(metrics.MsecSince(start)))
 
 	var mergeCount int
 	merges := make([]dhstore.Merge, 0, e.dhBatchSize)
@@ -334,10 +336,12 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 
 	req.Header.Set("Content-Type", "application/json")
 
+	start := time.Now()
 	rsp, err := e.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
+	stats.Record(context.Background(), metrics.DHMultihashLatency.M(metrics.MsecSince(start)))
 	defer rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
