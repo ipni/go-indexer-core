@@ -13,7 +13,6 @@ import (
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"go.opencensus.io/stats"
 )
 
 var log = logging.Logger("indexer-core/cache")
@@ -27,6 +26,7 @@ type radixCache struct {
 	// IndexEntery interning
 	curEnts  *radixtree.Tree
 	prevEnts *radixtree.Tree
+	m        *metrics.Metrics
 
 	mutex      sync.Mutex
 	evictions  int
@@ -34,11 +34,12 @@ type radixCache struct {
 }
 
 // New creates a new radixCache instance.
-func New(maxSize int) *radixCache {
+func New(maxSize int, m *metrics.Metrics) *radixCache {
 	return &radixCache{
 		current:    radixtree.New(),
 		curEnts:    radixtree.New(),
 		rotateSize: maxSize >> 1,
+		m:          m,
 	}
 }
 
@@ -130,7 +131,7 @@ keysLoop:
 				"values", c.curEnts.Len, "multihashes", c.current.Len())
 			c.rotate()
 			c.rotate()
-			stats.Record(context.Background(), metrics.CacheMisuse.M(1))
+			c.m.Core.CacheMisuse.Add(context.Background(), int64(1))
 		}
 	}
 

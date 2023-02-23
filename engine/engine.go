@@ -18,7 +18,7 @@ import (
 	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"go.opencensus.io/stats"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var log = logging.Logger("indexer-core")
@@ -37,13 +37,15 @@ type Engine struct {
 	dhMetaURL   string
 	httpClient  http.Client
 	vsNoNewMH   bool
+
+	m *metrics.Metrics
 }
 
 var _ indexer.Interface = &Engine{}
 
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
-func New(resultCache cache.Interface, valueStore indexer.Interface, options ...Option) *Engine {
+func New(resultCache cache.Interface, valueStore indexer.Interface, m *metrics.Metrics, options ...Option) *Engine {
 	opts, err := getOpts(options)
 	if err != nil {
 		panic(err.Error())
@@ -71,6 +73,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		httpClient: http.Client{
 			Timeout: opts.httpClientTimeout,
 		},
+		m: m,
 	}
 }
 
@@ -78,7 +81,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	startTime := time.Now()
 	ctx := context.Background()
 	defer func() {
-		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
+		e.m.Core.GetIndexLatency.Record(ctx, metrics.MsecSince(startTime))
 	}()
 
 	if e.resultCache == nil {
@@ -98,7 +101,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	// Check if multihash in resultCache.
 	v, found := e.resultCache.Get(m)
 	if !found {
-		stats.Record(ctx, metrics.CacheMisses.M(1))
+		e.m.Core.CacheMisses.Add(ctx, int64(1))
 		var err error
 		v, found, err = e.valueStore.Get(m)
 		if err != nil {
@@ -135,7 +138,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 			}
 		}
 	} else {
-		stats.Record(ctx, metrics.CacheHits.M(1))
+		e.m.Core.CacheHits.Add(ctx, int64(1))
 	}
 	return v, found, nil
 }
@@ -204,7 +207,7 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 			return err
 		}
 	}
-	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	e.m.Core.IngestMultihashes.Add(context.Background(), int64(len(mhs)))
 	return nil
 }
 
@@ -251,7 +254,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.DHMetadataLatency.M(metrics.MsecSince(start)))
+	e.m.Core.DHHttpLatency.Record(context.Background(), metrics.MsecSince(start), attribute.String("path", "metadata"))
 
 	var mergeCount int
 	merges := make([]dhstore.Merge, 0, e.dhBatchSize)
@@ -341,7 +344,7 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.DHMultihashLatency.M(metrics.MsecSince(start)))
+	e.m.Core.DHHttpLatency.Record(context.Background(), metrics.MsecSince(start), attribute.String("path", "multihash"))
 	defer rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
@@ -380,7 +383,7 @@ func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 
 	e.resultCache.RemoveProvider(providerID)
 	e.updateCacheStats()
-	stats.Record(context.Background(), metrics.RemovedProviders.M(1))
+	e.m.Core.RemovedProviders.Add(context.Background(), int64(1))
 	return nil
 }
 
@@ -428,21 +431,17 @@ func (e *Engine) updateCacheStats() {
 	}
 
 	// Only record stats that have changed.
-	var ms []stats.Measurement
+	// Note: these gauge values are reported asynchronously
 	if st.Indexes != prevStats.Indexes {
-		ms = append(ms, metrics.CacheMultihashes.M(int64(st.Indexes)))
+		e.m.Core.CacheMultihashesValue.Store(int64(st.Indexes))
 	}
 	if st.Values != prevStats.Values {
-		ms = append(ms, metrics.CacheValues.M(int64(st.Values)))
+		e.m.Core.CacheValuesValue.Store(int64(st.Values))
 	}
 	if st.Evictions != prevStats.Evictions {
-		ms = append(ms, metrics.CacheEvictions.M(int64(st.Evictions)))
+		e.m.Core.CacheEvictionsValue.Store(int64(st.Evictions))
 	}
 
-	if len(ms) != 0 {
-		e.prevCacheStats.Store(&st)
-		stats.Record(context.Background(), ms...)
-	}
 }
 
 func (e *Engine) Stats() (*indexer.Stats, error) {

@@ -7,6 +7,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/cache/radixcache"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipni/go-indexer-core/store/storethehash"
 	"github.com/ipni/go-indexer-core/store/test"
@@ -22,10 +23,14 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 		t.Fatal(err)
 	}
 	var resultCache cache.Interface
-	if withCache {
-		resultCache = radixcache.New(100000)
+	m, err := metrics.New("", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return New(resultCache, valueStore, WithCacheOnPut(cacheOnPut))
+	if withCache {
+		resultCache = radixcache.New(100000, m)
+	}
+	return New(resultCache, valueStore, m, WithCacheOnPut(cacheOnPut))
 }
 
 func TestPassthrough(t *testing.T) {
@@ -563,7 +568,13 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng := New(nil, valueStore)
+
+	m, err := metrics.New("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eng := New(nil, valueStore, m)
 
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -615,7 +626,8 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng = New(nil, valueStore)
+
+	eng = New(nil, valueStore, m)
 
 	// Confirm that codec is BinaryJson after starting engine.
 	vsi, err = vsinfo.Load(tempDir, vsType)

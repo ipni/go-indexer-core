@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -27,7 +28,11 @@ func init() {
 }
 
 func TestPutGetRemove(t *testing.T) {
-	s := New(1000000)
+	m, err := metrics.New("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(1000000, m)
 	mhs := test.RandomMultihashes(15)
 
 	provID, err := peer.Decode(peerID)
@@ -204,7 +209,7 @@ func TestRotate(t *testing.T) {
 		MetadataBytes: []byte(mhs[1]),
 	}
 
-	s := New(maxSize * 2)
+	s := New(maxSize*2, nil)
 	mhs = test.RandomMultihashes(maxSize + 5)
 
 	s.Put(value1, mhs...)
@@ -250,7 +255,7 @@ func TestRotate(t *testing.T) {
 
 func TestUnboundedGrowth(t *testing.T) {
 	const maxSize = 4
-	s := New(maxSize)
+	s := New(maxSize, nil)
 	mhs := test.RandomMultihashes(11)
 
 	mhash := mhs[0]
@@ -271,7 +276,7 @@ func TestUnboundedGrowth(t *testing.T) {
 		t.Fatal("Unbounded memory growth")
 	}
 
-	s = New(maxSize)
+	s = New(maxSize, nil)
 
 	for i := 0; i < maxSize; i++ {
 		value.ContextID = []byte(mhs[i])
@@ -291,7 +296,7 @@ func TestUnboundedGrowth(t *testing.T) {
 }
 
 func TestRemoveProvider(t *testing.T) {
-	s := New(100)
+	s := New(100, nil)
 
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -382,7 +387,7 @@ func TestRemoveProvider(t *testing.T) {
 }
 
 func TestRemoveProviderContext(t *testing.T) {
-	s := New(100)
+	s := New(100, nil)
 
 	// Create new valid peer.ID
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -520,7 +525,7 @@ func TestMemoryUse(t *testing.T) {
 
 	for count := 1; count <= 1024; count *= 2 {
 		t.Run(fmt.Sprintf("MemoryUse %d multihashes", count*1024), func(t *testing.T) {
-			s := New(1024 * count)
+			s := New(1024*count, nil)
 			for i := 0; i < count; i++ {
 				mhs = test.RandomMultihashes(1024)
 				s.Put(value, mhs...)
@@ -555,7 +560,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Put %d Single multihashes", 1024*1024), func(t *testing.T) {
-		s := New(1024 * 1024)
+		s := New(1024*1024, nil)
 		for i := 0; i < 1024; i++ {
 			mhs = test.RandomMultihashes(1024)
 			for j := range mhs {
@@ -569,7 +574,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	})
 
 	t.Run(fmt.Sprintf("Put %d multihashes in groups of 1024", 1024*1024), func(t *testing.T) {
-		s := New(1024 * 1024)
+		s := New(1024*1024, nil)
 		for i := 0; i < 1024; i++ {
 			mhs = test.RandomMultihashes(1024)
 			s.Put(value, mhs...)
@@ -592,7 +597,7 @@ func BenchmarkPut(b *testing.B) {
 	mhs = test.RandomMultihashes(10240)
 
 	b.Run("Put single", func(b *testing.B) {
-		s := New(8192)
+		s := New(8192, nil)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -603,7 +608,7 @@ func BenchmarkPut(b *testing.B) {
 
 	for testCount := 1024; testCount < len(mhs); testCount *= 2 {
 		b.Run(fmt.Sprint("Put", testCount), func(b *testing.B) {
-			s := New(8192)
+			s := New(8192, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -614,7 +619,7 @@ func BenchmarkPut(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprint("PutMany", testCount), func(b *testing.B) {
-			s := New(8192)
+			s := New(8192, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -632,7 +637,7 @@ func BenchmarkGet(b *testing.B) {
 		MetadataBytes: []byte(mhs[0]),
 	}
 
-	s := New(8192)
+	s := New(8192, nil)
 	mhs = test.RandomMultihashes(4096)
 	s.Put(value, mhs...)
 
