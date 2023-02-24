@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -20,6 +21,7 @@ var log = logging.Logger("indexer-core/metrics")
 type Metrics struct {
 	Pebble *pebbleMetrics
 	Core   *coreMetrics
+	meter  cmetric.Meter
 
 	exporter *prometheus.Exporter
 	s        *http.Server
@@ -44,16 +46,16 @@ func New(metricsAddr string, pebbleMetricsProvider func() *pebble.Metrics) (*Met
 	}
 
 	provider := metric.NewMeterProvider(metric.WithReader(m.exporter))
-	meter := provider.Meter("ipni/core")
+	m.meter = provider.Meter("ipni/core")
 
 	if pebbleMetricsProvider != nil {
-		m.Pebble, err = newPebbleMetrics(meter, pebbleMetricsProvider)
+		m.Pebble, err = newPebbleMetrics(m.meter, pebbleMetricsProvider)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	m.Core, err = newCoreMetrics(meter)
+	m.Core, err = newCoreMetrics(m.meter)
 	if err != nil {
 		return nil, err
 	}
@@ -63,22 +65,19 @@ func New(metricsAddr string, pebbleMetricsProvider func() *pebble.Metrics) (*Met
 		Handler: metricsMux(),
 	}
 
-	observableMetrics := m.Core.observableMetrics()
-	if m.Pebble != nil {
-		observableMetrics = append(observableMetrics, m.Pebble.observableMetrcics()...)
-	}
-
-	// registration object isn't needed as we aren't going to unregister metrics
-	_, err = meter.RegisterCallback(
-		m.observe,
-		observableMetrics...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
 	return &m, nil
+}
+
+func (m *Metrics) SetPebbleMetricsProvider(pebbleMetricsProvider func() *pebble.Metrics) error {
+	var err error
+	if m.Pebble != nil {
+		return errors.New("pebble metrics provider has already been set")
+	}
+	m.Pebble, err = newPebbleMetrics(m.meter, pebbleMetricsProvider)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Metrics) observe(ctx context.Context, o cmetric.Observer) error {
@@ -100,6 +99,21 @@ func metricsMux() *http.ServeMux {
 }
 
 func (m *Metrics) Start(_ context.Context) error {
+	observableMetrics := m.Core.observableMetrics()
+	if m.Pebble != nil {
+		observableMetrics = append(observableMetrics, m.Pebble.observableMetrcics()...)
+	}
+
+	// registration object isn't needed as we aren't going to unregister metrics
+	_, err := m.meter.RegisterCallback(
+		m.observe,
+		observableMetrics...,
+	)
+
+	if err != nil {
+		return err
+	}
+
 	mln, err := net.Listen("tcp", m.s.Addr)
 	if err != nil {
 		return err
