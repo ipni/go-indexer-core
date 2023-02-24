@@ -10,6 +10,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
@@ -52,6 +53,11 @@ type (
 // New instantiates a new instance of a store backed by Pebble.
 // Note that any Merger value specified in the given options will be overridden.
 func New(path string, opts *pebble.Options) (indexer.Interface, error) {
+	return NewWithMetrics(path, opts, nil)
+}
+
+// Instantiates a new instance of a store backed by pebble with metrics reporting
+func NewWithMetrics(path string, opts *pebble.Options, m *metrics.Metrics) (indexer.Interface, error) {
 	p := newPool()
 	c := &codec{
 		p: p,
@@ -66,6 +72,12 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	db, err := pebble.Open(path, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	if m != nil {
+		m.SetPebbleMetricsProvider(func() *pebble.Metrics {
+			return db.Metrics()
+		})
 	}
 
 	return &store{
