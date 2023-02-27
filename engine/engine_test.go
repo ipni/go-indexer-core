@@ -23,7 +23,7 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 		t.Fatal(err)
 	}
 	var resultCache cache.Interface
-	m, err := metrics.New("", nil)
+	m, err := metrics.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +569,7 @@ func TestMultiCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := metrics.New("", nil)
+	m, err := metrics.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

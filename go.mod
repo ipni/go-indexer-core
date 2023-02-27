@@ -26,7 +26,7 @@ require (
 
 )
 
-require github.com/prometheus/client_golang v1.14.0
+require github.com/prometheus/client_golang v1.14.0 // indirect
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect

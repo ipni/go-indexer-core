@@ -28,7 +28,7 @@ func init() {
 }
 
 func TestPutGetRemove(t *testing.T) {
-	m, err := metrics.New("", nil)
+	m, err := metrics.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
