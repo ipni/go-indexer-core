@@ -20,9 +20,7 @@ type Metrics struct {
 	Core   *coreMetrics
 	meter  cmetric.Meter
 
-	exporter *prometheus.Exporter
-	Provider *metric.MeterProvider
-	reg      cmetric.Registration
+	reg cmetric.Registration
 }
 
 func aggregationSelector(ik metric.InstrumentKind) aggregation.Aggregation {
@@ -38,13 +36,14 @@ func aggregationSelector(ik metric.InstrumentKind) aggregation.Aggregation {
 func New(pebbleMetricsProvider func() *pebble.Metrics) (*Metrics, error) {
 	var m Metrics
 	var err error
-	if m.exporter, err = prometheus.New(prometheus.WithoutUnits(),
+	var exporter *prometheus.Exporter
+	if exporter, err = prometheus.New(prometheus.WithoutUnits(),
 		prometheus.WithAggregationSelector(aggregationSelector)); err != nil {
 		return nil, err
 	}
 
-	m.Provider = metric.NewMeterProvider(metric.WithReader(m.exporter))
-	m.meter = m.Provider.Meter("ipni/core")
+	provider := metric.NewMeterProvider(metric.WithReader(exporter))
+	m.meter = provider.Meter("ipni/core")
 
 	if pebbleMetricsProvider != nil {
 		m.Pebble, err = newPebbleMetrics(m.meter, pebbleMetricsProvider)
@@ -104,5 +103,6 @@ func (m *Metrics) Start(_ context.Context) error {
 }
 
 func (m *Metrics) Shutdown(ctx context.Context) error {
+	log.Infow("Core metrics unregistered")
 	return m.reg.Unregister()
 }
