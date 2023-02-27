@@ -3,13 +3,10 @@ package metrics
 import (
 	"context"
 	"errors"
-	"net"
-	"net/http"
 	"time"
 
 	"github.com/cockroachdb/pebble"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	cmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -24,7 +21,8 @@ type Metrics struct {
 	meter  cmetric.Meter
 
 	exporter *prometheus.Exporter
-	s        *http.Server
+	Provider *metric.MeterProvider
+	reg      cmetric.Registration
 }
 
 func aggregationSelector(ik metric.InstrumentKind) aggregation.Aggregation {
@@ -37,7 +35,7 @@ func aggregationSelector(ik metric.InstrumentKind) aggregation.Aggregation {
 	return metric.DefaultAggregationSelector(ik)
 }
 
-func New(metricsAddr string, pebbleMetricsProvider func() *pebble.Metrics) (*Metrics, error) {
+func New(pebbleMetricsProvider func() *pebble.Metrics) (*Metrics, error) {
 	var m Metrics
 	var err error
 	if m.exporter, err = prometheus.New(prometheus.WithoutUnits(),
@@ -45,8 +43,8 @@ func New(metricsAddr string, pebbleMetricsProvider func() *pebble.Metrics) (*Met
 		return nil, err
 	}
 
-	provider := metric.NewMeterProvider(metric.WithReader(m.exporter))
-	m.meter = provider.Meter("ipni/core")
+	m.Provider = metric.NewMeterProvider(metric.WithReader(m.exporter))
+	m.meter = m.Provider.Meter("ipni/core")
 
 	if pebbleMetricsProvider != nil {
 		m.Pebble, err = newPebbleMetrics(m.meter, pebbleMetricsProvider)
@@ -58,11 +56,6 @@ func New(metricsAddr string, pebbleMetricsProvider func() *pebble.Metrics) (*Met
 	m.Core, err = newCoreMetrics(m.meter)
 	if err != nil {
 		return nil, err
-	}
-
-	m.s = &http.Server{
-		Addr:    metricsAddr,
-		Handler: metricsMux(),
 	}
 
 	return &m, nil
@@ -92,39 +85,24 @@ func MsecSince(startTime time.Time) int64 {
 	return time.Since(startTime).Nanoseconds() / 1e6
 }
 
-func metricsMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-	return mux
-}
-
 func (m *Metrics) Start(_ context.Context) error {
+	var err error
+
 	observableMetrics := m.Core.observableMetrics()
 	if m.Pebble != nil {
 		observableMetrics = append(observableMetrics, m.Pebble.observableMetrcics()...)
 	}
 
-	// registration object isn't needed as we aren't going to unregister metrics
-	_, err := m.meter.RegisterCallback(
+	m.reg, err = m.meter.RegisterCallback(
 		m.observe,
 		observableMetrics...,
 	)
 
-	if err != nil {
-		return err
-	}
+	log.Infow("Core metrics registered")
 
-	mln, err := net.Listen("tcp", m.s.Addr)
-	if err != nil {
-		return err
-	}
-
-	go func() { _ = m.s.Serve(mln) }()
-
-	log.Infow("Metrics server started", "addr", mln.Addr())
-	return nil
+	return err
 }
 
 func (m *Metrics) Shutdown(ctx context.Context) error {
-	return m.s.Shutdown(ctx)
+	return m.reg.Unregister()
 }
