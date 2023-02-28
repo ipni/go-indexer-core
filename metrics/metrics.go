@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -61,15 +60,19 @@ func New(pebbleMetricsProvider func() *pebble.Metrics) (*Metrics, error) {
 }
 
 func (m *Metrics) SetPebbleMetricsProvider(pebbleMetricsProvider func() *pebble.Metrics) error {
-	var err error
-	if m.Pebble != nil {
-		return errors.New("pebble metrics provider has already been set")
+	if m.reg != nil {
+		if err := m.reg.Unregister(); err != nil {
+			return err
+		}
 	}
+
+	var err error
 	m.Pebble, err = newPebbleMetrics(m.meter, pebbleMetricsProvider)
 	if err != nil {
 		return err
 	}
-	return nil
+
+	return m.registerMetricsCallbacks()
 }
 
 func (m *Metrics) observe(ctx context.Context, o cmetric.Observer) error {
@@ -85,6 +88,14 @@ func MsecSince(startTime time.Time) int64 {
 }
 
 func (m *Metrics) Start(_ context.Context) error {
+	err := m.registerMetricsCallbacks()
+	if err == nil {
+		log.Infow("Core metrics registered")
+	}
+	return err
+}
+
+func (m *Metrics) registerMetricsCallbacks() error {
 	var err error
 
 	observableMetrics := m.Core.observableMetrics()
@@ -96,8 +107,6 @@ func (m *Metrics) Start(_ context.Context) error {
 		m.observe,
 		observableMetrics...,
 	)
-
-	log.Infow("Core metrics registered")
 
 	return err
 }
