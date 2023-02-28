@@ -37,6 +37,8 @@ func New(pebbleMetricsProvider func() *pebble.Metrics) (*Metrics, error) {
 	var err error
 	var exporter *prometheus.Exporter
 	if exporter, err = prometheus.New(prometheus.WithoutUnits(),
+		prometheus.WithoutScopeInfo(),
+		prometheus.WithoutTargetInfo(),
 		prometheus.WithAggregationSelector(aggregationSelector)); err != nil {
 		return nil, err
 	}
