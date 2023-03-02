@@ -13,8 +13,15 @@ import (
 const (
 	// nonceLen defines length of the nonce to use for AESGCM encryption
 	nonceLen = 12
-	// keysize defines the size of multihash key
-	keysize = 32
+)
+
+var (
+	// secondHashPrefix is a prefix that a mulithash is prepended with when calculating a second hash
+	secondHashPrefix = []byte("CR_DOUBLEHASH\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+	// deriveKeyPrefix is a prefix that a multihash is prepended with when deriving an encryption key
+	deriveKeyPrefix = []byte("CR_ENCRYPTIONKEY\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+	// noncePrefix is a prefix that a multihash is prepended with when calculating a nonce
+	noncePrefix = []byte("CR_NONCE\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 )
 
 // SecondSHA returns SHA256 over the payload
@@ -26,17 +33,13 @@ func SHA256(payload, dest []byte) []byte {
 
 // SecondMultihash calculates SHA256 over the multihash and wraps it into another multihash with DBL_SHA256 codec
 func SecondMultihash(mh multihash.Multihash) (multihash.Multihash, error) {
-	prefix := []byte("CR_DOUBLEHASH")
-	mh, err := multihash.Sum(append(prefix, mh...), multihash.DBL_SHA2_256, keysize)
-	if err != nil {
-		return nil, err
-	}
-	return mh, nil
+	digest := SHA256(append(secondHashPrefix, mh...), nil)
+	return multihash.Encode(digest, multihash.DBL_SHA2_256)
 }
 
 // deriveKey derives encryptioin key from the passphrase using SHA256
 func deriveKey(passphrase []byte) []byte {
-	return SHA256(append([]byte("AESGCM"), passphrase...), nil)
+	return SHA256(append(deriveKeyPrefix, passphrase...), nil)
 }
 
 // DecryptAES decrypts AES payload using the nonce and the passphrase
@@ -64,7 +67,7 @@ func EncryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 	// Create initialization vector (nonse) to be used during encryption
 	// Nonce is derived from the mulithash (passpharase) so that encrypted payloads
 	// for the same multihash can be compared to each other without having to decrypt
-	nonce := SHA256(passphrase, nil)[:nonceLen]
+	nonce := SHA256(append(noncePrefix, passphrase...), nil)[:nonceLen]
 
 	// Create cypher and seal the data
 	block, err := aes.NewCipher(derivedKey)
@@ -83,13 +86,13 @@ func EncryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 }
 
 // DecryptValueKey decrypts the value key using the passphrase
-func DecryptValueKey(valKey, passphrase []byte) ([]byte, error) {
-	return DecryptAES(valKey[:nonceLen], valKey[nonceLen:], passphrase)
+func DecryptValueKey(valKey, mh multihash.Multihash) ([]byte, error) {
+	return DecryptAES(valKey[:nonceLen], valKey[nonceLen:], mh)
 }
 
 // EncryptValueKey encrypts raw value key using the passpharse
-func EncryptValueKey(valKey, passphrase []byte) ([]byte, error) {
-	nonce, encValKey, err := EncryptAES(valKey, passphrase)
+func EncryptValueKey(valKey, mh multihash.Multihash) ([]byte, error) {
+	nonce, encValKey, err := EncryptAES(valKey, mh)
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +101,13 @@ func EncryptValueKey(valKey, passphrase []byte) ([]byte, error) {
 }
 
 // DecryptMetadata decrypts metdata using the provided passphrase
-func DecryptMetadata(encMetadata, passphrase []byte) ([]byte, error) {
-	return DecryptAES(encMetadata[:nonceLen], encMetadata[nonceLen:], passphrase)
+func DecryptMetadata(encMetadata, valueKey []byte) ([]byte, error) {
+	return DecryptAES(encMetadata[:nonceLen], encMetadata[nonceLen:], valueKey)
 }
 
 // EncryptMetadata encrypts metadata using the provided passphrase
-func EncryptMetadata(metadata, passphrase []byte) ([]byte, error) {
-	nonce, encValKey, err := EncryptAES(metadata, passphrase)
+func EncryptMetadata(metadata, valueKey []byte) ([]byte, error) {
+	nonce, encValKey, err := EncryptAES(metadata, valueKey)
 	if err != nil {
 		return nil, err
 	}
