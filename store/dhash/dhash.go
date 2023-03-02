@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
+	"encoding/binary"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -26,8 +27,14 @@ var (
 
 // SecondSHA returns SHA256 over the payload
 func SHA256(payload, dest []byte) []byte {
+	return sha256Multiple(dest, payload)
+}
+
+func sha256Multiple(dest []byte, payloads ...[]byte) []byte {
 	h := sha256.New()
-	h.Write(payload)
+	for _, payload := range payloads {
+		h.Write(payload)
+	}
 	return h.Sum(dest)
 }
 
@@ -65,9 +72,11 @@ func EncryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 	derivedKey := deriveKey([]byte(passphrase))
 
 	// Create initialization vector (nonse) to be used during encryption
-	// Nonce is derived from the mulithash (passpharase) so that encrypted payloads
-	// for the same multihash can be compared to each other without having to decrypt
-	nonce := SHA256(append(noncePrefix, passphrase...), nil)[:nonceLen]
+	// Nonce is derived from the paspphrase concatenated with the payload so that the encrypted payloads
+	// for the same multihash can be compared to each other without having to decrypt them, as it's not possible.
+	payloadLen := make([]byte, 8)
+	binary.LittleEndian.PutUint64(payloadLen, uint64(len(payload)))
+	nonce := sha256Multiple(nil, noncePrefix, payloadLen, payload, passphrase)[:nonceLen]
 
 	// Create cypher and seal the data
 	block, err := aes.NewCipher(derivedKey)
