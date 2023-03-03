@@ -43,7 +43,7 @@ func TestCanDecryptEncryptedValue(t *testing.T) {
 	_, err = rng.Read(passphrase)
 	require.NoError(t, err)
 
-	nonce, encrypted, err := dhash.EncryptAES(payload, passphrase)
+	nonce, encrypted, err := EncryptAES(payload, passphrase)
 	require.NoError(t, err)
 
 	decrypted, err := dhash.DecryptAES(nonce, encrypted, passphrase)
