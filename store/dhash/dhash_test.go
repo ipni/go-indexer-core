@@ -25,7 +25,7 @@ func TestEncryptSameValueWithTheSameMultihashShouldProduceTheSameOutput(t *testi
 	nonce1, encrypted1, err := EncryptAES(payload, passphrase)
 	require.NoError(t, err)
 
-	nonce2, encrypted2, err := dhash.EncryptAES(payload, passphrase)
+	nonce2, encrypted2, err := EncryptAES(payload, passphrase)
 	require.NoError(t, err)
 
 	require.True(t, bytes.Equal(nonce1, nonce2))
