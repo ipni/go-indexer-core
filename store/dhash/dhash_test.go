@@ -22,7 +22,7 @@ func TestEncryptSameValueWithTheSameMultihashShouldProduceTheSameOutput(t *testi
 	_, err = rng.Read(passphrase)
 	require.NoError(t, err)
 
-	nonce1, encrypted1, err := dhash.EncryptAES(payload, passphrase)
+	nonce1, encrypted1, err := EncryptAES(payload, passphrase)
 	require.NoError(t, err)
 
 	nonce2, encrypted2, err := dhash.EncryptAES(payload, passphrase)
