@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSalt(t *testing.T) {
+	salt_len := 64
+	require.Equal(t, len(secondHashPrefix), salt_len)
+	require.Equal(t, len(deriveKeyPrefix), salt_len)
+	require.Equal(t, len(noncePrefix), salt_len)
+}
+
 func TestEncryptSameValueWithTheSameMultihashShouldProduceTheSameOutput(t *testing.T) {
 	rng := rand.New(rand.NewSource(1413))
 	payload := make([]byte, 256)
