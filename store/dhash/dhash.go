@@ -72,7 +72,7 @@ func EncryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 	derivedKey := deriveKey([]byte(passphrase))
 
 	// Create initialization vector (nonse) to be used during encryption
-	// Nonce is derived from the paspphrase concatenated with the payload so that the encrypted payloads
+	// Nonce is derived from the passphrase concatenated with the payload so that the encrypted payloads
 	// for the same multihash can be compared to each other without having to decrypt them, as it's not possible.
 	payloadLen := make([]byte, 8)
 	binary.LittleEndian.PutUint64(payloadLen, uint64(len(payload)))
