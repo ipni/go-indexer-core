@@ -1,4 +1,4 @@
-package dhash_test
+package dhash
 
 import (
 	"bytes"
