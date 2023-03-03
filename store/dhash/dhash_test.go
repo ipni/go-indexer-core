@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
