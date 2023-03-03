@@ -46,7 +46,7 @@ func TestCanDecryptEncryptedValue(t *testing.T) {
 	nonce, encrypted, err := EncryptAES(payload, passphrase)
 	require.NoError(t, err)
 
-	decrypted, err := dhash.DecryptAES(nonce, encrypted, passphrase)
+	decrypted, err := DecryptAES(nonce, encrypted, passphrase)
 	require.NoError(t, err)
 
 	require.True(t, bytes.Equal(payload, decrypted))
