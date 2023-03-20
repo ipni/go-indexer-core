@@ -83,18 +83,22 @@ var (
 	cacheSizeView = &view.View{
 		Measure:     cacheSize,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{cacheTag},
 	}
 	cacheCountView = &view.View{
 		Measure:     cacheCount,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{cacheTag},
 	}
 	pebbleCacheHitsView = &view.View{
 		Measure:     cacheHits,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{cacheTag},
 	}
 	pebbleCacheMissesView = &view.View{
 		Measure:     cacheMisses,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{cacheTag},
 	}
 	compactCountView = &view.View{
 		Measure:     compactCount,
