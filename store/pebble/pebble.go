@@ -297,6 +297,10 @@ func (s *store) Stats() (*indexer.Stats, error) {
 	return &stats, nil
 }
 
+func (s *store) Metrics() *pebble.Metrics {
+	return s.db.Metrics()
+}
+
 func (s *store) Iter() (indexer.Iterator, error) {
 	keygen := s.p.leaseBlake3Keyer()
 	start, end, err := keygen.multihashesKeyRange()
