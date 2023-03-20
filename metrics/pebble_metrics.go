@@ -21,51 +21,51 @@ var (
 // Measures
 var (
 	// flushCount reports the total number of flushes
-	flushCount = stats.Int64("ipni/dhstore/pebble/flush_count", "The total number of flushes.", stats.UnitDimensionless)
+	flushCount = stats.Int64("ipni/pebble/flush_count", "The total number of flushes.", stats.UnitDimensionless)
 	// readAdmp reports current read amplification of the database.
 	// It's computed as the number of sublevels in L0 + the number of non-empty
 	// levels below L0.
 	// Read amplification factor should be in the single digits. A value exceeding 50 for 1 hour
 	// strongly suggests that the LSM tree has an unhealthy shape.
-	readAmp = stats.Int64("ipni/dhstore/pebble/read_amp", "current read amplification of the database. "+
+	readAmp = stats.Int64("ipni/pebble/read_amp", "current read amplification of the database. "+
 		"It's computed as the number of sublevels in L0 + the number of non-empty"+
 		" levels below L0.", stats.UnitDimensionless)
 
 	// NOTE: cache metrics report tagged values for both block and table caches
 	// cacheSize reports the number of bytes inuse by the cache
-	cacheSize = stats.Int64("ipni/dhstore/pebble/cache_size", "The number of bytes inuse by the cache.", stats.UnitDimensionless)
+	cacheSize = stats.Int64("ipni/pebble/cache_size", "The number of bytes inuse by the cache.", stats.UnitDimensionless)
 	// cacheCount reports the count of objects (blocks or tables) in the cache
-	cacheCount = stats.Int64("ipni/dhstore/pebble/cache_count", "The count of objects (blocks or tables) in the cache.", stats.UnitDimensionless)
+	cacheCount = stats.Int64("ipni/pebble/cache_count", "The count of objects (blocks or tables) in the cache.", stats.UnitDimensionless)
 	// cacheHits reports number of cache hits
-	cacheHits = stats.Int64("ipni/dhstore/pebble/cache_hits", "The number of cache hits.", stats.UnitDimensionless)
+	cacheHits = stats.Int64("ipni/pebble/cache_hits", "The number of cache hits.", stats.UnitDimensionless)
 	// cacheMisses reports number of cache misses.
-	cacheMisses = stats.Int64("ipni/dhstore/pebble/cache_misses", "The number of cache misses.", stats.UnitDimensionless)
+	cacheMisses = stats.Int64("ipni/pebble/cache_misses", "The number of cache misses.", stats.UnitDimensionless)
 
 	// compactCount is the total number of compactions, and per-compaction type counts.
-	compactCount = stats.Int64("ipni/dhstore/pebble/compact_count", "The total number of compactions, and per-compaction type counts.", stats.UnitDimensionless)
+	compactCount = stats.Int64("ipni/pebble/compact_count", "The total number of compactions, and per-compaction type counts.", stats.UnitDimensionless)
 	// compactEstimatedDebt is an estimate of the number of bytes that need to be compacted for the LSM
 	// to reach a stable state.
-	compactEstimatedDebt = stats.Int64("ipni/dhstore/pebble/compact_estimated_debt", "An estimate of the number of bytes that need to be compacted for the LSM"+
+	compactEstimatedDebt = stats.Int64("ipni/pebble/compact_estimated_debt", "An estimate of the number of bytes that need to be compacted for the LSM"+
 		" to reach a stable state.", stats.UnitDimensionless)
 	// compactInProgressBytes is a number of bytes present in sstables being written by in-progress
 	// compactions. This value will be zero if there are no in-progress
 	// compactions.
-	compactInProgressBytes = stats.Int64("ipni/dhstore/pebble/compact_in_progress_bytes", "A number of bytes present in sstables being written by in-progress"+
+	compactInProgressBytes = stats.Int64("ipni/pebble/compact_in_progress_bytes", "A number of bytes present in sstables being written by in-progress"+
 		" compactions. This value will be zero if there are no in-progress"+
 		" compactions.", stats.UnitDimensionless)
 	// compactNumInProgress is a number of compactions that are in-progress.
-	compactNumInProgress = stats.Int64("ipni/dhstore/pebble/compact_num_in_progress", "A number of compactions that are in-progress.", stats.UnitDimensionless)
+	compactNumInProgress = stats.Int64("ipni/pebble/compact_num_in_progress", "A number of compactions that are in-progress.", stats.UnitDimensionless)
 	// compactMarkedFiles is a count of files that are marked for
 	// compaction. Such files are compacted in a rewrite compaction
 	// when no other compactions are picked.
-	compactMarkedFiles = stats.Int64("ipni/dhstore/pebble/compact_marked_files", "A count of files that are marked for"+
+	compactMarkedFiles = stats.Int64("ipni/pebble/compact_marked_files", "A count of files that are marked for"+
 		" compaction. Such files are compacted in a rewrite compaction"+
 		" when no other compactions are picked.", stats.UnitDimensionless)
 
 	// l0NumFiles is the total number of files in L0. The number of L0 files should not be in the high thousands.
 	// High values indicate heavy write load that is causing accumulation of files in level 0. These files are not
 	// being compacted quickly enough to lower levels, resulting in a misshapen LSM.
-	l0NumFiles = stats.Int64("ipni/dhstore/pebble/compact_l0_num_files", "The total number of files in L0. The number of L0 files should not be in the high thousands."+
+	l0NumFiles = stats.Int64("ipni/pebble/compact_l0_num_files", "The total number of files in L0. The number of L0 files should not be in the high thousands."+
 		" High values indicate heavy write load that is causing accumulation of files in level 0. These files are not"+
 		" being compacted quickly enough to lower levels, resulting in a misshapen LSM.", stats.UnitDimensionless)
 )
@@ -139,7 +139,7 @@ var PebbleViews = []*view.View{
 }
 
 // ObservePebbleMetrics is used to periodically report metrics from the pebble database
-func ObservePebbleMetrics(ctx context.Context, interval time.Duration, metricsProvider func() *pebble.Metrics) {
+func ObservePebbleMetrics(ctx context.Context, interval time.Duration, db *pebble.DB) {
 	var t *time.Timer
 	log.Infow("Started observing pebble metrics")
 	for {
@@ -148,7 +148,7 @@ func ObservePebbleMetrics(ctx context.Context, interval time.Duration, metricsPr
 			log.Infow("Finished observing pebble metrics")
 			return
 		default:
-			reportMetrics(metricsProvider())
+			reportMetrics(db.Metrics())
 		}
 
 		t = time.NewTimer(interval)
