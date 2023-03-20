@@ -237,6 +237,10 @@ func (s *store) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
 	return s.db.Delete(vk.buf, pebble.NoSync)
 }
 
+func (s *store) Metrics() *pebble.Metrics {
+	return s.db.Metrics()
+}
+
 func (s *store) Size() (int64, error) {
 	sizeEstimate, err := s.db.EstimateDiskUsage([]byte{0}, []byte{0xff})
 	return int64(sizeEstimate), err

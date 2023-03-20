@@ -139,7 +139,7 @@ var PebbleViews = []*view.View{
 }
 
 // ObservePebbleMetrics is used to periodically report metrics from the pebble database
-func ObservePebbleMetrics(ctx context.Context, interval time.Duration, db *pebble.DB) {
+func ObservePebbleMetrics(ctx context.Context, interval time.Duration, pebbleMetricsProvider func() *pebble.Metrics) {
 	var t *time.Timer
 	log.Infow("Started observing pebble metrics")
 	for {
@@ -148,7 +148,7 @@ func ObservePebbleMetrics(ctx context.Context, interval time.Duration, db *pebbl
 			log.Infow("Finished observing pebble metrics")
 			return
 		default:
-			reportMetrics(db.Metrics())
+			reportMetrics(pebbleMetricsProvider())
 		}
 
 		t = time.NewTimer(interval)
