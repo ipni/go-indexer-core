@@ -13,7 +13,6 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
-	"github.com/ipni/go-indexer-core/store/pogreb"
 	"github.com/ipni/go-indexer-core/store/storethehash"
 )
 
@@ -47,38 +46,6 @@ func BenchmarkStore_PebblePut_W3(b *testing.B) {
 
 func BenchmarkStore_PebbleGet_W3(b *testing.B) {
 	benchmarkStoreGet(b, newPebbleSubject(b), workload3(b))
-}
-
-func BenchmarkStore_PogrebPut_W0(b *testing.B) {
-	benchmarkStorePut(b, newPogrebSubject(b), workload0(b))
-}
-
-func BenchmarkStore_PogrebGet_W0(b *testing.B) {
-	benchmarkStoreGet(b, newPogrebSubject(b), workload0(b))
-}
-
-func BenchmarkStore_PogrebPut_W1(b *testing.B) {
-	benchmarkStorePut(b, newPogrebSubject(b), workload1(b))
-}
-
-func BenchmarkStore_PogrebGet_W1(b *testing.B) {
-	benchmarkStoreGet(b, newPogrebSubject(b), workload1(b))
-}
-
-func BenchmarkStore_PogrebPut_W2(b *testing.B) {
-	benchmarkStorePut(b, newPogrebSubject(b), workload2(b))
-}
-
-func BenchmarkStore_PogrebGet_W2(b *testing.B) {
-	benchmarkStoreGet(b, newPogrebSubject(b), workload2(b))
-}
-
-func BenchmarkStore_PogrebPut_W3(b *testing.B) {
-	benchmarkStorePut(b, newPogrebSubject(b), workload3(b))
-}
-
-func BenchmarkStore_PogrebGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, newPogrebSubject(b), workload3(b))
 }
 
 func BenchmarkStore_StorethehashPut_W0(b *testing.B) {
@@ -182,12 +149,6 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 		pebbleOpts.Cache = pb2.NewCache(1 << 30) // 1 GiB
 
 		return pebble.New(b.TempDir(), pebbleOpts)
-	}
-}
-
-func newPogrebSubject(b *testing.B) func() (indexer.Interface, error) {
-	return func() (indexer.Interface, error) {
-		return pogreb.New(b.TempDir())
 	}
 }
 

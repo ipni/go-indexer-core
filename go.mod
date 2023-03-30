@@ -3,7 +3,6 @@ module github.com/ipni/go-indexer-core
 go 1.19
 
 require (
-	github.com/akrylysov/pogreb v0.10.1
 	// Note, cockroachdb/pebble has no tagged release. Instead, it uses branches.
 	// The version below is from: https://github.com/cockroachdb/pebble/tree/crl-release-22.1
 	// To update to latest, run: go get github.com/cockroachdb/pebble@crl-release-22.1
