@@ -15,7 +15,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/metrics"
-	"github.com/ipni/go-indexer-core/store/dhash"
+	"github.com/ipni/go-libipni/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
