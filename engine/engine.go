@@ -442,18 +442,18 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 		return err
 	}
 
-	if e.resultCache == nil {
-		return nil
-	}
-
-	e.resultCache.RemoveProviderContext(providerID, contextID)
-
 	if len(e.dhMetaDeleteURLs) > 0 {
 		err = e.sendDHMetadataDelete(context.Background(), providerID, contextID)
 		if err != nil {
 			return err
 		}
 	}
+
+	if e.resultCache == nil {
+		return nil
+	}
+
+	e.resultCache.RemoveProviderContext(providerID, contextID)
 
 	e.updateCacheStats()
 	return nil
