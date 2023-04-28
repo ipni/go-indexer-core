@@ -414,13 +414,6 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 
 	e.resultCache.Remove(value, mhs...)
 
-	if len(e.dhMetaDeleteURLs) > 0 {
-		err = e.sendDHMetadataDelete(context.Background(), value.ProviderID, value.ContextID)
-		if err != nil {
-			return err
-		}
-	}
-
 	e.updateCacheStats()
 	return nil
 }
