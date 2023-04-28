@@ -17,8 +17,10 @@ import (
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
+	b58 "github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
+	"go.opencensus.io/tag"
 )
 
 var log = logging.Logger("indexer-core")
@@ -32,11 +34,12 @@ type Engine struct {
 
 	prevCacheStats atomic.Value
 
-	dhBatchSize int
-	dhMergeURL  string
-	dhMetaURL   string
-	httpClient  http.Client
-	vsNoNewMH   bool
+	dhBatchSize      int
+	dhMergeURL       string
+	dhMetaURL        string
+	dhMetaDeleteURLs []string
+	httpClient       http.Client
+	vsNoNewMH        bool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -54,9 +57,16 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 	}
 
 	var dhMergeURL, dhMetaURL string
+	var dhMetaDeleteURLs []string
 	if opts.dhstoreURL != "" {
+		mdSuffix := "/metadata"
 		dhMergeURL = opts.dhstoreURL + "/multihash"
-		dhMetaURL = opts.dhstoreURL + "/metadata"
+		dhMetaURL = opts.dhstoreURL + mdSuffix
+		dhMetaDeleteURLs = make([]string, 0, len(opts.dhstoreClusterURLs)+1)
+		dhMetaDeleteURLs = append(dhMetaDeleteURLs, dhMetaURL)
+		for _, u := range opts.dhstoreClusterURLs {
+			dhMetaDeleteURLs = append(dhMetaDeleteURLs, u+mdSuffix)
+		}
 	}
 
 	return &Engine{
@@ -64,10 +74,12 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		valueStore:  valueStore,
 		cacheOnPut:  opts.cacheOnPut,
 
-		dhBatchSize: opts.dhBatchSize,
-		dhMergeURL:  dhMergeURL,
-		dhMetaURL:   dhMetaURL,
-		vsNoNewMH:   opts.vsNoNewMH,
+		dhBatchSize:      opts.dhBatchSize,
+		dhMergeURL:       dhMergeURL,
+		dhMetaURL:        dhMetaURL,
+		dhMetaDeleteURLs: dhMetaDeleteURLs,
+
+		vsNoNewMH: opts.vsNoNewMH,
 		httpClient: http.Client{
 			Timeout: opts.httpClientTimeout,
 		},
@@ -251,7 +263,10 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.DHMetadataLatency.M(metrics.MsecSince(start)))
+
+	stats.RecordWithOptions(context.Background(),
+		stats.WithTags(tag.Insert(metrics.Method, "put")),
+		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
 	var mergeCount int
 	merges := make([]dhstore.Merge, 0, e.dhBatchSize)
@@ -341,13 +356,45 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.DHMultihashLatency.M(metrics.MsecSince(start)))
+
+	stats.RecordWithOptions(context.Background(),
+		stats.WithTags(tag.Insert(metrics.Method, "put")),
+		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
+
 	defer rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
 	}
 
+	return nil
+}
+
+func (e *Engine) sendDHMetadataDelete(ctx context.Context, value indexer.Value) error {
+	vk := dhash.CreateValueKey(value.ProviderID, value.ContextID)
+	hvk := b58.Encode(dhash.SHA256(vk, nil))
+
+	for _, u := range e.dhMetaDeleteURLs {
+		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+"/"+hvk, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		start := time.Now()
+		rsp, err := e.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		stats.RecordWithOptions(context.Background(),
+			stats.WithTags(tag.Insert(metrics.Method, "delete")),
+			stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
+		rsp.Body.Close()
+
+		if rsp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to delete metadata: %v", http.StatusText(rsp.StatusCode))
+		}
+	}
 	return nil
 }
 
@@ -363,6 +410,14 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	}
 
 	e.resultCache.Remove(value, mhs...)
+
+	if len(e.dhMetaDeleteURLs) > 0 {
+		err = e.sendDHMetadataDelete(context.Background(), value)
+		if err != nil {
+			return err
+		}
+	}
+
 	e.updateCacheStats()
 	return nil
 }

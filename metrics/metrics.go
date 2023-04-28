@@ -79,11 +79,13 @@ var (
 	dhMultihashLatency = &view.View{
 		Measure:     DHMultihashLatency,
 		Aggregation: view.Distribution(0, 10, 20, 50, 70, 100, 200, 300, 400, 500, 1000, 2000, 3000, 5000, 7000, 10_000, 30_000, 60_000),
+		TagKeys:     []tag.Key{Method},
 	}
 
 	dhMetadataLatency = &view.View{
 		Measure:     DHMetadataLatency,
 		Aggregation: view.Distribution(0, 10, 20, 50, 70, 100, 200, 300, 400, 500, 1000, 2000, 3000, 5000, 7000, 10_000, 30_000, 60_000),
+		TagKeys:     []tag.Key{Method},
 	}
 )
 
