@@ -370,8 +370,8 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 	return nil
 }
 
-func (e *Engine) sendDHMetadataDelete(ctx context.Context, value indexer.Value) error {
-	vk := dhash.CreateValueKey(value.ProviderID, value.ContextID)
+func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, contextID []byte) error {
+	vk := dhash.CreateValueKey(providerID, contextID)
 	hvk := b58.Encode(dhash.SHA256(vk, nil))
 
 	for _, u := range e.dhMetaDeleteURLs {
@@ -386,14 +386,17 @@ func (e *Engine) sendDHMetadataDelete(ctx context.Context, value indexer.Value) 
 		if err != nil {
 			return err
 		}
-		stats.RecordWithOptions(context.Background(),
-			stats.WithTags(tag.Insert(metrics.Method, "delete")),
-			stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 		rsp.Body.Close()
 
 		if rsp.StatusCode != http.StatusOK {
 			return fmt.Errorf("failed to delete metadata: %v", http.StatusText(rsp.StatusCode))
 		}
+
+		stats.RecordWithOptions(context.Background(),
+			stats.WithTags(tag.Insert(metrics.Method, "delete")),
+			stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
+
+		log.Infow("Sent metadata delete to dhstore", "url", u, "valueKey", hvk)
 	}
 	return nil
 }
@@ -412,7 +415,7 @@ func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	e.resultCache.Remove(value, mhs...)
 
 	if len(e.dhMetaDeleteURLs) > 0 {
-		err = e.sendDHMetadataDelete(context.Background(), value)
+		err = e.sendDHMetadataDelete(context.Background(), value.ProviderID, value.ContextID)
 		if err != nil {
 			return err
 		}
@@ -451,6 +454,14 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 	}
 
 	e.resultCache.RemoveProviderContext(providerID, contextID)
+
+	if len(e.dhMetaDeleteURLs) > 0 {
+		err = e.sendDHMetadataDelete(context.Background(), providerID, contextID)
+		if err != nil {
+			return err
+		}
+	}
+
 	e.updateCacheStats()
 	return nil
 }
