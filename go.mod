@@ -23,7 +23,10 @@ require (
 	lukechampine.com/blake3 v1.1.7
 )
 
-require github.com/ipni/go-libipni v0.0.0-20230330175745-8950ad3901cc
+require (
+	github.com/ipni/go-libipni v0.0.0-20230330175745-8950ad3901cc
+	github.com/mr-tron/base58 v1.2.0
+)
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect
@@ -48,7 +51,6 @@ require (
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
 	github.com/multiformats/go-multiaddr v0.8.0 // indirect
