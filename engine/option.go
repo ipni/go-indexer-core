@@ -26,6 +26,7 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		dhBatchSize:       defaultDHBatchSize,
+		dhKeyShard:        true,
 		httpClientTimeout: defaultHttpTimeout,
 	}
 
@@ -56,10 +57,10 @@ func WithDHBatchSize(size int) Option {
 	}
 }
 
-// WithDHKeyShard enables the dhstore key sharding for the core. When key
-// sharding is enabled, a shard key is included with each metadata put request,
-// and a seperate merge request with a shard key is sent for each multihash.
-// Context delete requests are also sent with a shard key.
+// WithDHKeyShard enables/disabled the dhstore key sharding for the core. When
+// key sharding is enabled (on by default), a shard key is included with each
+// metadata put request, and a seperate merge request with a shard key is sent
+// for each multihash. Context delete requests are also sent with a shard key.
 func WithDHKeyShard(enabled bool) Option {
 	return func(c *config) error {
 		c.dhKeyShard = enabled

@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +17,7 @@ import (
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
-	b58 "github.com/mr-tron/base58/base58"
+	"github.com/mr-tron/base58"
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
@@ -333,8 +332,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	shardKey := base64.RawStdEncoding.EncodeToString(putMetaReq.Key)
-	req.Header.Set(shardKeyHeader, shardKey)
+	req.Header.Set(shardKeyHeader, base58.Encode(putMetaReq.Key))
 
 	rsp, err := e.httpClient.Do(req)
 	if err != nil {
@@ -353,8 +351,6 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 	mergeReq := dhstore.MergeIndexRequest{
 		Merges: make([]dhstore.Merge, 1),
 	}
-	b64Enc := base64.RawStdEncoding
-	var keyBuf []byte
 
 	start := time.Now()
 
@@ -374,15 +370,7 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-
-		// Reuse buffer for base64 encoding.
-		key := merges[i].Key
-		encLen := b64Enc.EncodedLen(len(key))
-		if encLen > len(keyBuf) {
-			keyBuf = make([]byte, encLen)
-		}
-		b64Enc.Encode(keyBuf, key)
-		req.Header.Set(shardKeyHeader, string(keyBuf[:encLen]))
+		req.Header.Set(shardKeyHeader, base58.Encode(merges[i].Key))
 
 		rsp, err := e.httpClient.Do(req)
 		if err != nil {
@@ -445,12 +433,7 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, contextID []byte) error {
 	vk := dhash.CreateValueKey(providerID, contextID)
 	hvk := dhash.SHA256(vk, nil)
-	b58hvk := b58.Encode(hvk)
-
-	var shardKey string
-	if e.dhKeyShard {
-		shardKey = base64.RawStdEncoding.EncodeToString(hvk)
-	}
+	b58hvk := base58.Encode(hvk)
 
 	for _, u := range e.dhMetaDeleteURLs {
 		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+"/"+b58hvk, nil)
@@ -459,7 +442,7 @@ func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, c
 		}
 		req.Header.Set("Content-Type", "application/json")
 		if e.dhKeyShard {
-			req.Header.Set(shardKeyHeader, shardKey)
+			req.Header.Set(shardKeyHeader, b58hvk)
 		}
 
 		start := time.Now()
