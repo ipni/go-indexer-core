@@ -349,7 +349,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
-func (e *Engine) sendDHMergesCluster(ctx context.Context, merges []dhstore.Merge) error {
+func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merge) error {
 	mergeReq := dhstore.MergeIndexRequest{
 		Merges: make([]dhstore.Merge, 1),
 	}
@@ -404,7 +404,7 @@ func (e *Engine) sendDHMergesCluster(ctx context.Context, merges []dhstore.Merge
 
 func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error {
 	if e.dhKeyShard {
-		return e.sendDHMergesCluster(ctx, merges)
+		return e.sendDHKeyShardMerges(ctx, merges)
 	}
 
 	mergeReq := dhstore.MergeIndexRequest{
