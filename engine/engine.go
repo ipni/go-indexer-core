@@ -97,10 +97,11 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
 	}()
 
-	// Return not found for any double-hashed multihash.
+	// Return not found for any double-hashed or invalid  multihash.
 	dm, err := multihash.Decode(m)
 	if err != nil {
-		return nil, false, err
+		log.Warnw("Get ignored bad multihash", "err", err)
+		return nil, false, nil
 	}
 	if dm.Code == multihash.DBL_SHA2_256 {
 		return nil, false, nil
