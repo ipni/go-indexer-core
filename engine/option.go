@@ -13,6 +13,7 @@ const defaultHttpTimeout = 5 * time.Second
 type config struct {
 	cacheOnPut         bool
 	dhBatchSize        int
+	dhKeyShard         bool
 	dhstoreURL         string
 	dhstoreClusterURLs []string
 	vsNoNewMH          bool
@@ -51,6 +52,17 @@ func WithDHBatchSize(size int) Option {
 		if size > 1 {
 			c.dhBatchSize = size
 		}
+		return nil
+	}
+}
+
+// WithDHKeyShard enables the dhstore key sharding for the core. When key
+// sharding is enabled, a shard key is included with each metadata put request,
+// and a seperate merge request with a shard key is sent for each multihash.
+// Context delete requests are also sent with a shard key.
+func WithDHKeyShard(enabled bool) Option {
+	return func(c *config) error {
+		c.dhKeyShard = enabled
 		return nil
 	}
 }

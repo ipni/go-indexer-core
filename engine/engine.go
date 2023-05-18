@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,8 @@ import (
 
 var log = logging.Logger("indexer-core")
 
+const shardKeyHeader = "x-ipni-dhstore-shard-key"
+
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store.
 type Engine struct {
@@ -35,6 +38,7 @@ type Engine struct {
 	prevCacheStats atomic.Value
 
 	dhBatchSize      int
+	dhKeyShard       bool
 	dhMergeURL       string
 	dhMetaURL        string
 	dhMetaDeleteURLs []string
@@ -62,10 +66,10 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		mdSuffix := "/metadata"
 		dhMergeURL = opts.dhstoreURL + "/multihash"
 		dhMetaURL = opts.dhstoreURL + mdSuffix
-		dhMetaDeleteURLs = make([]string, 0, len(opts.dhstoreClusterURLs)+1)
-		dhMetaDeleteURLs = append(dhMetaDeleteURLs, dhMetaURL)
-		for _, u := range opts.dhstoreClusterURLs {
-			dhMetaDeleteURLs = append(dhMetaDeleteURLs, u+mdSuffix)
+		dhMetaDeleteURLs = make([]string, len(opts.dhstoreClusterURLs)+1)
+		dhMetaDeleteURLs[0] = dhMetaURL
+		for i, u := range opts.dhstoreClusterURLs {
+			dhMetaDeleteURLs[i+1] = u + mdSuffix
 		}
 	}
 
@@ -75,6 +79,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		cacheOnPut:  opts.cacheOnPut,
 
 		dhBatchSize:      opts.dhBatchSize,
+		dhKeyShard:       opts.dhKeyShard,
 		dhMergeURL:       dhMergeURL,
 		dhMetaURL:        dhMetaURL,
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
@@ -93,11 +98,6 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
 	}()
 
-	if e.resultCache == nil {
-		// If no result cache, get from value store.
-		return e.valueStore.Get(m)
-	}
-
 	// Return not found for any double-hashed multihash.
 	dm, err := multihash.Decode(m)
 	if err != nil {
@@ -107,48 +107,60 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 		return nil, false, nil
 	}
 
-	// Check if multihash in resultCache.
-	v, found := e.resultCache.Get(m)
-	if !found {
-		stats.Record(ctx, metrics.CacheMisses.M(1))
-		var err error
-		v, found, err = e.valueStore.Get(m)
-		if err != nil {
-			return nil, false, err
-		}
+	// If there is a result cache, look there first. If the value is in the
+	// cache then it was already written to any dhstore.
+	if e.resultCache != nil {
+		v, found := e.resultCache.Get(m)
 		if found {
-			// Store result in result cache.
-			for i := range v {
-				e.resultCache.Put(v[i], m)
-			}
-			e.updateCacheStats()
+			stats.Record(ctx, metrics.CacheHits.M(1))
+			return v, true, nil
+		}
+		stats.Record(ctx, metrics.CacheMisses.M(1))
+	}
 
-			if e.dhMergeURL != "" {
-				for i := range v {
-					metaReq, valKey, err := makeDHMetadataRequest(v[i])
-					if err != nil {
-						log.Errorw("Cannot make dhstore metadata request", "err", err)
-						continue
-					}
-					merge, err := makeDHMerge(m, valKey)
-					if err != nil {
-						log.Errorw("Cannot make dhstore merge request", "err", err)
-						continue
-					}
-					if err = e.sendDHMetadata(ctx, metaReq); err != nil {
-						log.Errorw("Cannot send dhstore metadata request", "err", err)
-						continue
-					}
-					if err = e.sendDHMerges(ctx, []dhstore.Merge{merge}); err != nil {
-						log.Errorw("Cannot send dhstore merge request", "err", err)
-						continue
-					}
-				}
+	v, found, err := e.valueStore.Get(m)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+
+	if e.resultCache == nil {
+		return v, found, nil
+	}
+
+	for i := range v {
+		e.resultCache.Put(v[i], m)
+	}
+	e.updateCacheStats()
+
+	// Double hash this non double hashed result and store it in dhstore. This
+	// is only done when using a result cache to avoid repeatedly writing the
+	// same data to dhstore.
+	if e.dhMergeURL != "" {
+		for i := range v {
+			metaReq, valKey, err := makeDHMetadataRequest(v[i])
+			if err != nil {
+				log.Errorw("Cannot make dhstore metadata request", "err", err)
+				continue
+			}
+			merge, err := makeDHMerge(m, valKey)
+			if err != nil {
+				log.Errorw("Cannot make dhstore merge request", "err", err)
+				continue
+			}
+			if err = e.sendDHMetadata(ctx, metaReq); err != nil {
+				log.Errorw("Cannot send dhstore metadata request", "err", err)
+				continue
+			}
+			if err = e.sendDHMerges(ctx, []dhstore.Merge{merge}); err != nil {
+				log.Errorw("Cannot send dhstore merge request", "err", err)
+				continue
 			}
 		}
-	} else {
-		stats.Record(ctx, metrics.CacheHits.M(1))
 	}
+
 	return v, found, nil
 }
 
@@ -319,7 +331,10 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	if err != nil {
 		return err
 	}
+
 	req.Header.Set("Content-Type", "application/json")
+	shardKey := base64.RawStdEncoding.EncodeToString(putMetaReq.Key)
+	req.Header.Set(shardKeyHeader, shardKey)
 
 	rsp, err := e.httpClient.Do(req)
 	if err != nil {
@@ -334,7 +349,64 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
+func (e *Engine) sendDHMergesCluster(ctx context.Context, merges []dhstore.Merge) error {
+	mergeReq := dhstore.MergeIndexRequest{
+		Merges: make([]dhstore.Merge, 1),
+	}
+	b64Enc := base64.RawStdEncoding
+	var keyBuf []byte
+
+	start := time.Now()
+
+	// Send a separate dhstore.MergeIndexRequest for each merge.
+	for i := range merges {
+		mergeReq.Merges[0] = merges[i]
+
+		// TODO: The Value of all merges is the same. Encode it once and then
+		// Use json.RawMessage to avoid endocing it again.
+		data, err := json.Marshal(mergeReq)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMergeURL, bytes.NewBuffer(data))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		// Reuse buffer for base64 encoding.
+		key := merges[i].Key
+		encLen := b64Enc.EncodedLen(len(key))
+		if encLen > len(keyBuf) {
+			keyBuf = make([]byte, encLen)
+		}
+		b64Enc.Encode(keyBuf, key)
+		req.Header.Set(shardKeyHeader, string(keyBuf[:encLen]))
+
+		rsp, err := e.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		rsp.Body.Close()
+
+		if rsp.StatusCode != http.StatusAccepted {
+			return fmt.Errorf("failed to send merge: %s", http.StatusText(rsp.StatusCode))
+		}
+	}
+
+	stats.RecordWithOptions(context.Background(),
+		stats.WithTags(tag.Insert(metrics.Method, "put")),
+		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
+
+	return nil
+}
+
 func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error {
+	if e.dhKeyShard {
+		return e.sendDHMergesCluster(ctx, merges)
+	}
+
 	mergeReq := dhstore.MergeIndexRequest{
 		Merges: merges,
 	}
@@ -372,14 +444,23 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 
 func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, contextID []byte) error {
 	vk := dhash.CreateValueKey(providerID, contextID)
-	hvk := b58.Encode(dhash.SHA256(vk, nil))
+	hvk := dhash.SHA256(vk, nil)
+	b58hvk := b58.Encode(hvk)
+
+	var shardKey string
+	if e.dhKeyShard {
+		shardKey = base64.RawStdEncoding.EncodeToString(hvk)
+	}
 
 	for _, u := range e.dhMetaDeleteURLs {
-		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+"/"+hvk, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+"/"+b58hvk, nil)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if e.dhKeyShard {
+			req.Header.Set(shardKeyHeader, shardKey)
+		}
 
 		start := time.Now()
 		rsp, err := e.httpClient.Do(req)
@@ -425,12 +506,11 @@ func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 		return err
 	}
 
-	if e.resultCache == nil {
-		return nil
+	if e.resultCache != nil {
+		e.resultCache.RemoveProvider(providerID)
+		e.updateCacheStats()
 	}
 
-	e.resultCache.RemoveProvider(providerID)
-	e.updateCacheStats()
 	stats.Record(context.Background(), metrics.RemovedProviders.M(1))
 	return nil
 }
@@ -442,20 +522,18 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 		return err
 	}
 
-	if len(e.dhMetaDeleteURLs) > 0 {
+	if len(e.dhMetaDeleteURLs) != 0 {
 		err = e.sendDHMetadataDelete(context.Background(), providerID, contextID)
 		if err != nil {
 			return err
 		}
 	}
 
-	if e.resultCache == nil {
-		return nil
+	if e.resultCache != nil {
+		e.resultCache.RemoveProviderContext(providerID, contextID)
+		e.updateCacheStats()
 	}
 
-	e.resultCache.RemoveProviderContext(providerID, contextID)
-
-	e.updateCacheStats()
 	return nil
 }
 
