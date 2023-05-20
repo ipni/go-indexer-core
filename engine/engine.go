@@ -55,10 +55,6 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		panic(err.Error())
 	}
 
-	if valueStore == nil {
-		panic("valueStore is required")
-	}
-
 	var dhMergeURL, dhMetaURL string
 	var dhMetaDeleteURLs []string
 	if opts.dhstoreURL != "" {
@@ -70,6 +66,8 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		for i, u := range opts.dhstoreClusterURLs {
 			dhMetaDeleteURLs[i+1] = u + mdSuffix
 		}
+	} else if valueStore == nil {
+		panic("dhstoreURL or valueStore is required")
 	}
 
 	return &Engine{
@@ -116,6 +114,10 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 			return v, true, nil
 		}
 		stats.Record(ctx, metrics.CacheMisses.M(1))
+	}
+
+	if e.valueStore == nil {
+		return nil, false, nil
 	}
 
 	v, found, err := e.valueStore.Get(m)
@@ -213,13 +215,16 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	}
 
 	var err error
-	if e.vsNoNewMH {
-		err = e.valueStore.Put(value)
-	} else {
-		err = e.valueStore.Put(value, mhs...)
-	}
-	if err != nil {
-		return err
+
+	if e.valueStore != nil {
+		if e.vsNoNewMH {
+			err = e.valueStore.Put(value)
+		} else {
+			err = e.valueStore.Put(value, mhs...)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	if e.dhMergeURL != "" {
@@ -333,7 +338,9 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(shardKeyHeader, base58.Encode(putMetaReq.Key))
+	if e.dhKeyShard {
+		req.Header.Set(shardKeyHeader, base58.Encode(putMetaReq.Key))
+	}
 
 	rsp, err := e.httpClient.Do(req)
 	if err != nil {
@@ -360,7 +367,7 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 		mergeReq.Merges[0] = merges[i]
 
 		// TODO: The Value of all merges is the same. Encode it once and then
-		// Use json.RawMessage to avoid endocing it again.
+		// use json.RawMessage to avoid endocing it again.
 		data, err := json.Marshal(mergeReq)
 		if err != nil {
 			return err
@@ -417,17 +424,15 @@ func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error
 	if err != nil {
 		return err
 	}
+	rsp.Body.Close()
 
 	stats.RecordWithOptions(context.Background(),
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
 
-	defer rsp.Body.Close()
-
 	if rsp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
 	}
-
 	return nil
 }
 
@@ -467,27 +472,30 @@ func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, c
 }
 
 func (e *Engine) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
-	// Remove first from valueStore.
-	err := e.valueStore.Remove(value, mhs...)
-	if err != nil {
-		return err
+	if e.valueStore != nil {
+		// Remove first from valueStore.
+		err := e.valueStore.Remove(value, mhs...)
+		if err != nil {
+			return err
+		}
 	}
 
-	if e.resultCache == nil {
-		return nil
+	if e.resultCache != nil {
+		e.resultCache.Remove(value, mhs...)
+		e.updateCacheStats()
 	}
 
-	e.resultCache.Remove(value, mhs...)
-
-	e.updateCacheStats()
 	return nil
 }
 
 func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
-	// Remove first from valueStore.
-	err := e.valueStore.RemoveProvider(ctx, providerID)
-	if err != nil {
-		return err
+	if e.valueStore != nil {
+		// Remove first from valueStore.
+		err := e.valueStore.RemoveProvider(ctx, providerID)
+		if err != nil {
+			return err
+		}
+		stats.Record(context.Background(), metrics.RemovedProviders.M(1))
 	}
 
 	if e.resultCache != nil {
@@ -495,19 +503,20 @@ func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 		e.updateCacheStats()
 	}
 
-	stats.Record(context.Background(), metrics.RemovedProviders.M(1))
 	return nil
 }
 
 func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
-	// Remove first from valueStore.
-	err := e.valueStore.RemoveProviderContext(providerID, contextID)
-	if err != nil {
-		return err
+	if e.valueStore != nil {
+		// Remove first from valueStore.
+		err := e.valueStore.RemoveProviderContext(providerID, contextID)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(e.dhMetaDeleteURLs) != 0 {
-		err = e.sendDHMetadataDelete(context.Background(), providerID, contextID)
+		err := e.sendDHMetadataDelete(context.Background(), providerID, contextID)
 		if err != nil {
 			return err
 		}
@@ -522,19 +531,31 @@ func (e *Engine) RemoveProviderContext(providerID peer.ID, contextID []byte) err
 }
 
 func (e *Engine) Size() (int64, error) {
-	return e.valueStore.Size()
+	if e.valueStore != nil {
+		return e.valueStore.Size()
+	}
+	return 0, nil
 }
 
 func (e *Engine) Flush() error {
-	return e.valueStore.Flush()
+	if e.valueStore != nil {
+		return e.valueStore.Flush()
+	}
+	return nil
 }
 
 func (e *Engine) Close() error {
-	return e.valueStore.Close()
+	if e.valueStore != nil {
+		return e.valueStore.Close()
+	}
+	return nil
 }
 
 func (e *Engine) Iter() (indexer.Iterator, error) {
-	return e.valueStore.Iter()
+	if e.valueStore != nil {
+		return e.valueStore.Iter()
+	}
+	return nil, errors.New("no value store")
 }
 
 func (e *Engine) updateCacheStats() {
@@ -567,5 +588,8 @@ func (e *Engine) updateCacheStats() {
 }
 
 func (e *Engine) Stats() (*indexer.Stats, error) {
-	return e.valueStore.Stats()
+	if e.valueStore != nil {
+		return e.valueStore.Stats()
+	}
+	return nil, nil
 }
