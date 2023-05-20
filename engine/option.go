@@ -50,7 +50,7 @@ func WithCacheOnPut(on bool) Option {
 // requests to DHStore. A value < 1 results in the default size.
 func WithDHBatchSize(size int) Option {
 	return func(c *config) error {
-		if size > 1 {
+		if size > 0 {
 			c.dhBatchSize = size
 		}
 		return nil
