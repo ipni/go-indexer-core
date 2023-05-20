@@ -6,8 +6,11 @@ import (
 	"time"
 )
 
-const defaultDHBatchSize = 1024
-const defaultHttpTimeout = 5 * time.Second
+const (
+	defaultDHBatchSize = 4096
+	defaultDHKeyShard  = false
+	defaultHttpTimeout = 5 * time.Second
+)
 
 // config contains all options for configuring Engine.
 type config struct {
@@ -26,7 +29,7 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		dhBatchSize:       defaultDHBatchSize,
-		dhKeyShard:        true,
+		dhKeyShard:        defaultDHKeyShard,
 		httpClientTimeout: defaultHttpTimeout,
 	}
 
