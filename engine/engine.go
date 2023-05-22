@@ -406,7 +406,7 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 	}
 
 	start := time.Now()
-	log.Debugw("Sending merge requests", "count", len(merges))
+	log.Infow("Sending merge requests", "count", len(merges), "concurrency", e.wp.Size())
 
 	errChan := make(chan error)
 	for i := range merges {
@@ -426,7 +426,7 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 			errCount++
 		}
 	}
-	log.Debug("Done sending merge requests", "count", len(merges), "errors", errCount, "elapsed", time.Since(start))
+	log.Infow("Done sending merge requests", "count", len(merges), "errors", errCount, "elapsed", time.Since(start))
 
 	stats.RecordWithOptions(context.Background(),
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
