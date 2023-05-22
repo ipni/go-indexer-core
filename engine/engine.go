@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gammazero/workerpool"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
@@ -26,6 +27,7 @@ import (
 var log = logging.Logger("indexer-core")
 
 const shardKeyHeader = "x-ipni-dhstore-shard-key"
+const maxIdleConns = 128
 
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store.
@@ -43,6 +45,7 @@ type Engine struct {
 	dhMetaDeleteURLs []string
 	httpClient       http.Client
 	vsNoNewMH        bool
+	wp               *workerpool.WorkerPool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -70,7 +73,16 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		panic("dhstoreURL or valueStore is required")
 	}
 
-	return &Engine{
+	ht := http.DefaultTransport.(*http.Transport).Clone()
+	ht.MaxIdleConns = maxIdleConns
+	ht.MaxIdleConnsPerHost = maxIdleConns
+
+	httpClient := http.Client{
+		Timeout:   opts.httpClientTimeout,
+		Transport: ht,
+	}
+
+	e := &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
 		cacheOnPut:  opts.cacheOnPut,
@@ -81,11 +93,15 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		dhMetaURL:        dhMetaURL,
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
 
-		vsNoNewMH: opts.vsNoNewMH,
-		httpClient: http.Client{
-			Timeout: opts.httpClientTimeout,
-		},
+		vsNoNewMH:  opts.vsNoNewMH,
+		httpClient: httpClient,
 	}
+
+	if opts.dhKeyShard {
+		e.wp = workerpool.New(maxIdleConns)
+	}
+
+	return e
 }
 
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
@@ -356,18 +372,11 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 }
 
 func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merge) error {
-	mergeReq := dhstore.MergeIndexRequest{
-		Merges: make([]dhstore.Merge, 1),
-	}
+	sendMerge := func(merge dhstore.Merge) error {
+		mergeReq := dhstore.MergeIndexRequest{
+			Merges: []dhstore.Merge{merge},
+		}
 
-	start := time.Now()
-
-	// Send a separate dhstore.MergeIndexRequest for each merge.
-	for i := range merges {
-		mergeReq.Merges[0] = merges[i]
-
-		// TODO: The Value of all merges is the same. Encode it once and then
-		// use json.RawMessage to avoid endocing it again.
 		data, err := json.Marshal(mergeReq)
 		if err != nil {
 			return err
@@ -378,7 +387,7 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(shardKeyHeader, base58.Encode(merges[i].Key))
+		req.Header.Set(shardKeyHeader, base58.Encode(merge.Key))
 
 		rsp, err := e.httpClient.Do(req)
 		if err != nil {
@@ -389,13 +398,37 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 		if rsp.StatusCode != http.StatusAccepted {
 			return fmt.Errorf("failed to send merge: %s", http.StatusText(rsp.StatusCode))
 		}
+		return nil
 	}
+
+	start := time.Now()
+	log.Debugw("Sending merge requests", "count", len(merges))
+
+	errChan := make(chan error)
+	for i := range merges {
+		m := merges[i]
+		e.wp.Submit(func() {
+			errChan <- sendMerge(m)
+		})
+	}
+
+	var lastErr error
+	var errCount int
+	for i := 0; i < len(merges); i++ {
+		err := <-errChan
+		if err != nil {
+			log.Errorf("DH merge error", "err", err)
+			lastErr = err
+			errCount++
+		}
+	}
+	log.Debug("Done sending merge requests", "count", len(merges), "errors", errCount, "elapsed", time.Since(start))
 
 	stats.RecordWithOptions(context.Background(),
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
 
-	return nil
+	return lastErr
 }
 
 func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error {
@@ -545,6 +578,9 @@ func (e *Engine) Flush() error {
 }
 
 func (e *Engine) Close() error {
+	if e.wp != nil {
+		e.wp.Stop()
+	}
 	if e.valueStore != nil {
 		return e.valueStore.Close()
 	}
