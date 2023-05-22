@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	defaultDHBatchSize = 4096
-	defaultDHKeyShard  = false
-	defaultHttpTimeout = 5 * time.Second
+	defaultDHBatchSize        = 4096
+	defaultDHKeyShard         = false
+	defaultDHShardConcurrency = 128
+	defaultHttpTimeout        = 5 * time.Second
 )
 
 // config contains all options for configuring Engine.
@@ -17,6 +18,7 @@ type config struct {
 	cacheOnPut         bool
 	dhBatchSize        int
 	dhKeyShard         bool
+	dhShardConcurrency int
 	dhstoreURL         string
 	dhstoreClusterURLs []string
 	vsNoNewMH          bool
@@ -28,9 +30,10 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		dhBatchSize:       defaultDHBatchSize,
-		dhKeyShard:        defaultDHKeyShard,
-		httpClientTimeout: defaultHttpTimeout,
+		dhBatchSize:        defaultDHBatchSize,
+		dhKeyShard:         defaultDHKeyShard,
+		dhShardConcurrency: defaultDHShardConcurrency,
+		httpClientTimeout:  defaultHttpTimeout,
 	}
 
 	for i, opt := range opts {
@@ -67,6 +70,15 @@ func WithDHBatchSize(size int) Option {
 func WithDHKeyShard(enabled bool) Option {
 	return func(c *config) error {
 		c.dhKeyShard = enabled
+		return nil
+	}
+}
+
+func WithDHShardConcurrency(n int) Option {
+	return func(c *config) error {
+		if n > 0 {
+			c.dhShardConcurrency = n
+		}
 		return nil
 	}
 }

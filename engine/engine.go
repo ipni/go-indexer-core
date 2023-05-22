@@ -27,7 +27,7 @@ import (
 var log = logging.Logger("indexer-core")
 
 const shardKeyHeader = "x-ipni-dhstore-shard-key"
-const maxIdleConns = 128
+const defaultMaxIdleConns = 128
 
 // Engine is an implementation of indexer.Interface that combines a result
 // cache and a value store.
@@ -73,6 +73,15 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		panic("dhstoreURL or valueStore is required")
 	}
 
+	var wp *workerpool.WorkerPool
+	maxIdleConns := defaultMaxIdleConns
+	if opts.dhKeyShard {
+		if opts.dhShardConcurrency > maxIdleConns {
+			maxIdleConns = opts.dhShardConcurrency
+		}
+		wp = workerpool.New(opts.dhShardConcurrency)
+	}
+
 	ht := http.DefaultTransport.(*http.Transport).Clone()
 	ht.MaxIdleConns = maxIdleConns
 	ht.MaxIdleConnsPerHost = maxIdleConns
@@ -82,7 +91,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		Transport: ht,
 	}
 
-	e := &Engine{
+	return &Engine{
 		resultCache: resultCache,
 		valueStore:  valueStore,
 		cacheOnPut:  opts.cacheOnPut,
@@ -95,13 +104,8 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 
 		vsNoNewMH:  opts.vsNoNewMH,
 		httpClient: httpClient,
+		wp:         wp,
 	}
-
-	if opts.dhKeyShard {
-		e.wp = workerpool.New(maxIdleConns)
-	}
-
-	return e
 }
 
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
