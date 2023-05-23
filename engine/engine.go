@@ -79,6 +79,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		if opts.dhShardConcurrency > maxIdleConns {
 			maxIdleConns = opts.dhShardConcurrency
 		}
+		log.Infow("Using dhstore key sharding", "concurrency", opts.dhShardConcurrency)
 		wp = workerpool.New(opts.dhShardConcurrency)
 	}
 
@@ -341,7 +342,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 		mergeCount += len(merges)
 	}
 
-	log.Infow("Sent metadata and merges to dhstore", "mergeCount", mergeCount)
+	log.Infow("Sent metadata and merges to dhstore", "mergeCount", mergeCount, "elapsed", time.Since(start).String())
 
 	return nil
 }
@@ -366,7 +367,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	if err != nil {
 		return err
 	}
-	defer rsp.Body.Close()
+	rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
@@ -406,7 +407,6 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 	}
 
 	start := time.Now()
-	log.Infow("Sending merge requests", "count", len(merges), "concurrency", e.wp.Size())
 
 	errChan := make(chan error)
 	for i := range merges {
@@ -417,16 +417,13 @@ func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merg
 	}
 
 	var lastErr error
-	var errCount int
 	for i := 0; i < len(merges); i++ {
 		err := <-errChan
 		if err != nil {
-			log.Errorf("DH merge error", "err", err)
+			log.Errorw("DH store merge error", "err", err)
 			lastErr = err
-			errCount++
 		}
 	}
-	log.Infow("Done sending merge requests", "count", len(merges), "errors", errCount, "elapsed", time.Since(start))
 
 	stats.RecordWithOptions(context.Background(),
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
