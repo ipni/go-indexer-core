@@ -6,13 +6,19 @@ import (
 	"time"
 )
 
-const defaultDHBatchSize = 1024
-const defaultHttpTimeout = 5 * time.Second
+const (
+	defaultDHBatchSize        = 4096
+	defaultDHKeyShard         = false
+	defaultDHShardConcurrency = 128
+	defaultHttpTimeout        = 5 * time.Second
+)
 
 // config contains all options for configuring Engine.
 type config struct {
 	cacheOnPut         bool
 	dhBatchSize        int
+	dhKeyShard         bool
+	dhShardConcurrency int
 	dhstoreURL         string
 	dhstoreClusterURLs []string
 	vsNoNewMH          bool
@@ -24,8 +30,10 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		dhBatchSize:       defaultDHBatchSize,
-		httpClientTimeout: defaultHttpTimeout,
+		dhBatchSize:        defaultDHBatchSize,
+		dhKeyShard:         defaultDHKeyShard,
+		dhShardConcurrency: defaultDHShardConcurrency,
+		httpClientTimeout:  defaultHttpTimeout,
 	}
 
 	for i, opt := range opts {
@@ -48,8 +56,28 @@ func WithCacheOnPut(on bool) Option {
 // requests to DHStore. A value < 1 results in the default size.
 func WithDHBatchSize(size int) Option {
 	return func(c *config) error {
-		if size > 1 {
+		if size > 0 {
 			c.dhBatchSize = size
+		}
+		return nil
+	}
+}
+
+// WithDHKeyShard enables/disabled the dhstore key sharding for the core. When
+// key sharding is enabled (on by default), a shard key is included with each
+// metadata put request, and a seperate merge request with a shard key is sent
+// for each multihash. Context delete requests are also sent with a shard key.
+func WithDHKeyShard(enabled bool) Option {
+	return func(c *config) error {
+		c.dhKeyShard = enabled
+		return nil
+	}
+}
+
+func WithDHShardConcurrency(n int) Option {
+	return func(c *config) error {
+		if n > 0 {
+			c.dhShardConcurrency = n
 		}
 		return nil
 	}
