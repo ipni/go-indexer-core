@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gammazero/workerpool"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
@@ -26,7 +25,6 @@ import (
 
 var log = logging.Logger("indexer-core")
 
-const shardKeyHeader = "x-ipni-dhstore-shard-key"
 const defaultMaxIdleConns = 128
 
 // Engine is an implementation of indexer.Interface that combines a result
@@ -39,13 +37,11 @@ type Engine struct {
 	prevCacheStats atomic.Value
 
 	dhBatchSize      int
-	dhKeyShard       bool
 	dhMergeURL       string
 	dhMetaURL        string
 	dhMetaDeleteURLs []string
 	httpClient       http.Client
 	vsNoNewMH        bool
-	wp               *workerpool.WorkerPool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -73,16 +69,7 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		panic("dhstoreURL or valueStore is required")
 	}
 
-	var wp *workerpool.WorkerPool
 	maxIdleConns := defaultMaxIdleConns
-	if opts.dhKeyShard {
-		if opts.dhShardConcurrency > maxIdleConns {
-			maxIdleConns = opts.dhShardConcurrency
-		}
-		log.Infow("Using dhstore key sharding", "concurrency", opts.dhShardConcurrency)
-		wp = workerpool.New(opts.dhShardConcurrency)
-	}
-
 	ht := http.DefaultTransport.(*http.Transport).Clone()
 	ht.MaxIdleConns = maxIdleConns
 	ht.MaxIdleConnsPerHost = maxIdleConns
@@ -98,14 +85,12 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		cacheOnPut:  opts.cacheOnPut,
 
 		dhBatchSize:      opts.dhBatchSize,
-		dhKeyShard:       opts.dhKeyShard,
 		dhMergeURL:       dhMergeURL,
 		dhMetaURL:        dhMetaURL,
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
 
 		vsNoNewMH:  opts.vsNoNewMH,
 		httpClient: httpClient,
-		wp:         wp,
 	}
 }
 
@@ -359,10 +344,6 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if e.dhKeyShard {
-		req.Header.Set(shardKeyHeader, base58.Encode(putMetaReq.Key))
-	}
-
 	rsp, err := e.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -376,67 +357,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
-func (e *Engine) sendDHKeyShardMerges(ctx context.Context, merges []dhstore.Merge) error {
-	sendMerge := func(merge dhstore.Merge) error {
-		mergeReq := dhstore.MergeIndexRequest{
-			Merges: []dhstore.Merge{merge},
-		}
-
-		data, err := json.Marshal(mergeReq)
-		if err != nil {
-			return err
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, e.dhMergeURL, bytes.NewBuffer(data))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(shardKeyHeader, base58.Encode(merge.Key))
-
-		rsp, err := e.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		rsp.Body.Close()
-
-		if rsp.StatusCode != http.StatusAccepted {
-			return fmt.Errorf("failed to send merge: %s", http.StatusText(rsp.StatusCode))
-		}
-		return nil
-	}
-
-	start := time.Now()
-
-	errChan := make(chan error)
-	for i := range merges {
-		m := merges[i]
-		e.wp.Submit(func() {
-			errChan <- sendMerge(m)
-		})
-	}
-
-	var lastErr error
-	for i := 0; i < len(merges); i++ {
-		err := <-errChan
-		if err != nil {
-			log.Errorw("DH store merge error", "err", err)
-			lastErr = err
-		}
-	}
-
-	stats.RecordWithOptions(context.Background(),
-		stats.WithTags(tag.Insert(metrics.Method, "put")),
-		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
-
-	return lastErr
-}
-
 func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error {
-	if e.dhKeyShard {
-		return e.sendDHKeyShardMerges(ctx, merges)
-	}
-
 	mergeReq := dhstore.MergeIndexRequest{
 		Merges: merges,
 	}
@@ -481,9 +402,6 @@ func (e *Engine) sendDHMetadataDelete(ctx context.Context, providerID peer.ID, c
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if e.dhKeyShard {
-			req.Header.Set(shardKeyHeader, b58hvk)
-		}
 
 		start := time.Now()
 		rsp, err := e.httpClient.Do(req)
@@ -579,9 +497,6 @@ func (e *Engine) Flush() error {
 }
 
 func (e *Engine) Close() error {
-	if e.wp != nil {
-		e.wp.Stop()
-	}
 	if e.valueStore != nil {
 		return e.valueStore.Close()
 	}
