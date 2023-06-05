@@ -41,7 +41,6 @@ type Engine struct {
 	dhMetaURL        string
 	dhMetaDeleteURLs []string
 	httpClient       http.Client
-	vsNoNewMH        bool
 }
 
 var _ indexer.Interface = &Engine{}
@@ -89,7 +88,6 @@ func New(resultCache cache.Interface, valueStore indexer.Interface, options ...O
 		dhMetaURL:        dhMetaURL,
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
 
-		vsNoNewMH:  opts.vsNoNewMH,
 		httpClient: httpClient,
 	}
 }
@@ -220,21 +218,15 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.updateCacheStats()
 	}
 
-	var err error
-
 	if e.valueStore != nil {
-		if e.vsNoNewMH {
-			err = e.valueStore.Put(value)
-		} else {
-			err = e.valueStore.Put(value, mhs...)
-		}
+		err := e.valueStore.Put(value, mhs...)
 		if err != nil {
 			return err
 		}
 	}
 
 	if e.dhMergeURL != "" {
-		err = e.storeDH(context.Background(), value, mhs)
+		err := e.storeDH(context.Background(), value, mhs)
 		if err != nil {
 			return err
 		}
