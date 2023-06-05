@@ -3,17 +3,14 @@
 package bench_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	pb2 "github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/bloom"
-	sth "github.com/ipld/go-storethehash/store"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
-	"github.com/ipni/go-indexer-core/store/storethehash"
 )
 
 func BenchmarkStore_PebblePut_W0(b *testing.B) {
@@ -46,38 +43,6 @@ func BenchmarkStore_PebblePut_W3(b *testing.B) {
 
 func BenchmarkStore_PebbleGet_W3(b *testing.B) {
 	benchmarkStoreGet(b, newPebbleSubject(b), workload3(b))
-}
-
-func BenchmarkStore_StorethehashPut_W0(b *testing.B) {
-	benchmarkStorePut(b, sthSubject(b), workload0(b))
-}
-
-func BenchmarkStore_StorethehashGet_W0(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload0(b))
-}
-
-func BenchmarkStore_StorethehashPut_W1(b *testing.B) {
-	benchmarkStorePut(b, sthSubject(b), workload1(b))
-}
-
-func BenchmarkStore_StorethehashGet_W1(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload1(b))
-}
-
-func BenchmarkStore_StorethehashPut_W2(b *testing.B) {
-	benchmarkStorePut(b, sthSubject(b), workload2(b))
-}
-
-func BenchmarkStore_StorethehashGet_W2(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload2(b))
-}
-
-func BenchmarkStore_StorethehashPut_W3(b *testing.B) {
-	benchmarkStorePut(b, sthSubject(b), workload3(b))
-}
-
-func BenchmarkStore_StorethehashGet_W3(b *testing.B) {
-	benchmarkStoreGet(b, sthSubject(b), workload3(b))
 }
 
 func BenchmarkStore_MemoryPut_W0(b *testing.B) {
@@ -149,17 +114,6 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 		pebbleOpts.Cache = pb2.NewCache(1 << 30) // 1 GiB
 
 		return pebble.New(b.TempDir(), pebbleOpts)
-	}
-}
-
-func sthSubject(b *testing.B) func() (indexer.Interface, error) {
-	return func() (indexer.Interface, error) {
-		return storethehash.New(context.Background(), b.TempDir(),
-			64,
-			sth.GCInterval(0),
-			sth.SyncInterval(time.Second),
-			sth.IndexBitSize(24),
-		)
 	}
 }
 
