@@ -173,6 +173,14 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	if e.resultCache != nil {
 		var addToCache, mhsCopy []multihash.Multihash
+		// If using a value store, make sure give a copy of mhs to the
+		// valuestore, as some implementations may expect to take ownership.
+		if e.valueStore != nil {
+			mhsCopy = make([]multihash.Multihash, len(mhs))
+			copy(mhsCopy, mhs)
+			mhs = mhsCopy
+		}
+
 		for i := 0; i < len(mhs); {
 			v, found := e.resultCache.Get(mhs[i])
 
