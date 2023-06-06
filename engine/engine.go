@@ -11,9 +11,9 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipni/dhstore"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
+	"github.com/ipni/go-indexer-core/engine/dhstore"
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -160,7 +160,7 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 				log.Errorw("Cannot send dhstore metadata request", "err", err)
 				continue
 			}
-			if err = e.sendDHMerges(ctx, []dhstore.Merge{merge}); err != nil {
+			if err = e.sendDHMergeIndexRequest(ctx, []dhstore.Index{merge}); err != nil {
 				log.Errorw("Cannot send dhstore merge request", "err", err)
 				continue
 			}
@@ -261,19 +261,19 @@ func makeDHMetadataRequest(value indexer.Value) (dhstore.PutMetadataRequest, []b
 	}, valueKey, nil
 }
 
-func makeDHMerge(mh multihash.Multihash, valueKey []byte) (dhstore.Merge, error) {
+func makeDHMerge(mh multihash.Multihash, valueKey []byte) (dhstore.Index, error) {
 	mh2, err := dhash.SecondMultihash(mh)
 	if err != nil {
-		return dhstore.Merge{}, err
+		return dhstore.Index{}, err
 	}
 
 	// Encrypt value key with original multihash.
 	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
 	if err != nil {
-		return dhstore.Merge{}, err
+		return dhstore.Index{}, err
 	}
 
-	return dhstore.Merge{
+	return dhstore.Index{
 		Key:   mh2,
 		Value: encValueKey,
 	}, nil
@@ -296,7 +296,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
 	var mergeCount int
-	merges := make([]dhstore.Merge, 0, e.dhBatchSize)
+	merges := make([]dhstore.Index, 0, e.dhBatchSize)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
 		if err != nil {
@@ -313,7 +313,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 
 		merges = append(merges, merge)
 		if len(merges) == cap(merges) {
-			err = e.sendDHMerges(ctx, merges)
+			err = e.sendDHMergeIndexRequest(ctx, merges)
 			if err != nil {
 				return err
 			}
@@ -324,7 +324,7 @@ func (e *Engine) storeDH(ctx context.Context, value indexer.Value, mhs []multiha
 
 	// Send remaining merge requests.
 	if len(merges) != 0 {
-		err = e.sendDHMerges(ctx, merges)
+		err = e.sendDHMergeIndexRequest(ctx, merges)
 		if err != nil {
 			return err
 		}
@@ -361,7 +361,7 @@ func (e *Engine) sendDHMetadata(ctx context.Context, putMetaReq dhstore.PutMetad
 	return nil
 }
 
-func (e *Engine) sendDHMerges(ctx context.Context, merges []dhstore.Merge) error {
+func (e *Engine) sendDHMergeIndexRequest(ctx context.Context, merges []dhstore.Index) error {
 	mergeReq := dhstore.MergeIndexRequest{
 		Merges: merges,
 	}
