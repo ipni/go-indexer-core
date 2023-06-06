@@ -8,7 +8,7 @@ import (
 
 func TestLoadNew(t *testing.T) {
 	dir := t.TempDir()
-	vsi, err := Load(dir, "storethehash")
+	vsi, err := Load(dir, "somevalstore")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestLoadExisting(t *testing.T) {
 	}
 	f.Close()
 
-	vsi, err := Load(dir, "storethehash")
+	vsi, err := Load(dir, "somevalstore")
 	if err != nil {
 		t.Fatal(err)
 	}

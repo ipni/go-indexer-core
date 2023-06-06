@@ -20,7 +20,7 @@ See Usage Example for details.
 
 ### Choice of Persistent Storage
 
-The persistent storage is provided by a choice of storage systems that include [storethehash](https://github.com/ipld/go-storethehash), [pebble](https://github.com/cockroachdb/pebble#readme), and an in-memory implementation. The storage interface allows any other storage system solution to be adapted.
+The persistent storage is provided by a choice of storage systems that include [pebble](https://github.com/cockroachdb/pebble#readme), and an in-memory implementation. The storage interface allows any other storage system solution to be adapted.
 
 See Usage Example for details.
 
@@ -48,7 +48,7 @@ import (
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/cache/radixcache"
 	"github.com/ipni/go-indexer-core/engine"
-	"github.com/ipni/go-indexer-core/store/storethehash"
+	"github.com/ipni/go-indexer-core/store/pebble"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -63,8 +63,8 @@ func main() {
 	os.Mkdir(valueStoreDir, 0770)
 	var valueStore indexer.Interface
 	var err error
-	if storeType == "sth" {
-		valueStore, err = storethehash.New(valueStoreDir)
+	if storeType == "pebble" {
+		valueStore, err = pebble.New(valueStoreDir, nil)
 	}
 	if err != nil {
 		log.Fatal(err)

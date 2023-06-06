@@ -7,17 +7,15 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/cache/radixcache"
+	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
-	"github.com/ipni/go-indexer-core/store/storethehash"
 	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-const testPutConcurrency = 4
-
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
-	valueStore, err := storethehash.New(context.Background(), t.TempDir(), testPutConcurrency)
+	valueStore, err := pebble.New(t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +91,7 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	eng.valueStore.Flush()
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 1 {
 		t.Fatal("value not removed from value store")
@@ -532,7 +531,7 @@ func TestBoth(t *testing.T) {
 }
 
 func TestMultiCodec(t *testing.T) {
-	const vsType = "storethehash"
+	const vsType = "pebble"
 
 	// Force the codec to be json and create engine instance.
 	tempDir := t.TempDir()
@@ -553,12 +552,12 @@ func TestMultiCodec(t *testing.T) {
 	}
 	var valueStore indexer.Interface
 	switch vsType {
-	case "storethehash":
-		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
+	case "memmory":
+		valueStore = memory.New()
 	case "pebble":
 		valueStore, err = pebble.New(tempDir, nil)
 	default:
-		t.Fatal("vsType must be storethehash or pebble")
+		t.Fatal("vsType must be memory or pebble")
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -607,8 +606,8 @@ func TestMultiCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 	switch vsType {
-	case "storethehash":
-		valueStore, err = storethehash.New(context.Background(), tempDir, testPutConcurrency)
+	case "memory":
+		valueStore = memory.New()
 	case "pebble":
 		valueStore, err = pebble.New(tempDir, nil)
 	}
