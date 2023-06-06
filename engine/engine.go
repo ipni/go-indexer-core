@@ -171,6 +171,8 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 }
 
 func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
+	mhsCount := len(mhs)
+
 	if e.resultCache != nil {
 		var addToCache, mhsCopy []multihash.Multihash
 		// If using a value store, make sure give a copy of mhs to the
@@ -226,6 +228,13 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		e.updateCacheStats()
 	}
 
+	if e.dhMergeURL != "" {
+		err := e.storeDH(context.Background(), value, mhs)
+		if err != nil {
+			return err
+		}
+	}
+
 	if e.valueStore != nil {
 		err := e.valueStore.Put(value, mhs...)
 		if err != nil {
@@ -233,13 +242,8 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		}
 	}
 
-	if e.dhMergeURL != "" {
-		err := e.storeDH(context.Background(), value, mhs)
-		if err != nil {
-			return err
-		}
-	}
-	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(len(mhs))))
+	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(mhsCount)))
+
 	return nil
 }
 
