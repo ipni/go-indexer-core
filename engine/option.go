@@ -17,7 +17,6 @@ type config struct {
 	dhBatchSize        int
 	dhstoreURL         string
 	dhstoreClusterURLs []string
-	vsNoNewMH          bool
 	httpClientTimeout  time.Duration
 }
 
@@ -93,16 +92,6 @@ func WithDHStoreCluster(clusterUrls []string) Option {
 			}
 		}
 		c.dhstoreClusterURLs = urls
-		return nil
-	}
-}
-
-// WithVSNoNewMH blocks putting new multihashes into the value store when set
-// to true. New indexes will still be send to the DHStore service if one is
-// configured.
-func WithVSNoNewMH(ok bool) Option {
-	return func(c *config) error {
-		c.vsNoNewMH = ok
 		return nil
 	}
 }
