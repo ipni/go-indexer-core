@@ -23,7 +23,7 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return New(resultCache, valueStore, WithCacheOnPut(cacheOnPut))
+	return New(valueStore, WithCache(resultCache), WithCacheOnPut(cacheOnPut))
 }
 
 func TestPassthrough(t *testing.T) {
@@ -562,7 +562,7 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng := New(nil, valueStore)
+	eng := New(valueStore)
 
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
@@ -614,7 +614,7 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng = New(nil, valueStore)
+	eng = New(valueStore)
 
 	// Confirm that codec is BinaryJson after starting engine.
 	vsi, err = vsinfo.Load(tempDir, vsType)
