@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/metrics"
@@ -13,8 +12,6 @@ import (
 	"github.com/multiformats/go-multihash"
 	"go.opencensus.io/stats"
 )
-
-var log = logging.Logger("indexer-core")
 
 // Engine is an implementation of indexer.Interface that combines a value store
 // and an optional result cache.
