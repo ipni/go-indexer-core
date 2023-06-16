@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -48,19 +49,30 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 	if dhstoreURL == "" {
 		return nil, errors.New("dhstore url required")
 	}
+	dhsURL, err := url.Parse(dhstoreURL)
+	if err != nil {
+		return nil, err
+	}
 
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
 	}
 
-	const mdSuffix = "/metadata"
-	dhMergeURL := opts.dhstoreURL + "/multihash"
-	dhMetaURL := opts.dhstoreURL + mdSuffix
+	const (
+		mdPath = "metadata"
+		mhPath = "multihash"
+	)
+	dhMergeURL := dhsURL.JoinPath(mhPath)
+	dhMetaURL := dhsURL.JoinPath(mdPath)
 	dhMetaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
-	dhMetaDeleteURLs[0] = dhMetaURL
-	for i, u := range opts.dhstoreClusterURLs {
-		dhMetaDeleteURLs[i+1] = u + mdSuffix
+	dhMetaDeleteURLs[0] = dhMetaURL.String()
+	for i, ustr := range opts.dhstoreClusterURLs {
+		u, err := url.Parse(ustr)
+		if err != nil {
+			return nil, err
+		}
+		dhMetaDeleteURLs[i+1] = u.JoinPath(mdPath).String()
 	}
 
 	maxIdleConns := defaultMaxIdleConns
@@ -75,8 +87,8 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 
 	return &dhStore{
 		dhBatchSize:      opts.dhBatchSize,
-		dhMergeURL:       dhMergeURL,
-		dhMetaURL:        dhMetaURL,
+		dhMergeURL:       dhMergeURL.String(),
+		dhMetaURL:        dhMetaURL.String(),
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
 
 		httpClient: httpClient,

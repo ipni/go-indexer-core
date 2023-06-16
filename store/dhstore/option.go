@@ -14,7 +14,6 @@ const (
 // config contains all options for configuring Engine.
 type config struct {
 	dhBatchSize        int
-	dhstoreURL         string
 	dhstoreClusterURLs []string
 	httpClientTimeout  time.Duration
 }
@@ -42,21 +41,6 @@ func WithDHBatchSize(size int) Option {
 	return func(c *config) error {
 		if size > 0 {
 			c.dhBatchSize = size
-		}
-		return nil
-	}
-}
-
-// WithDHStore sets the base URL for the dhstore service, and tells the core to
-// send its values to the dhstore.
-func WithDHStore(dhsURL string) Option {
-	return func(c *config) error {
-		if dhsURL != "" {
-			u, err := url.Parse(dhsURL)
-			if err != nil {
-				return err
-			}
-			c.dhstoreURL = u.String()
 		}
 		return nil
 	}
