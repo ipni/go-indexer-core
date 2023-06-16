@@ -44,24 +44,23 @@ var (
 	ErrNotSupported = errors.New("not supported")
 )
 
-func New(dhstoreURL string, options ...Option) *dhStore {
-	opts, err := getOpts(options)
-	if err != nil {
-		panic(err.Error())
+func New(dhstoreURL string, options ...Option) (*dhStore, error) {
+	if dhstoreURL == "" {
+		return nil, errors.New("dhstore url required")
 	}
 
-	var dhMergeURL, dhMetaURL string
-	var dhMetaDeleteURLs []string
-	if opts.dhstoreURL != "" {
-		mdSuffix := "/metadata"
-		dhMergeURL = opts.dhstoreURL + "/multihash"
-		dhMetaURL = opts.dhstoreURL + mdSuffix
-		dhMetaDeleteURLs = make([]string, len(opts.dhstoreClusterURLs)+1)
-		dhMetaDeleteURLs[0] = dhMetaURL
-		for i, u := range opts.dhstoreClusterURLs {
-			dhMetaDeleteURLs[i+1] = u + mdSuffix
-		}
+	opts, err := getOpts(options)
+	if err != nil {
+		return nil, err
+	}
 
+	const mdSuffix = "/metadata"
+	dhMergeURL := opts.dhstoreURL + "/multihash"
+	dhMetaURL := opts.dhstoreURL + mdSuffix
+	dhMetaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
+	dhMetaDeleteURLs[0] = dhMetaURL
+	for i, u := range opts.dhstoreClusterURLs {
+		dhMetaDeleteURLs[i+1] = u + mdSuffix
 	}
 
 	maxIdleConns := defaultMaxIdleConns
@@ -81,7 +80,7 @@ func New(dhstoreURL string, options ...Option) *dhStore {
 		dhMetaDeleteURLs: dhMetaDeleteURLs,
 
 		httpClient: httpClient,
-	}
+	}, nil
 }
 
 func (s *dhStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
