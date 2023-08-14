@@ -1,6 +1,6 @@
 module github.com/ipni/go-indexer-core
 
-go 1.19
+go 1.20
 
 require (
 	// Note, cockroachdb/pebble has no tagged release. Instead, it uses branches.
