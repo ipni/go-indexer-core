@@ -131,7 +131,6 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-	var mergeCount int
 	merges := make([]client.Index, 0, s.dhBatchSize)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
@@ -153,7 +152,6 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 			if err != nil {
 				return err
 			}
-			mergeCount += len(merges)
 			merges = merges[:0]
 		}
 	}
@@ -164,10 +162,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		if err != nil {
 			return err
 		}
-		mergeCount += len(merges)
 	}
-
-	log.Infow("Sent metadata and merges to dhstore", "mergeCount", mergeCount, "elapsed", time.Since(start).String())
 
 	return nil
 }
@@ -188,10 +183,10 @@ func (s *dhStore) RemoveProviderContext(providerID peer.ID, contextID []byte) er
 
 	vk := dhash.CreateValueKey(providerID, contextID)
 	hvk := dhash.SHA256(vk, nil)
-	b58hvk := base58.Encode(hvk)
+	b58hvk := "/" + base58.Encode(hvk)
 
 	for _, u := range s.dhMetaDeleteURLs {
-		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+"/"+b58hvk, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+b58hvk, nil)
 		if err != nil {
 			return err
 		}
@@ -205,14 +200,14 @@ func (s *dhStore) RemoveProviderContext(providerID peer.ID, contextID []byte) er
 		rsp.Body.Close()
 
 		if rsp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to delete metadata: %v", http.StatusText(rsp.StatusCode))
+			return fmt.Errorf("failed to delete metadata at %s: %s", u, http.StatusText(rsp.StatusCode))
 		}
 
 		stats.RecordWithOptions(context.Background(),
 			stats.WithTags(tag.Insert(metrics.Method, "delete")),
 			stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-		log.Infow("Sent metadata delete to dhstore", "url", u, "valueKey", hvk)
+		log.Infow("Sent metadata delete to dhstore", "url", u, "provider", providerID)
 	}
 	return nil
 }
@@ -314,12 +309,13 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 	}
 	rsp.Body.Close()
 
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send merges: %v", http.StatusText(rsp.StatusCode))
+	}
+
 	stats.RecordWithOptions(context.Background(),
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
 
-	if rsp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("failed to send metadata: %v", http.StatusText(rsp.StatusCode))
-	}
 	return nil
 }
