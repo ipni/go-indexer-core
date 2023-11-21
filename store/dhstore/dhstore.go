@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -197,6 +198,7 @@ func (s *dhStore) RemoveProviderContext(providerID peer.ID, contextID []byte) er
 		if err != nil {
 			return err
 		}
+		io.Copy(io.Discard, rsp.Body)
 		rsp.Body.Close()
 
 		if rsp.StatusCode != http.StatusOK {
@@ -276,6 +278,7 @@ func (s *dhStore) sendDHMetadata(ctx context.Context, putMetaReq client.PutMetad
 	if err != nil {
 		return err
 	}
+	io.Copy(io.Discard, rsp.Body)
 	rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
@@ -307,6 +310,7 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 	if err != nil {
 		return err
 	}
+	io.Copy(io.Discard, rsp.Body)
 	rsp.Body.Close()
 
 	if rsp.StatusCode != http.StatusAccepted {
