@@ -56,16 +56,11 @@ import (
 func main() {
 	// Configuration values.
 	const valueStoreDir = "/tmp/indexvaluestore"
-	const storeType = "sth"
 	const cacheSize = 65536
 
 	// Create value store of configured type.
 	os.Mkdir(valueStoreDir, 0770)
-	var valueStore indexer.Interface
-	var err error
-	if storeType == "pebble" {
-		valueStore, err = pebble.New(valueStoreDir, nil)
-	}
+    valueStore, err := pebble.New(valueStoreDir, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

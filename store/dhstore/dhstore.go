@@ -33,11 +33,12 @@ const defaultMaxIdleConns = 128
 var log = logging.Logger("store/pebble")
 
 type dhStore struct {
-	dhBatchSize      int
-	dhMergeURL       string
-	dhMetaURL        string
-	dhMetaDeleteURLs []string
-	httpClient       http.Client
+	batchSize       int
+	mergeURL        string
+	metaURL         string
+	indexDeleteURLs []string
+	metaDeleteURLs  []string
+	httpClient      http.Client
 }
 
 var (
@@ -64,16 +65,19 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 		mdPath = "metadata"
 		mhPath = "multihash"
 	)
-	dhMergeURL := dhsURL.JoinPath(mhPath)
-	dhMetaURL := dhsURL.JoinPath(mdPath)
-	dhMetaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
-	dhMetaDeleteURLs[0] = dhMetaURL.String()
+	mergeURL := dhsURL.JoinPath(mhPath)
+	indexDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
+	indexDeleteURLs[0] = mergeURL.String()
+	metaURL := dhsURL.JoinPath(mdPath)
+	metaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
+	metaDeleteURLs[0] = metaURL.String()
 	for i, ustr := range opts.dhstoreClusterURLs {
 		u, err := url.Parse(ustr)
 		if err != nil {
 			return nil, err
 		}
-		dhMetaDeleteURLs[i+1] = u.JoinPath(mdPath).String()
+		metaDeleteURLs[i+1] = u.JoinPath(mdPath).String()
+		indexDeleteURLs[i+1] = u.JoinPath(mhPath).String()
 	}
 
 	maxIdleConns := defaultMaxIdleConns
@@ -87,12 +91,12 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 	}
 
 	return &dhStore{
-		dhBatchSize:      opts.dhBatchSize,
-		dhMergeURL:       dhMergeURL.String(),
-		dhMetaURL:        dhMetaURL.String(),
-		dhMetaDeleteURLs: dhMetaDeleteURLs,
-
-		httpClient: httpClient,
+		batchSize:       opts.batchSize,
+		mergeURL:        mergeURL.String(),
+		metaURL:         metaURL.String(),
+		metaDeleteURLs:  metaDeleteURLs,
+		indexDeleteURLs: indexDeleteURLs,
+		httpClient:      httpClient,
 	}, nil
 }
 
@@ -115,14 +119,14 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		return errors.New("value missing metadata")
 	}
 
-	ctx := context.Background()
-
 	metaReq, valueKey, err := makeDHMetadataRequest(value)
 	if err != nil {
 		return err
 	}
 
 	start := time.Now()
+
+	ctx := context.Background()
 	err = s.sendDHMetadata(ctx, metaReq)
 	if err != nil {
 		return err
@@ -132,7 +136,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-	merges := make([]client.Index, 0, s.dhBatchSize)
+	merges := make([]client.Index, 0, s.batchSize)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
 		if err != nil {
@@ -169,7 +173,43 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 }
 
 func (s *dhStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
-	return ErrNotSupported
+	ctx := context.Background()
+	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
+	dels := make([]client.Index, 0, s.batchSize)
+
+	for _, mh := range mhs {
+		dm, err := multihash.Decode(mh)
+		if err != nil {
+			return err
+		}
+		if dm.Code == multihash.DBL_SHA2_256 {
+			return errors.New("put double-hashed index not supported")
+		}
+
+		del, err := makeDHMerge(mh, valueKey)
+		if err != nil {
+			return err
+		}
+
+		dels = append(dels, del)
+		if len(dels) == cap(dels) {
+			err = s.sendDHDeleteIndexRequest(ctx, dels)
+			if err != nil {
+				return err
+			}
+			dels = dels[:0]
+		}
+	}
+
+	// Send remaining delete requests.
+	if len(dels) != 0 {
+		err := s.sendDHDeleteIndexRequest(ctx, dels)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *dhStore) RemoveProvider(ctx context.Context, providerID peer.ID) error {
@@ -177,7 +217,7 @@ func (s *dhStore) RemoveProvider(ctx context.Context, providerID peer.ID) error 
 }
 
 func (s *dhStore) RemoveProviderContext(providerID peer.ID, contextID []byte) error {
-	if len(s.dhMetaDeleteURLs) == 0 {
+	if len(s.metaDeleteURLs) == 0 {
 		return nil
 	}
 	ctx := context.Background()
@@ -186,7 +226,7 @@ func (s *dhStore) RemoveProviderContext(providerID peer.ID, contextID []byte) er
 	hvk := dhash.SHA256(vk, nil)
 	b58hvk := "/" + base58.Encode(hvk)
 
-	for _, u := range s.dhMetaDeleteURLs {
+	for _, u := range s.metaDeleteURLs {
 		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u+b58hvk, nil)
 		if err != nil {
 			return err
@@ -268,7 +308,7 @@ func (s *dhStore) sendDHMetadata(ctx context.Context, putMetaReq client.PutMetad
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.dhMetaURL, bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.metaURL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -298,7 +338,7 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.dhMergeURL, bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.mergeURL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -321,5 +361,37 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
 
+	return nil
+}
+
+func (s *dhStore) sendDHDeleteIndexRequest(ctx context.Context, merges []client.Index) error {
+	mergeReq := client.MergeIndexRequest{
+		Merges: merges,
+	}
+
+	data, err := json.Marshal(mergeReq)
+	if err != nil {
+		return err
+	}
+
+	for _, u := range s.indexDeleteURLs {
+		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, bytes.NewBuffer(data))
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		rsp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		io.Copy(io.Discard, rsp.Body)
+		rsp.Body.Close()
+
+		if rsp.StatusCode != http.StatusAccepted {
+			return fmt.Errorf("failed to send delete requests: %v", http.StatusText(rsp.StatusCode))
+		}
+	}
 	return nil
 }
