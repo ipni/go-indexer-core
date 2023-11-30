@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	defaultDHBatchSize = 4096
+	defaultBatchSize   = 4096
 	defaultHttpTimeout = 5 * time.Second
 )
 
 // config contains all options for configuring Engine.
 type config struct {
-	dhBatchSize        int
+	batchSize          int
 	dhstoreClusterURLs []string
 	httpClientTimeout  time.Duration
 }
@@ -23,7 +23,7 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		dhBatchSize:       defaultDHBatchSize,
+		batchSize:         defaultBatchSize,
 		httpClientTimeout: defaultHttpTimeout,
 	}
 
@@ -40,7 +40,7 @@ func getOpts(opts []Option) (config, error) {
 func WithDHBatchSize(size int) Option {
 	return func(c *config) error {
 		if size > 0 {
-			c.dhBatchSize = size
+			c.batchSize = size
 		}
 		return nil
 	}
