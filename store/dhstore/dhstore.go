@@ -374,24 +374,40 @@ func (s *dhStore) sendDHDeleteIndexRequest(ctx context.Context, merges []client.
 		return err
 	}
 
+	// Buffer channel to all goroutines can write without a channel reader.
+	errs := make(chan error, len(s.indexDeleteURLs))
 	for _, u := range s.indexDeleteURLs {
-		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, bytes.NewBuffer(data))
+		go func(dhURL string) {
+			errs <- s.sendDelRequest(ctx, dhURL, data)
+		}(u)
+	}
+
+	for i := 0; i < len(s.indexDeleteURLs); i++ {
+		err = <-errs
 		if err != nil {
+			// Return first error. Goroutines will complete because errs
+			// channel is buffered to allow them all to write.
 			return err
 		}
+		// No need to check context, because goroutines will exit if canceled.
+	}
+	return nil
+}
 
-		req.Header.Set("Content-Type", "application/json")
-
-		rsp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		io.Copy(io.Discard, rsp.Body)
-		rsp.Body.Close()
-
-		if rsp.StatusCode != http.StatusAccepted {
-			return fmt.Errorf("failed to send delete requests: %v", http.StatusText(rsp.StatusCode))
-		}
+func (s *dhStore) sendDelRequest(ctx context.Context, dhURL string, reqData []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, dhURL, bytes.NewBuffer(reqData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	rsp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	io.Copy(io.Discard, rsp.Body)
+	rsp.Body.Close()
+	if rsp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("failed to send delete requests: %v", http.StatusText(rsp.StatusCode))
 	}
 	return nil
 }
