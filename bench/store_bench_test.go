@@ -85,7 +85,7 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 		pebbleOpts := &pb2.Options{
 			BytesPerSync:                10 << 20, // 10 MiB
 			WALBytesPerSync:             10 << 20, // 10 MiB
-			MaxConcurrentCompactions:    10,
+			MaxConcurrentCompactions:    func() int { return 10 },
 			MemTableSize:                64 << 20, // 64 MiB
 			MemTableStopWritesThreshold: 4,
 			LBaseMaxBytes:               64 << 20, // 64 MiB

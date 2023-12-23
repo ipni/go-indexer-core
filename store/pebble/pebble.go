@@ -107,11 +107,9 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 		log.Errorw("can't find multihash", "err", err)
 		return nil, false, err
 	}
-	vkbcpy := make([]byte, len(vkb))
-	copy(vkbcpy, vkb) // TODO think if we really need to copy
-	_ = vkbClose.Close()
 
-	vks, err := s.vcodec.unmarshalValueKeys(vkbcpy)
+	vks, err := s.vcodec.unmarshalValueKeys(vkb)
+	_ = vkbClose.Close()
 	if err != nil {
 		return nil, false, err
 	}
@@ -130,11 +128,9 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 			log.Errorw("can't find value", "err", err)
 			return nil, false, err
 		}
-		vcpy := make([]byte, len(vs))
-		copy(vcpy, vs)
-		_ = vCloser.Close()
 
-		v, err := s.vcodec.unmarshalValue(vcpy)
+		v, err := s.vcodec.unmarshalValue(vs)
+		_ = vCloser.Close()
 		if err != nil {
 			return nil, false, err
 		}
@@ -148,75 +144,85 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 		return errors.New("value missing metadata")
 	}
 
-	keygen := s.p.leaseBlake3Keyer()
-	vk, err := keygen.valueKey(&v, false)
-	if err != nil {
-		return err
-	}
-
-	b := s.db.NewBatch()
-	defer b.Close()
-
-	// Sort multihashes before insertion to reduce cursor churn.
-	// Note that since multihash key is essentially a prefix plus the multihash itself,
-	// sorting the multihashes means their resulting key will also be sorted.
-	// The ordered key insertion is the main thing we care about here.
+	// Sort multihashes before insertion to reduce cursor churn. Since a
+	// multihash key is a prefix plus the multihash itself, sorting the
+	// multihashes means their resulting keys will also be sorted.
 	sort.Slice(mhs, func(i, j int) bool {
 		return bytes.Compare(mhs[i], mhs[j]) == -1
 	})
 
+	keygen := s.p.leaseBlake3Keyer()
+	defer keygen.Close()
+	vk, err := keygen.valueKey(&v, false)
+	if err != nil {
+		return err
+	}
+	defer vk.Close()
+
+	b := s.db.NewBatch()
+	defer b.Close()
+
 	for _, mh := range mhs {
 		mhk, err := keygen.multihashKey(mh)
 		if err != nil {
-			_ = keygen.Close()
 			return err
 		}
-		if err := b.Merge(mhk.buf, vk.buf, pebble.NoSync); err != nil {
-			_ = keygen.Close()
-			return err
-		}
+		err = b.Merge(mhk.buf, vk.buf, pebble.NoSync)
 		_ = mhk.Close()
+		if err != nil {
+			return err
+		}
 	}
-	_ = keygen.Close()
 
 	vs, c, err := s.vcodec.marshalValue(&v)
 	if err != nil {
 		return err
 	}
+	defer c.Close()
+
 	// Don't bother checking if the value has changed, and write it anyway. Because, otherwise
 	// we need to use an IndexedBatch which is generally slower than Batch, and the majority
 	// of writing here is the writing of multihashes.
 	//
 	// TODO: experiment to see if it is indeed faster to always write the value instead of
 	//       check if it's changed before writing.
-	if err := b.Set(vk.buf, vs, pebble.NoSync); err != nil {
+	if err = b.Set(vk.buf, vs, pebble.NoSync); err != nil {
 		return err
 	}
-	_ = vk.Close()
-	_ = c.Close()
 
 	return b.Commit(pebble.NoSync)
 }
 
 func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
+	// Sort multihashes before insertion to reduce cursor churn. Since a
+	// multihash key is a prefix plus the multihash itself, sorting the
+	// multihashes means their resulting keys will also be sorted.
+	sort.Slice(mhs, func(i, j int) bool {
+		return bytes.Compare(mhs[i], mhs[j]) == -1
+	})
+
 	keygen := s.p.leaseBlake3Keyer()
+	defer keygen.Close()
 	dvk, err := keygen.valueKey(&v, true)
 	if err != nil {
 		return err
 	}
+	defer dvk.Close()
+
 	b := s.db.NewBatch()
+	defer b.Close()
+
 	for _, mh := range mhs {
 		mhk, err := keygen.multihashKey(mh)
 		if err != nil {
 			return err
 		}
-		if err := b.Merge(mhk.buf, dvk.buf, pebble.NoSync); err != nil {
+		err = b.Merge(mhk.buf, dvk.buf, pebble.NoSync)
+		_ = mhk.Close()
+		if err != nil {
 			return err
 		}
-		_ = mhk.Close()
 	}
-	_ = dvk.Close()
-	_ = keygen.Close()
 
 	// TODO: opportunistically delete garbage key value keys by checking a list
 	//       of removed providers during merge.
@@ -368,11 +374,8 @@ func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
 			return nil, nil, err
 		}
 
-		bvcpy := make([]byte, len(bv))
-		copy(bvcpy, bv)
+		v, err := i.vcodec.unmarshalValue(bv)
 		_ = c.Close()
-
-		v, err := i.vcodec.unmarshalValue(bvcpy)
 		if err != nil {
 			return nil, nil, err
 		}
