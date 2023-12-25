@@ -329,7 +329,6 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal("Error putting batch of multihashes:", err)
 	}
-	_ = s.Flush()
 
 	vals, found, err := s.Get(batch[2])
 	if err != nil {
@@ -343,12 +342,10 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 	}
 
 	t.Log("Remove indexes")
-	err = s.Remove(value, batch[:1]...)
+	err = s.Remove(value, batch[1:]...)
 	if err != nil {
 		t.Fatal("Error removing single multihash:", err)
 	}
-
-	_ = s.Flush()
 
 	vals, found, err = s.Get(batch[0])
 	if err != nil {
@@ -361,23 +358,19 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 		t.Error("wrong number of values returned")
 	}
 
-	// This test fails, because removal is not visible until after compaction.
-	/*
-		_, found, err = s.Get(batch[2])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if found {
-			t.Error("multihash was not removed")
-		}
-	*/
+	_, found, err = s.Get(batch[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Error("multihash was not removed")
+	}
 
 	mhs = RandomMultihashes(5)
 	err = s.Put(value, mhs...)
 	if err != nil {
 		t.Fatal("Error putting batch of multihashes:", err)
 	}
-	_ = s.Flush()
 
 	vals, found, err = s.Get(mhs[0])
 	if err != nil {

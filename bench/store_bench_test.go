@@ -95,7 +95,7 @@ func newPebbleSubject(b *testing.B) func() (indexer.Interface, error) {
 		}
 
 		pebbleOpts.Experimental.ReadCompactionRate = 10 << 20 // 20 MiB
-		pebbleOpts.Experimental.MinDeletionRate = 128 << 20   // 128 MiB
+		//pebbleOpts.Experimental.MinDeletionRate = 128 << 20   // 128 MiB
 
 		const numLevels = 7
 		pebbleOpts.Levels = make([]pb2.LevelOptions, numLevels)

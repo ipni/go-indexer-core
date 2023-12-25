@@ -23,7 +23,13 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return New(valueStore, WithCache(resultCache), WithCacheOnPut(cacheOnPut))
+	eng := New(valueStore, WithCache(resultCache), WithCacheOnPut(cacheOnPut))
+	t.Cleanup(func() {
+		if err := eng.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return eng
 }
 
 func TestPassthrough(t *testing.T) {
@@ -107,6 +113,7 @@ func TestPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error putting multiple multihashes:", err)
 	}
+	eng.valueStore.Flush()
 	_, found = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("mhs[4] should not be in result cache")
@@ -152,11 +159,6 @@ func TestPassthrough(t *testing.T) {
 	_, found = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("remove many did not remove value from result cache")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -333,11 +335,6 @@ func TestCacheOnPut(t *testing.T) {
 	if len(values) != 2 {
 		t.Fatal("values not updated in resutl cache")
 	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestRemoveProviderContext(t *testing.T) {
@@ -507,27 +504,16 @@ func TestRemoveProviderContext(t *testing.T) {
 	if found {
 		t.Fatal("multihash should not have been found")
 	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestOnlyValueStore(t *testing.T) {
 	eng := initEngine(t, false, false)
 	e2e(t, eng)
-	if err := eng.Close(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestBoth(t *testing.T) {
 	eng := initEngine(t, true, false)
 	e2e(t, eng)
-	if err := eng.Close(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestMultiCodec(t *testing.T) {
@@ -615,6 +601,11 @@ func TestMultiCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng = New(valueStore)
+	t.Cleanup(func() {
+		if err := eng.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	// Confirm that codec is BinaryJson after starting engine.
 	vsi, err = vsinfo.Load(tempDir, vsType)
@@ -647,11 +638,6 @@ func TestMultiCodec(t *testing.T) {
 	}
 	if !vals[1].Equal(value2) {
 		t.Errorf("Got wrong second value")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -779,7 +765,6 @@ func e2e(t *testing.T, eng *Engine) {
 	if len(i) != 1 {
 		t.Errorf("wrong number of values after remove")
 	}
-
 }
 
 func SizeTest(t *testing.T) {
@@ -809,10 +794,5 @@ func SizeTest(t *testing.T) {
 	}
 	if size == int64(0) {
 		t.Error("failed to compute storage size")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
