@@ -12,6 +12,7 @@ import (
 	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
@@ -109,7 +110,11 @@ func TestPassthrough(t *testing.T) {
 
 	// Putting many should only update in cache the ones
 	// already stored, adding all to value store.
-	err = eng.Put(value1, mhs[2:]...)
+	//
+	// Make copy so that tests are no affected by Put reordering multihashes.
+	mhsCpy := make([]multihash.Multihash, len(mhs)-2)
+	copy(mhsCpy, mhs[2:])
+	err = eng.Put(value1, mhsCpy...)
 	if err != nil {
 		t.Fatal("Error putting multiple multihashes:", err)
 	}
@@ -121,11 +126,11 @@ func TestPassthrough(t *testing.T) {
 
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 2 {
-		t.Fatal("value not updated in value store after PutMany")
+		t.Fatal("value not updated in value store after Put")
 	}
 	values, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
-		t.Fatal("value not updated in result cache after PutMany")
+		t.Fatal("value not updated in result cache after Put")
 	}
 
 	// This multihash should only be found in value store
@@ -138,8 +143,8 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("single put went to result cache")
 	}
 
-	// RemoveMany should remove the corresponding from both storages
-	err = eng.Remove(value1, mhs[2:]...)
+	// Remove should remove the corresponding from both storages
+	err = eng.Remove(value1, mhsCpy...)
 	if err != nil {
 		t.Fatal("Error removing multiple multihashes:", err)
 	}
@@ -149,16 +154,16 @@ func TestPassthrough(t *testing.T) {
 	}
 	values, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
-		t.Fatal("value not removed from result cache after RemoveMany")
+		t.Fatal("value not removed from result cache after Remove")
 	}
 
 	_, found, _ = eng.valueStore.Get(mhs[4])
 	if found {
-		t.Fatal("remove many did not remove values from value store")
+		t.Fatal("remove did not remove value from value store")
 	}
 	_, found = eng.resultCache.Get(mhs[4])
 	if found {
-		t.Fatal("remove many did not remove value from result cache")
+		t.Fatal("remove did not remove value from result cache")
 	}
 }
 

@@ -139,6 +139,7 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	return values, len(values) != 0, nil
 }
 
+// Put implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	if len(v.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
@@ -149,9 +150,6 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	// multihashes means their resulting keys will also be sorted.
 	if len(mhs) > 1 {
 		// Make a copy to reorder.
-		cpy := make([]multihash.Multihash, len(mhs))
-		copy(cpy, mhs)
-		mhs = cpy
 		sort.Slice(mhs, func(i, j int) bool {
 			return bytes.Compare(mhs[i], mhs[j]) == -1
 		})
@@ -199,15 +197,12 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	return b.Commit(pebble.NoSync)
 }
 
+// Remove implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 	// Sort multihashes before insertion to reduce cursor churn. Since a
 	// multihash key is a prefix plus the multihash itself, sorting the
 	// multihashes means their resulting keys will also be sorted.
 	if len(mhs) > 1 {
-		// Make a copy to reorder.
-		cpy := make([]multihash.Multihash, len(mhs))
-		copy(cpy, mhs)
-		mhs = cpy
 		sort.Slice(mhs, func(i, j int) bool {
 			return bytes.Compare(mhs[i], mhs[j]) == -1
 		})
@@ -340,13 +335,10 @@ func (s *store) Iter() (indexer.Iterator, error) {
 	}
 	_ = keygen.Close()
 	snapshot := s.db.NewSnapshot()
-	iter, err := snapshot.NewIter(&pebble.IterOptions{
+	iter := snapshot.NewIter(&pebble.IterOptions{
 		LowerBound: start.buf,
 		UpperBound: end.buf,
 	})
-	if err != nil {
-		return nil, err
-	}
 	iter.First()
 	return &iterator{
 		snapshot: snapshot,
