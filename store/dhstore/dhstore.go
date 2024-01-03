@@ -71,11 +71,7 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 	metaURL := dhsURL.JoinPath(mdPath)
 	metaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
 	metaDeleteURLs[0] = metaURL.String()
-	for i, ustr := range opts.dhstoreClusterURLs {
-		u, err := url.Parse(ustr)
-		if err != nil {
-			return nil, err
-		}
+	for i, u := range opts.dhstoreClusterURLs {
 		metaDeleteURLs[i+1] = u.JoinPath(mdPath).String()
 		indexDeleteURLs[i+1] = u.JoinPath(mhPath).String()
 	}
