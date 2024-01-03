@@ -171,7 +171,11 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 func (s *dhStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	ctx := context.Background()
 	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
-	dels := make([]client.Index, 0, s.batchSize)
+	size := s.batchSize
+	if len(mhs) < size {
+		size = len(mhs)
+	}
+	dels := make([]client.Index, 0, size)
 
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
