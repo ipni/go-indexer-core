@@ -71,11 +71,7 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 	metaURL := dhsURL.JoinPath(mdPath)
 	metaDeleteURLs := make([]string, len(opts.dhstoreClusterURLs)+1)
 	metaDeleteURLs[0] = metaURL.String()
-	for i, ustr := range opts.dhstoreClusterURLs {
-		u, err := url.Parse(ustr)
-		if err != nil {
-			return nil, err
-		}
+	for i, u := range opts.dhstoreClusterURLs {
 		metaDeleteURLs[i+1] = u.JoinPath(mdPath).String()
 		indexDeleteURLs[i+1] = u.JoinPath(mhPath).String()
 	}
@@ -136,7 +132,11 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-	merges := make([]client.Index, 0, s.batchSize)
+	size := s.batchSize
+	if len(mhs) < size {
+		size = len(mhs)
+	}
+	merges := make([]client.Index, 0, size)
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)
 		if err != nil {
@@ -175,7 +175,11 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 func (s *dhStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	ctx := context.Background()
 	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
-	dels := make([]client.Index, 0, s.batchSize)
+	size := s.batchSize
+	if len(mhs) < size {
+		size = len(mhs)
+	}
+	dels := make([]client.Index, 0, size)
 
 	for _, mh := range mhs {
 		dm, err := multihash.Decode(mh)

@@ -71,7 +71,7 @@ func (k *key) prefix() keyPrefix {
 	}
 }
 
-// next returns the next key after the current kye in lexicographical order.
+// next returns the next key after the current key in lexicographical order.
 // See: bytes.Compare
 func (k *key) next() *key {
 	var next *key

@@ -25,15 +25,14 @@ type valueKeysValueMerger struct {
 func newValueKeysMerger(c *codec) *pebble.Merger {
 	return &pebble.Merger{
 		Merge: func(k, value []byte) (pebble.ValueMerger, error) {
-			// Fall back on default merger if the key is not of type multihash, i.e. the only key
-			// type that corresponds to value-keys.
-			switch keyPrefix(k[0]) {
-			case multihashKeyPrefix:
+			// Use specialized merger for multihash keys.
+			if keyPrefix(k[0]) == multihashKeyPrefix {
 				v := &valueKeysValueMerger{c: c}
 				return v, v.MergeNewer(value)
-			default:
-				return pebble.DefaultMerger.Merge(k, value)
 			}
+			// Use default merger for non-multihash type keys, i.e. the
+			// only key type that corresponds to value-keys.
+			return pebble.DefaultMerger.Merge(k, value)
 		},
 		Name: valueKeysMergerName,
 	}
@@ -43,8 +42,9 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	if len(value) == 0 {
 		return nil
 	}
-	prefix := keyPrefix(value[0])
-	switch prefix {
+	// Look at value prefix to determine if this value is being added to or
+	// removed from the set of values the multihash key maps to.
+	switch keyPrefix(value[0]) {
 	case mergeDeleteKeyPrefix:
 		v.addToDeletes(value[1:])
 	case valueKeyPrefix:
@@ -63,9 +63,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 //
 // See: https://github.com/ipni/go-indexer-core/issues/94
 func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
-
 	offset := len(value) % marshalledValueKeyLength
-
 	if offset < 0 {
 		return errors.New("invalid marshalled value key")
 	}

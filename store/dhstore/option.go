@@ -14,7 +14,7 @@ const (
 // config contains all options for configuring Engine.
 type config struct {
 	batchSize          int
-	dhstoreClusterURLs []string
+	dhstoreClusterURLs []*url.URL
 	httpClientTimeout  time.Duration
 }
 
@@ -56,14 +56,14 @@ func WithDHStoreCluster(clusterUrls []string) Option {
 		if len(clusterUrls) == 0 {
 			return nil
 		}
-		urls := make([]string, 0, len(clusterUrls))
+		urls := make([]*url.URL, 0, len(clusterUrls))
 		for _, clusterURL := range clusterUrls {
 			if clusterURL != "" {
 				u, err := url.Parse(clusterURL)
 				if err != nil {
 					return err
 				}
-				urls = append(urls, u.String())
+				urls = append(urls, u)
 			}
 		}
 		c.dhstoreClusterURLs = urls

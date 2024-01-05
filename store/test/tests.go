@@ -324,28 +324,68 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 	batch := mhs[1:]
 
 	// Put a batch of multihashes
-	t.Log("Put/Get a batch of multihashes")
+	t.Log("Put a batch of multihashes")
 	err = s.Put(value, batch...)
 	if err != nil {
 		t.Fatal("Error putting batch of multihashes:", err)
 	}
 
-	// Put a single multihash
-	t.Log("Remove key")
-	err = s.Remove(value, mhs[2:]...)
-	if err != nil {
-		t.Fatal("Error removing single multihash:", err)
-	}
-
-	i, found, err := s.Get(mhs[1])
+	vals, found, err := s.Get(batch[2])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Error("multihash should not have been removed")
+		t.Error("multihash should still be stored")
 	}
-	if len(i) != 1 {
-		t.Error("wrong number of multihashes removed")
+	if len(vals) != 1 {
+		t.Error("wrong number of values returned")
+	}
+
+	t.Log("Remove indexes")
+	err = s.Remove(value, batch[1:]...)
+	if err != nil {
+		t.Fatal("Error removing single multihash:", err)
+	}
+
+	vals, found, err = s.Get(batch[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Error("multihash should still be stored")
+	}
+	if len(vals) != 1 {
+		t.Error("wrong number of values returned")
+	}
+
+	_, found, err = s.Get(batch[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Error("multihash was not removed")
+	}
+
+	mhs = RandomMultihashes(5)
+	err = s.Put(value, mhs...)
+	if err != nil {
+		t.Fatal("Error putting batch of multihashes:", err)
+	}
+
+	vals, found, err = s.Get(mhs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Error("multihash should still be stored")
+	}
+	if len(vals) != 1 {
+		t.Error("wrong number of values returned")
+	}
+
+	err = s.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

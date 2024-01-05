@@ -12,6 +12,7 @@ import (
 	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multihash"
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
@@ -23,7 +24,13 @@ func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
 	if withCache {
 		resultCache = radixcache.New(100000)
 	}
-	return New(valueStore, WithCache(resultCache), WithCacheOnPut(cacheOnPut))
+	eng := New(valueStore, WithCache(resultCache), WithCacheOnPut(cacheOnPut))
+	t.Cleanup(func() {
+		if err := eng.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return eng
 }
 
 func TestPassthrough(t *testing.T) {
@@ -48,7 +55,7 @@ func TestPassthrough(t *testing.T) {
 
 	single := mhs[2]
 
-	// First put should go to value store
+	// First Put should go to value store.
 	err = eng.Put(value1, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
@@ -62,7 +69,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("single put went to result cache")
 	}
 
-	// Getting the value should put it in cache
+	// Getting the value should put it in cache.
 	v, found, _ := eng.Get(single)
 	if !found || !v[0].Equal(value1) {
 		t.Fatal("value not found in combined storage")
@@ -72,7 +79,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("multihash not moved to cache after miss get")
 	}
 
-	// Updating an existing multihash should also update cache
+	// Updating an existing multihash should also update cache.
 	err = eng.Put(value2, single)
 	if err != nil {
 		t.Fatal("Error putting single multihash:", err)
@@ -86,7 +93,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("values not updated in resutl cache")
 	}
 
-	// Remove should apply to both storages
+	// Remove should apply to both storage and cache.
 	err = eng.Remove(value1, single)
 	if err != nil {
 		t.Fatal(err)
@@ -101,12 +108,17 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("value not removed from result cache")
 	}
 
-	// Putting many should only update in cache the ones
-	// already stored, adding all to value store.
-	err = eng.Put(value1, mhs[2:]...)
+	// Put should only update in cache the ones already stored, adding all to
+	// value store.
+	//
+	// Make copy so that tests are not affected by Put reordering multihashes.
+	mhsCpy := make([]multihash.Multihash, len(mhs)-2)
+	copy(mhsCpy, mhs[2:])
+	err = eng.Put(value1, mhsCpy...)
 	if err != nil {
 		t.Fatal("Error putting multiple multihashes:", err)
 	}
+	eng.valueStore.Flush()
 	_, found = eng.resultCache.Get(mhs[4])
 	if found {
 		t.Fatal("mhs[4] should not be in result cache")
@@ -114,14 +126,14 @@ func TestPassthrough(t *testing.T) {
 
 	values, _, _ = eng.valueStore.Get(single)
 	if len(values) != 2 {
-		t.Fatal("value not updated in value store after PutMany")
+		t.Fatal("value not updated in value store after Put")
 	}
 	values, _ = eng.resultCache.Get(single)
 	if len(values) != 2 {
-		t.Fatal("value not updated in result cache after PutMany")
+		t.Fatal("value not updated in result cache after Put")
 	}
 
-	// This multihash should only be found in value store
+	// This multihash should only be found in value store.
 	_, found, _ = eng.valueStore.Get(mhs[4])
 	if !found {
 		t.Fatal("single put did not go to value store")
@@ -131,8 +143,8 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal("single put went to result cache")
 	}
 
-	// RemoveMany should remove the corresponding from both storages
-	err = eng.Remove(value1, mhs[2:]...)
+	// Remove should remove indexes from both storage and cache.
+	err = eng.Remove(value1, mhsCpy...)
 	if err != nil {
 		t.Fatal("Error removing multiple multihashes:", err)
 	}
@@ -142,21 +154,16 @@ func TestPassthrough(t *testing.T) {
 	}
 	values, _ = eng.resultCache.Get(single)
 	if len(values) != 1 {
-		t.Fatal("value not removed from result cache after RemoveMany")
+		t.Fatal("value not removed from result cache after Remove")
 	}
 
 	_, found, _ = eng.valueStore.Get(mhs[4])
 	if found {
-		t.Fatal("remove many did not remove values from value store")
+		t.Fatal("remove did not remove value from value store")
 	}
 	_, found = eng.resultCache.Get(mhs[4])
 	if found {
-		t.Fatal("remove many did not remove value from result cache")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
+		t.Fatal("remove did not remove value from result cache")
 	}
 }
 
@@ -333,11 +340,6 @@ func TestCacheOnPut(t *testing.T) {
 	if len(values) != 2 {
 		t.Fatal("values not updated in resutl cache")
 	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestRemoveProviderContext(t *testing.T) {
@@ -507,27 +509,16 @@ func TestRemoveProviderContext(t *testing.T) {
 	if found {
 		t.Fatal("multihash should not have been found")
 	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestOnlyValueStore(t *testing.T) {
 	eng := initEngine(t, false, false)
 	e2e(t, eng)
-	if err := eng.Close(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestBoth(t *testing.T) {
 	eng := initEngine(t, true, false)
 	e2e(t, eng)
-	if err := eng.Close(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestMultiCodec(t *testing.T) {
@@ -615,6 +606,11 @@ func TestMultiCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng = New(valueStore)
+	t.Cleanup(func() {
+		if err := eng.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	// Confirm that codec is BinaryJson after starting engine.
 	vsi, err = vsinfo.Load(tempDir, vsType)
@@ -647,11 +643,6 @@ func TestMultiCodec(t *testing.T) {
 	}
 	if !vals[1].Equal(value2) {
 		t.Errorf("Got wrong second value")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -779,7 +770,6 @@ func e2e(t *testing.T, eng *Engine) {
 	if len(i) != 1 {
 		t.Errorf("wrong number of values after remove")
 	}
-
 }
 
 func SizeTest(t *testing.T) {
@@ -809,10 +799,5 @@ func SizeTest(t *testing.T) {
 	}
 	if size == int64(0) {
 		t.Error("failed to compute storage size")
-	}
-
-	err = eng.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
