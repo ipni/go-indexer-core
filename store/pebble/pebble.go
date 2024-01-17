@@ -335,10 +335,13 @@ func (s *store) Iter() (indexer.Iterator, error) {
 	}
 	_ = keygen.Close()
 	snapshot := s.db.NewSnapshot()
-	iter := snapshot.NewIter(&pebble.IterOptions{
+	iter, err := snapshot.NewIter(&pebble.IterOptions{
 		LowerBound: start.buf,
 		UpperBound: end.buf,
 	})
+	if err != nil {
+		return nil, err
+	}
 	iter.First()
 	return &iterator{
 		snapshot: snapshot,
