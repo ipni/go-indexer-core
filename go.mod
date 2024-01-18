@@ -8,7 +8,7 @@ require (
 	// Note, cockroachdb/pebble has no tagged release. Instead, it uses branches.
 	// The version below is from: https://github.com/cockroachdb/pebble/tree/crl-release-22.1
 	// To update to latest, run: go get github.com/cockroachdb/pebble@crl-release-22.1
-	github.com/cockroachdb/pebble v0.0.0-20240116160621-aba7c0ca6483
+	github.com/cockroachdb/pebble v0.0.0-20240118181935-4e6dda452a50
 	github.com/gammazero/radixtree v0.3.1
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
