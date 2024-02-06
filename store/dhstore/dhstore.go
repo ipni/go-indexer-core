@@ -97,16 +97,8 @@ func New(dhstoreURL string, options ...Option) (*dhStore, error) {
 }
 
 func (s *dhStore) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
-	// Return not found for any double-hashed or invalid  multihash.
-	dm, err := multihash.Decode(m)
-	if err != nil {
-		log.Warnw("Get ignored bad multihash", "err", err)
-		return nil, false, nil
-	}
-	if dm.Code == multihash.DBL_SHA2_256 {
-		return nil, false, nil
-	}
-
+	// Log warning and return not found.
+	log.Warnw("Get ignored, request must be sent to dstore ")
 	return nil, false, nil
 }
 
