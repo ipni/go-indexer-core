@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -150,9 +150,7 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 	// multihashes means their resulting keys will also be sorted.
 	if len(mhs) > 1 {
 		// Make a copy to reorder.
-		sort.Slice(mhs, func(i, j int) bool {
-			return bytes.Compare(mhs[i], mhs[j]) == -1
-		})
+		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
 
 	keygen := s.p.leaseBlake3Keyer()
@@ -203,9 +201,7 @@ func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 	// multihash key is a prefix plus the multihash itself, sorting the
 	// multihashes means their resulting keys will also be sorted.
 	if len(mhs) > 1 {
-		sort.Slice(mhs, func(i, j int) bool {
-			return bytes.Compare(mhs[i], mhs[j]) == -1
-		})
+		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
 
 	keygen := s.p.leaseBlake3Keyer()
