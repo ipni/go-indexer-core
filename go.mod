@@ -6,12 +6,12 @@ require (
 	// Note, cockroachdb/pebble has no tagged release. Instead, it uses branches.
 	// The version below is from: https://github.com/cockroachdb/pebble/tree/crl-release-22.1
 	// To update to latest, run: go get github.com/cockroachdb/pebble@crl-release-22.1
-	github.com/cockroachdb/pebble v0.0.0-20240229012220-7531ef4d20c9
+	github.com/cockroachdb/pebble v0.0.0-20240328175803-1dc54dfdc519
 	github.com/gammazero/radixtree v0.3.1
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipni/go-libipni v0.5.14
-	github.com/libp2p/go-libp2p v0.33.0
+	github.com/ipni/go-libipni v0.5.15
+	github.com/libp2p/go-libp2p v0.33.1
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.0.7
@@ -20,12 +20,13 @@ require (
 )
 
 require (
-	github.com/DataDog/zstd v1.4.5 // indirect
+	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.11.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
+	github.com/cockroachdb/swiss v0.0.0-20240303172742-c161743eb608 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/getsentry/sentry-go v0.18.0 // indirect
@@ -40,7 +41,7 @@ require (
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr v0.12.2 // indirect
+	github.com/multiformats/go-multiaddr v0.12.3 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/multiformats/go-multicodec v0.9.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
