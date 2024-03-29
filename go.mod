@@ -11,7 +11,7 @@ require (
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipni/go-libipni v0.5.15
-	github.com/libp2p/go-libp2p v0.33.1
+	github.com/libp2p/go-libp2p v0.33.2
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.0.7
