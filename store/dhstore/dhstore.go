@@ -115,8 +115,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	start := time.Now()
 
 	ctx := context.Background()
-	err = s.sendDHMetadata(ctx, metaReq)
-	if err != nil {
+	if err = s.sendDHMetadata(ctx, metaReq); err != nil {
 		return err
 	}
 
@@ -130,23 +129,19 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	}
 	merges := make([]client.Index, 0, size)
 	for _, mh := range mhs {
-		dm, err := multihash.Decode(mh)
-		if err != nil {
-			return err
+		if _, err = multihash.Decode(mh); err != nil {
+			log.Errorw("Failed to decode multihash, skipping", "err", err)
+			continue
 		}
-		if dm.Code == multihash.DBL_SHA2_256 {
-			return errors.New("put double-hashed index not supported")
-		}
-
 		merge, err := makeDHMerge(mh, valueKey)
 		if err != nil {
-			return err
+			log.Errorw("Failed to create dhmerge for multihash, skipping", "err", err)
+			continue
 		}
 
 		merges = append(merges, merge)
 		if len(merges) == cap(merges) {
-			err = s.sendDHMergeIndexRequest(ctx, merges)
-			if err != nil {
+			if err = s.sendDHMergeIndexRequest(ctx, merges); err != nil {
 				return err
 			}
 			merges = merges[:0]
@@ -155,8 +150,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 
 	// Send remaining merge requests.
 	if len(merges) != 0 {
-		err = s.sendDHMergeIndexRequest(ctx, merges)
-		if err != nil {
+		if err = s.sendDHMergeIndexRequest(ctx, merges); err != nil {
 			return err
 		}
 	}
@@ -297,11 +291,6 @@ func (s *dhStore) Stats() (*indexer.Stats, error) {
 }
 
 func makeDHMerge(mh multihash.Multihash, valueKey []byte) (client.Index, error) {
-	mh2, err := dhash.SecondMultihash(mh)
-	if err != nil {
-		return client.Index{}, err
-	}
-
 	// Encrypt value key with original multihash.
 	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
 	if err != nil {
@@ -309,7 +298,7 @@ func makeDHMerge(mh multihash.Multihash, valueKey []byte) (client.Index, error) 
 	}
 
 	return client.Index{
-		Key:   mh2,
+		Key:   dhash.SecondMultihash(mh),
 		Value: encValueKey,
 	}, nil
 }
