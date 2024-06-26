@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
 	"github.com/ipni/go-indexer-core/cache/radixcache"
 	"github.com/ipni/go-indexer-core/store/memory"
 	"github.com/ipni/go-indexer-core/store/pebble"
-	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -40,7 +40,7 @@ func TestPassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs := test.RandomMultihashes(5)
+	mhs := random.Multihashes(5)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -196,7 +196,7 @@ func TestRemoveProvider(t *testing.T) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -298,7 +298,7 @@ func TestCacheOnPut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs := test.RandomMultihashes(3)
+	mhs := random.Multihashes(3)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -373,7 +373,7 @@ func TestRemoveProviderContext(t *testing.T) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -561,7 +561,7 @@ func TestMultiCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs := test.RandomMultihashes(5)
+	mhs := random.Multihashes(5)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -653,7 +653,7 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	value1 := indexer.Value{
 		ProviderID:    p,
@@ -780,7 +780,7 @@ func SizeTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mhs := test.RandomMultihashes(151)
+	mhs := random.Multihashes(151)
 
 	value := indexer.Value{
 		ProviderID:    p,

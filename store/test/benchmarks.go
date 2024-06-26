@@ -1,13 +1,17 @@
 package test
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -41,7 +45,7 @@ func prepare(s indexer.Interface, size string, t *testing.T) {
 
 	out := make(chan multihash.Multihash)
 	errOut := make(chan error, 1)
-	go ReadCids(file, out, errOut)
+	go readCids(file, out, errOut)
 
 	metadataBytes := []byte("dummy-metadata")
 	for mh := range out {
@@ -73,7 +77,7 @@ func readAll(s indexer.Interface, size string, m *metrics, t *testing.T) {
 
 	out := make(chan multihash.Multihash)
 	errOut := make(chan error, 1)
-	go ReadCids(file, out, errOut)
+	go readCids(file, out, errOut)
 
 	for mh := range out {
 		now := time.Now()
@@ -106,7 +110,7 @@ func BenchReadAll(s indexer.Interface, size string, t *testing.T) {
 
 // Benchmark single thread get operation
 func BenchMultihashGet(s indexer.Interface, b *testing.B) {
-	mhs := RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
 	value := indexer.Value{
@@ -115,7 +119,7 @@ func BenchMultihashGet(s indexer.Interface, b *testing.B) {
 		MetadataBytes: []byte("dummy-metadata"),
 	}
 
-	mhs = RandomMultihashes(4096)
+	mhs = random.Multihashes(4096)
 	err := s.Put(value, mhs...)
 	if err != nil {
 		panic(err)
@@ -149,7 +153,7 @@ func BenchMultihashGet(s indexer.Interface, b *testing.B) {
 }
 
 func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
-	mhs := RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 
 	value := indexer.Value{
@@ -158,7 +162,7 @@ func BenchParallelMultihashGet(s indexer.Interface, b *testing.B) {
 		MetadataBytes: []byte("dummy-metadata"),
 	}
 
-	mhs = RandomMultihashes(4096)
+	mhs = random.Multihashes(4096)
 	err := s.Put(value, mhs...)
 	if err != nil {
 		panic(err)
@@ -227,6 +231,30 @@ func report(s indexer.Interface, m *metrics, storage bool, t *testing.T) {
 	if storage {
 		sizeMB := float64(memSize) / 1000000
 		t.Log("Memory size (MB):", sizeMB)
+	}
+}
+
+// readCids reads cids from an io.Reader and outputs their multihashes on a
+// channel.  Malformed cids are ignored.
+func readCids(in io.Reader, out chan multihash.Multihash, done chan error) {
+	defer close(out)
+	defer close(done)
+
+	r := bufio.NewReader(in)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil {
+			if err != io.EOF {
+				done <- err
+			}
+			return
+		}
+		c, err := cid.Decode(string(line))
+		if err != nil {
+			// Disregarding malformed CIDs for now
+			continue
+		}
+		out <- c.Hash()
 	}
 }
 

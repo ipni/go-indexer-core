@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -21,7 +22,7 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs := RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	ctxid1 := []byte(mhs[0])
 	metadata1 := []byte("test-meta-1")
@@ -279,7 +280,7 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs := RandomMultihashes(151)
+	mhs := random.Multihashes(151)
 
 	value := indexer.Value{
 		ProviderID:    p,
@@ -314,7 +315,7 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs := RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	value := indexer.Value{
 		ProviderID:    p,
@@ -366,7 +367,7 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 		t.Error("multihash was not removed")
 	}
 
-	mhs = RandomMultihashes(5)
+	mhs = random.Multihashes(5)
 	err = s.Put(value, mhs...)
 	if err != nil {
 		t.Fatal("Error putting batch of multihashes:", err)
@@ -400,7 +401,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		t.Fatal(err)
 	}
 
-	mhs := RandomMultihashes(2)
+	mhs := random.Multihashes(2)
 
 	ctx1id := []byte(mhs[0])
 	ctx2id := []byte(mhs[1])
@@ -420,7 +421,7 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs = RandomMultihashes(15)
+	mhs = random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -587,7 +588,7 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs := RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -663,7 +664,7 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 }
 
 func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
-	mhs := RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
