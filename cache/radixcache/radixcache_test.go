@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
-	"github.com/ipni/go-indexer-core/store/test"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -28,7 +28,7 @@ func init() {
 
 func TestPutGetRemove(t *testing.T) {
 	s := New(1000000)
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	provID, err := peer.Decode(peerID)
 	if err != nil {
@@ -191,7 +191,7 @@ func TestPutGetRemove(t *testing.T) {
 func TestRotate(t *testing.T) {
 	const maxSize = 10
 
-	mhs := test.RandomMultihashes(2)
+	mhs := random.Multihashes(2)
 
 	value1 := indexer.Value{
 		ProviderID:    provID,
@@ -205,7 +205,7 @@ func TestRotate(t *testing.T) {
 	}
 
 	s := New(maxSize * 2)
-	mhs = test.RandomMultihashes(maxSize + 5)
+	mhs = random.Multihashes(maxSize + 5)
 
 	s.Put(value1, mhs...)
 	stats := s.Stats()
@@ -223,7 +223,7 @@ func TestRotate(t *testing.T) {
 		t.Error("Error finding a multihash from new cache")
 	}
 
-	mhs2 := test.RandomMultihashes(maxSize)
+	mhs2 := random.Multihashes(maxSize)
 
 	if s.Put(value2, mhs2...) != len(mhs2) {
 		t.Fatal("did not put batch of multihashes")
@@ -251,7 +251,7 @@ func TestRotate(t *testing.T) {
 func TestUnboundedGrowth(t *testing.T) {
 	const maxSize = 4
 	s := New(maxSize)
-	mhs := test.RandomMultihashes(11)
+	mhs := random.Multihashes(11)
 
 	mhash := mhs[0]
 	mhs = mhs[1:]
@@ -320,7 +320,7 @@ func TestRemoveProvider(t *testing.T) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -412,7 +412,7 @@ func TestRemoveProviderContext(t *testing.T) {
 		MetadataBytes: []byte("ctx3-metadata"),
 	}
 
-	mhs := test.RandomMultihashes(15)
+	mhs := random.Multihashes(15)
 
 	batch1 := mhs[:5]
 	batch2 := mhs[5:10]
@@ -507,7 +507,7 @@ func TestRemoveProviderContext(t *testing.T) {
 func TestMemoryUse(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 
 	ctxID := []byte("test-ctx-1")
 	value := indexer.Value{
@@ -522,7 +522,7 @@ func TestMemoryUse(t *testing.T) {
 		t.Run(fmt.Sprintf("MemoryUse %d multihashes", count*1024), func(t *testing.T) {
 			s := New(1024 * count)
 			for i := 0; i < count; i++ {
-				mhs = test.RandomMultihashes(1024)
+				mhs = random.Multihashes(1024)
 				s.Put(value, mhs...)
 			}
 			mhs = nil
@@ -546,7 +546,7 @@ func TestMemoryUse(t *testing.T) {
 func TestMemSingleVsMany(t *testing.T) {
 	skipUnlessMemUse(t)
 
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 
 	value := indexer.Value{
 		ProviderID:    provID,
@@ -557,7 +557,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	t.Run(fmt.Sprintf("Put %d Single multihashes", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1024)
 		for i := 0; i < 1024; i++ {
-			mhs = test.RandomMultihashes(1024)
+			mhs = random.Multihashes(1024)
 			for j := range mhs {
 				s.Put(value, mhs[j])
 			}
@@ -571,7 +571,7 @@ func TestMemSingleVsMany(t *testing.T) {
 	t.Run(fmt.Sprintf("Put %d multihashes in groups of 1024", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1024)
 		for i := 0; i < 1024; i++ {
-			mhs = test.RandomMultihashes(1024)
+			mhs = random.Multihashes(1024)
 			s.Put(value, mhs...)
 		}
 		runtime.GC()
@@ -582,14 +582,14 @@ func TestMemSingleVsMany(t *testing.T) {
 }
 
 func BenchmarkPut(b *testing.B) {
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 	value := indexer.Value{
 		ProviderID:    provID,
 		ContextID:     ctxID,
 		MetadataBytes: []byte(mhs[0]),
 	}
 
-	mhs = test.RandomMultihashes(10240)
+	mhs = random.Multihashes(10240)
 
 	b.Run("Put single", func(b *testing.B) {
 		s := New(8192)
@@ -625,7 +625,7 @@ func BenchmarkPut(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 	value := indexer.Value{
 		ProviderID:    provID,
 		ContextID:     ctxID,
@@ -633,7 +633,7 @@ func BenchmarkGet(b *testing.B) {
 	}
 
 	s := New(8192)
-	mhs = test.RandomMultihashes(4096)
+	mhs = random.Multihashes(4096)
 	s.Put(value, mhs...)
 
 	b.Run("Get single", func(b *testing.B) {

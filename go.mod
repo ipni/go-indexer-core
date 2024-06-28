@@ -10,6 +10,7 @@ require (
 	github.com/gammazero/radixtree v0.3.1
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
+	github.com/ipfs/go-test v0.0.2
 	github.com/ipni/go-libipni v0.5.20
 	github.com/libp2p/go-libp2p v0.35.1
 	github.com/mr-tron/base58 v1.2.0
@@ -33,6 +34,8 @@ require (
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/ipfs/go-block-format v0.1.2 // indirect
+	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
