@@ -21,12 +21,12 @@ var log = logging.Logger("indexer-core/cache")
 // radixCache is a rotatable cache with value deduplication.
 type radixCache struct {
 	// multihash -> indexer.Value
-	current  *radixtree.Tree
-	previous *radixtree.Tree
+	current  *radixtree.Tree[[]*indexer.Value]
+	previous *radixtree.Tree[[]*indexer.Value]
 
 	// IndexEntery interning
-	curEnts  *radixtree.Tree
-	prevEnts *radixtree.Tree
+	curEnts  *radixtree.Tree[*indexer.Value]
+	prevEnts *radixtree.Tree[*indexer.Value]
 
 	mutex      sync.Mutex
 	evictions  int
@@ -36,8 +36,8 @@ type radixCache struct {
 // New creates a new radixCache instance.
 func New(maxSize int) *radixCache {
 	return &radixCache{
-		current:    radixtree.New(),
-		curEnts:    radixtree.New(),
+		current:    radixtree.New[[]*indexer.Value](),
+		curEnts:    radixtree.New[*indexer.Value](),
 		rotateSize: maxSize >> 1,
 	}
 }
@@ -107,16 +107,15 @@ keysLoop:
 	if c.curEnts.Len() > (c.rotateSize << 1) {
 		c.rotate()
 		// Remove all non-indexed cache entries.
-		c.previous.Walk("", func(k string, v interface{}) bool {
-			values := v.([]*indexer.Value)
+		for _, values := range c.previous.Iter() {
 			for _, val := range values {
 				_, _, found := c.findInternValue(val)
 				if !found {
 					panic("cannot find interned value for cached index")
 				}
 			}
-			return false
-		})
+		}
+
 		c.current = c.previous
 		c.previous = nil
 		c.prevEnts = nil
@@ -173,10 +172,9 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 
 	var count int
 	var deletes []string
-	var tree *radixtree.Tree
+	var tree *radixtree.Tree[[]*indexer.Value]
 
-	walkFunc := func(k string, v interface{}) bool {
-		values := v.([]*indexer.Value)
+	walkFunc := func(k string, values []*indexer.Value) {
 		var vrm int
 		for i := 0; i < len(values); {
 			if providerID == values[i].ProviderID {
@@ -198,14 +196,15 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 			tree.Put(k, values)
 		}
 		count += vrm
-		return false
 	}
 
 	hasCurValues := removeProviderInterns(c.curEnts, providerID)
 	if hasCurValues {
 		// Remove provider values only if there were any provider interns.
 		tree = c.current
-		c.current.Walk("", walkFunc)
+		for k, v := range c.current.Iter() {
+			walkFunc(k, v)
+		}
 		for _, k := range deletes {
 			c.current.Delete(k)
 		}
@@ -221,7 +220,9 @@ func (c *radixCache) RemoveProvider(providerID peer.ID) int {
 		if hasPrevValues || hasCurValues {
 			deletes = deletes[:0]
 			tree = c.previous
-			c.previous.Walk("", walkFunc)
+			for k, v := range c.previous.Iter() {
+				walkFunc(k, v)
+			}
 			for _, k := range deletes {
 				c.previous.Delete(k)
 			}
@@ -245,10 +246,9 @@ func (c *radixCache) RemoveProviderContext(providerID peer.ID, contextID []byte)
 
 	var deletes []string
 	var count int
-	var tree *radixtree.Tree
+	var tree *radixtree.Tree[[]*indexer.Value]
 
-	walkFunc := func(k string, v interface{}) bool {
-		values := v.([]*indexer.Value)
+	walkFunc := func(k string, values []*indexer.Value) {
 		var vrm int
 		for i := 0; i < len(values); {
 			if values[i] == val {
@@ -270,18 +270,21 @@ func (c *radixCache) RemoveProviderContext(providerID peer.ID, contextID []byte)
 			tree.Put(k, values)
 		}
 		count += vrm
-		return false
 	}
 
 	tree = c.current
-	c.current.Walk("", walkFunc)
+	for k, v := range c.current.Iter() {
+		walkFunc(k, v)
+	}
 	for _, k := range deletes {
 		c.current.Delete(k)
 	}
 	if c.previous != nil {
 		deletes = deletes[:0]
 		tree = c.previous
-		c.previous.Walk("", walkFunc)
+		for k, v := range c.previous.Iter() {
+			walkFunc(k, v)
+		}
 		for _, k := range deletes {
 			c.previous.Delete(k)
 		}
@@ -329,14 +332,14 @@ func (c *radixCache) Stats() cache.Stats {
 
 func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
 	// Search current cache.
-	v, found := c.current.Get(k)
+	values, found := c.current.Get(k)
 	if !found {
 		if c.previous == nil {
 			return nil, false
 		}
 
 		// Search previous if not found in current.
-		v, found = c.previous.Get(k)
+		values, found = c.previous.Get(k)
 		if !found {
 			return nil, false
 		}
@@ -344,7 +347,6 @@ func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
 		// Pull the interned values for these values forward from the previous
 		// cache to reuse the interned values instead of allocating them again
 		// in the current cache.
-		values := v.([]*indexer.Value)
 		for i, val := range values {
 			values[i] = c.internValue(val, false, true)
 		}
@@ -353,7 +355,7 @@ func (c *radixCache) get(k string) ([]*indexer.Value, bool) {
 		c.current.Put(k, values)
 		c.previous.Delete(k)
 	}
-	return v.([]*indexer.Value), true
+	return values, true
 }
 
 func (c *radixCache) rotate() {
@@ -361,8 +363,8 @@ func (c *radixCache) rotate() {
 		c.evictions += c.previous.Len()
 		log.Infow("Rotating cache", "evictions", c.previous.Len())
 	}
-	c.previous, c.current = c.current, radixtree.New()
-	c.prevEnts, c.curEnts = c.curEnts, radixtree.New()
+	c.previous, c.current = c.current, radixtree.New[[]*indexer.Value]()
+	c.prevEnts, c.curEnts = c.curEnts, radixtree.New[*indexer.Value]()
 }
 
 // internValue stores a single copy of a Value under a key composed of
@@ -411,7 +413,7 @@ func (c *radixCache) findInternValue(value *indexer.Value) (string, *indexer.Val
 	v, found := c.curEnts.Get(k)
 	if found {
 		// Found existing interned value.
-		return k, v.(*indexer.Value), true
+		return k, v, true
 	}
 
 	if c.prevEnts != nil {
@@ -420,21 +422,20 @@ func (c *radixCache) findInternValue(value *indexer.Value) (string, *indexer.Val
 			// Pull interned value forward from previous cache.
 			c.curEnts.Put(k, v)
 			c.prevEnts.Delete(k)
-			return k, v.(*indexer.Value), true
+			return k, v, true
 		}
 	}
 
 	return k, nil, false
 }
 
-func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
+func removeIndex(tree *radixtree.Tree[[]*indexer.Value], k string, value *indexer.Value) bool {
 	// Get from current cache.
-	v, found := tree.Get(k)
+	values, found := tree.Get(k)
 	if !found {
 		return false
 	}
 
-	values := v.([]*indexer.Value)
 	for i, v := range values {
 		if v == value || v.Match(*value) {
 			if len(values) == 1 {
@@ -451,12 +452,11 @@ func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
 	return false
 }
 
-func removeProviderInterns(tree *radixtree.Tree, providerID peer.ID) bool {
+func removeProviderInterns(tree *radixtree.Tree[*indexer.Value], providerID peer.ID) bool {
 	var deletes []string
-	tree.Walk(string(providerID), func(k string, v interface{}) bool {
+	for k, _ := range tree.IterAt(string(providerID)) {
 		deletes = append(deletes, k)
-		return false
-	})
+	}
 	for _, k := range deletes {
 		tree.Delete(k)
 	}

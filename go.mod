@@ -1,15 +1,13 @@
 module github.com/ipni/go-indexer-core
 
-go 1.22.0
-
-toolchain go1.22.8
+go 1.23
 
 require (
 	// Note, cockroachdb/pebble has no tagged release. Instead, it uses branches.
 	// The version below is from: https://github.com/cockroachdb/pebble/tree/crl-release-22.1
 	// To update to latest, run: go get github.com/cockroachdb/pebble@crl-release-22.1
 	github.com/cockroachdb/pebble v0.0.0-20240822181941-1b4021bcfe22
-	github.com/gammazero/radixtree v0.3.1
+	github.com/gammazero/radixtree v0.4.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipfs/go-test v0.0.4

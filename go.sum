@@ -44,8 +44,10 @@ github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymF
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
-github.com/gammazero/radixtree v0.3.1 h1:kYVZUH/XgIktiGjUBERExxP6Ock7epWuCAlrB2FKsmk=
-github.com/gammazero/radixtree v0.3.1/go.mod h1:wcCpc8wCLVlPg2FVRYQLtBCnj9MNHQI1qB1hVrHvEDs=
+github.com/gammazero/radixtree v0.3.3-0.20240910202434-961a4e62eeb0 h1:2IHwg1bfOQu28Tz4tjf1rlq4Zjff6IwjrzSpX72Ng+4=
+github.com/gammazero/radixtree v0.3.3-0.20240910202434-961a4e62eeb0/go.mod h1:ASdWnk7E8ZsLUjJeJAb4H3YZ0lzlWMGhXGgo8Hw7PCI=
+github.com/gammazero/radixtree v0.4.0 h1:e3TrzDzOvQ8aWwDEZKWNGPQeyS/9yFdaR57yVPOZIPI=
+github.com/gammazero/radixtree v0.4.0/go.mod h1:ASdWnk7E8ZsLUjJeJAb4H3YZ0lzlWMGhXGgo8Hw7PCI=
 github.com/getsentry/sentry-go v0.27.0 h1:Pv98CIbtB3LkMWmXi4Joa5OOcwbmnX88sF5qbK3r3Ps=
 github.com/getsentry/sentry-go v0.27.0/go.mod h1:lc76E2QywIyW8WuBnwl8Lc4bkmQH4+w1gwTf25trprY=
 github.com/ghemawat/stream v0.0.0-20171120220530-696b145b53b9 h1:r5GgOLGbza2wVHRzK7aAj6lWZjfbAwiu/RDCVOKjRyM=
