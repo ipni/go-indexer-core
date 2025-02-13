@@ -12,8 +12,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"iter"
 	"strings"
 	"sync"
 
@@ -25,15 +25,15 @@ import (
 
 type memoryStore struct {
 	// multihash -> indexer.Value
-	rtree *radixtree.Tree
+	rtree *radixtree.Tree[[]*indexer.Value]
 	// IndexEntry interning
-	interns *radixtree.Tree
+	interns *radixtree.Tree[*indexer.Value]
 	mutex   sync.Mutex
 }
 
 type memoryIter struct {
-	iter   *radixtree.Iterator
-	values []indexer.Value
+	iterNext func() (string, []*indexer.Value, bool)
+	iterStop func()
 }
 
 var _ indexer.Interface = (*memoryStore)(nil)
@@ -42,8 +42,8 @@ var _ indexer.Interface = (*memoryStore)(nil)
 // store.
 func New() *memoryStore {
 	return &memoryStore{
-		rtree:   radixtree.New(),
-		interns: radixtree.New(),
+		rtree:   radixtree.New[[]*indexer.Value](),
+		interns: radixtree.New[*indexer.Value](),
 	}
 }
 
@@ -146,8 +146,7 @@ func (s *memoryStore) RemoveProviderContext(providerID peer.ID, contextID []byte
 
 	var deletes []string
 	updates := make(map[string][]*indexer.Value)
-	s.rtree.Walk("", func(k string, v interface{}) bool {
-		values := v.([]*indexer.Value)
+	for k, values := range s.rtree.Iter() {
 		var needUpdate bool
 		for i := 0; i < len(values); {
 			if values[i].Match(delVal) {
@@ -168,8 +167,7 @@ func (s *memoryStore) RemoveProviderContext(providerID peer.ID, contextID []byte
 		if needUpdate {
 			updates[k] = values
 		}
-		return false
-	})
+	}
 
 	for _, k := range deletes {
 		s.rtree.Delete(k)
@@ -191,8 +189,10 @@ func (s *memoryStore) Flush() error { return nil }
 func (s *memoryStore) Close() error { return nil }
 
 func (s *memoryStore) Iter() (indexer.Iterator, error) {
+	next, stop := iter.Pull2[string, []*indexer.Value](s.rtree.Iter())
 	return &memoryIter{
-		iter: s.rtree.NewIterator(),
+		iterNext: next,
+		iterStop: stop,
 	}, nil
 }
 
@@ -208,34 +208,25 @@ func (s *memoryStore) Stats() (*indexer.Stats, error) {
 }
 
 func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
-	key, val, done := it.iter.Next()
-	if done {
-		it.values = nil
+	key, vals, ok := it.iterNext()
+	if !ok {
 		return nil, nil, io.EOF
 	}
-
-	m := multihash.Multihash(key)
-	vals, ok := val.([]*indexer.Value)
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected type stored by %q", m.B58String())
+	values := make([]indexer.Value, len(vals))
+	for i, v := range vals {
+		values[i] = *v
 	}
-
-	it.values = it.values[:0]
-	for _, v := range vals {
-		it.values = append(it.values, *v)
-	}
-	return m, it.values, nil
+	return multihash.Multihash(key), values, nil
 }
 
-func (it *memoryIter) Close() error { return nil }
+func (it *memoryIter) Close() error {
+	it.iterStop()
+	return nil
+}
 
 func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
 	// Search current cache
-	v, found := s.rtree.Get(k)
-	if !found {
-		return nil, false
-	}
-	return v.([]*indexer.Value), true
+	return s.rtree.Get(k)
 }
 
 // internValue stores a single copy of a Value under a key composed of
@@ -282,12 +273,7 @@ func (s *memoryStore) findInternValue(value *indexer.Value) (string, *indexer.Va
 	b.Write(value.ContextID)
 	k := b.String()
 	v, found := s.interns.Get(k)
-	if found {
-		// Found existing interned value
-		return k, v.(*indexer.Value), true
-	}
-
-	return k, nil, false
+	return k, v, found
 }
 
 func (s *memoryStore) deleteInternValue(providerID peer.ID, contextID []byte) bool {
@@ -298,13 +284,12 @@ func (s *memoryStore) deleteInternValue(providerID peer.ID, contextID []byte) bo
 	return s.interns.Delete(b.String())
 }
 
-func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
-	v, found := tree.Get(k)
+func removeIndex(tree *radixtree.Tree[[]*indexer.Value], k string, value *indexer.Value) bool {
+	values, found := tree.Get(k)
 	if !found {
 		return false
 	}
 
-	values := v.([]*indexer.Value)
 	for i, v := range values {
 		if v == value || v.Match(*value) {
 			if len(values) == 1 {
@@ -323,8 +308,7 @@ func removeIndex(tree *radixtree.Tree, k string, value *indexer.Value) bool {
 func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 	var deletes []string
 
-	s.rtree.Walk("", func(k string, v interface{}) bool {
-		values := v.([]*indexer.Value)
+	for k, values := range s.rtree.Iter() {
 		for i := 0; i < len(values); {
 			if providerID == values[i].ProviderID {
 				if len(values) == 1 {
@@ -343,8 +327,7 @@ func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 		} else {
 			s.rtree.Put(k, values)
 		}
-		return false
-	})
+	}
 
 	for _, k := range deletes {
 		s.rtree.Delete(k)
@@ -352,11 +335,11 @@ func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 }
 
 func (s *memoryStore) removeProviderInterns(providerID peer.ID) {
+	// Delete all items with key prefixed by provider ID.
 	var deletes []string
-	s.interns.Walk(string(providerID), func(k string, v interface{}) bool {
+	for k, _ := range s.interns.IterAt(string(providerID)) {
 		deletes = append(deletes, k)
-		return false
-	})
+	}
 	for _, k := range deletes {
 		s.interns.Delete(k)
 	}
