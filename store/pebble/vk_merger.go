@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 )
 
 const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
