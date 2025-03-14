@@ -337,7 +337,7 @@ func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 func (s *memoryStore) removeProviderInterns(providerID peer.ID) {
 	// Delete all items with key prefixed by provider ID.
 	var deletes []string
-	for k, _ := range s.interns.IterAt(string(providerID)) {
+	for k := range s.interns.IterAt(string(providerID)) {
 		deletes = append(deletes, k)
 	}
 	for _, k := range deletes {

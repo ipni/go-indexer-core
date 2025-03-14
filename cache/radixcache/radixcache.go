@@ -454,7 +454,7 @@ func removeIndex(tree *radixtree.Tree[[]*indexer.Value], k string, value *indexe
 
 func removeProviderInterns(tree *radixtree.Tree[*indexer.Value], providerID peer.ID) bool {
 	var deletes []string
-	for k, _ := range tree.IterAt(string(providerID)) {
+	for k := range tree.IterAt(string(providerID)) {
 		deletes = append(deletes, k)
 	}
 	for _, k := range deletes {
