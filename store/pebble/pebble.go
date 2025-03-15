@@ -274,16 +274,11 @@ func (s *store) Close() error {
 	if s.closed {
 		return nil
 	}
-	ferr := s.db.Flush()
-	cerr := s.db.Close()
 	s.metricsCancel()
 	s.closed = true
-	// Prioritise on returning close errors over flush errors, since it is more likely to contain
-	// useful information about the failure root cause.
-	if cerr != nil {
-		return cerr
-	}
-	return ferr
+
+	// Close also performs a flush.
+	return s.db.Close()
 }
 
 // Stats gathers statistics about the values indexed by Pebble store.
