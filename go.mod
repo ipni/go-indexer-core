@@ -10,7 +10,7 @@ require (
 	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipfs/go-test v0.2.1
-	github.com/ipni/go-libipni v0.6.17
+	github.com/ipni/go-libipni v0.5.29
 	github.com/libp2p/go-libp2p v0.41.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.2.3
