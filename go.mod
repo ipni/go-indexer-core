@@ -2,8 +2,6 @@ module github.com/ipni/go-indexer-core
 
 go 1.23.6
 
-toolchain go1.24.1
-
 require (
 	github.com/cockroachdb/pebble v1.1.4
 	github.com/gammazero/radixtree v0.4.0
