@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/metrics"

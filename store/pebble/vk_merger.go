@@ -6,7 +6,7 @@ import (
 	"io"
 	"slices"
 
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 )
 
 const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
