@@ -1,6 +1,7 @@
 package pebble
 
 import (
+	"bytes"
 	"errors"
 	"io"
 
@@ -224,15 +225,10 @@ func (b *blake3Keyer) multihashKey(mh multihash.Multihash) (*key, error) {
 // keyToMultihash extracts the multihash to which the given key is associated.
 // An error is returned if the given key does not have multihashKeyPrefix.
 func (b *blake3Keyer) keyToMultihash(k *key) (multihash.Multihash, error) {
-	switch k.prefix() {
-	case multihashKeyPrefix:
-		keyData := k.buf[1:]
-		mh := make([]byte, len(keyData))
-		copy(mh, keyData)
-		return mh, nil
-	default:
+	if k.prefix() != multihashKeyPrefix {
 		return nil, errors.New("key prefix mismatch")
 	}
+	return bytes.Clone(k.buf[1:]), nil
 }
 
 func (b *blake3Keyer) Close() error {

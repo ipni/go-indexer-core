@@ -3,6 +3,7 @@ package radixcache
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"sync"
 
@@ -389,8 +390,7 @@ func (c *radixCache) internValue(value *indexer.Value, updateMeta, saveNew bool)
 		// If the provided value has matching ProviderID and ContextID but
 		// different Metadata, then update the interned value's metadata.
 		if updateMeta && !bytes.Equal(v.MetadataBytes, value.MetadataBytes) {
-			v.MetadataBytes = make([]byte, len(value.MetadataBytes))
-			copy(v.MetadataBytes, value.MetadataBytes)
+			v.MetadataBytes = slices.Clone(value.MetadataBytes)
 		}
 		return v
 	}

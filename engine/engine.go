@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -86,13 +87,13 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	mhsCount := len(mhs)
 
 	if e.resultCache != nil {
-		var addToCache, mhsCopy []multihash.Multihash
+		var addToCache []multihash.Multihash
+		var copied bool
 		// If using a value store, make sure give a copy of mhs to the
 		// valuestore, as some implementations may expect to take ownership.
 		if e.valueStore != nil {
-			mhsCopy = make([]multihash.Multihash, len(mhs))
-			copy(mhsCopy, mhs)
-			mhs = mhsCopy
+			mhs = slices.Clone(mhs)
+			copied = true
 		}
 
 		for i := 0; i < len(mhs); {
@@ -114,11 +115,10 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 					// value, so do not try to put it in the value store. The
 					// value store will handle this, but at a higher cost
 					// requiring reading from disk.
-					if mhsCopy == nil {
+					if !copied {
 						// Copy-on-write
-						mhsCopy = make([]multihash.Multihash, len(mhs))
-						copy(mhsCopy, mhs)
-						mhs = mhsCopy
+						mhs = slices.Clone(mhs)
+						copied = true
 					}
 					mhs[i] = mhs[len(mhs)-1]
 					mhs[len(mhs)-1] = nil

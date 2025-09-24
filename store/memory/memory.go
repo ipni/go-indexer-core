@@ -251,8 +251,7 @@ func (s *memoryStore) internValue(value *indexer.Value, saveNew bool) *indexer.V
 		// The provided value has matching ProviderID and ContextID but
 		// different Metadata.  Treat this as an update.
 		if !bytes.Equal(v.MetadataBytes, value.MetadataBytes) {
-			v.MetadataBytes = make([]byte, len(value.MetadataBytes))
-			copy(v.MetadataBytes, value.MetadataBytes)
+			v.MetadataBytes = bytes.Clone(value.MetadataBytes)
 		}
 		return v
 	}
