@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"slices"
 	"time"
 
@@ -28,34 +27,22 @@ var (
 	log = logging.Logger("store/pebble")
 
 	_ indexer.Interface = (*store)(nil)
-	_ indexer.Iterator  = (*iterator)(nil)
 )
 
-type (
-	store struct {
-		db *pebble.DB
-		// Only support binary format since in pebble we need the capability to merge keys and
-		// there is little reason for store values in any format other than binary for performance
-		// characteristics.
-		// Note, pebble is using a zero-copy variation of marshaller to allow optimizations in
-		// cases where the value need not to be copied. The root level binary codec copies on
-		// unmarshal every time.
-		vcodec        *codec
-		p             *pool
-		closed        bool
-		comparer      *pebble.Comparer
-		metricsCancel context.CancelFunc
-	}
-	iterator struct {
-		closed   bool
-		snapshot *pebble.Snapshot
-		it       *pebble.Iterator
-		vcodec   *codec
-		p        *pool
-		start    *key
-		end      *key
-	}
-)
+type store struct {
+	db *pebble.DB
+	// Only support binary format since in pebble we need the capability to merge keys and
+	// there is little reason for store values in any format other than binary for performance
+	// characteristics.
+	// Note, pebble is using a zero-copy variation of marshaller to allow optimizations in
+	// cases where the value need not to be copied. The root level binary codec copies on
+	// unmarshal every time.
+	vcodec        *codec
+	p             *pool
+	closed        bool
+	comparer      *pebble.Comparer
+	metricsCancel context.CancelFunc
+}
 
 // New instantiates a new instance of a store backed by Pebble.
 // Note that any Merger value specified in the given options will be overridden.
@@ -315,92 +302,4 @@ func (s *store) Stats() (*indexer.Stats, error) {
 		}
 	}
 	return &stats, nil
-}
-
-func (s *store) Iter() (indexer.Iterator, error) {
-	keygen := s.p.leaseBlake3Keyer()
-	start, end, err := keygen.multihashesKeyRange()
-	if err != nil {
-		_ = keygen.Close()
-		return nil, err
-	}
-	_ = keygen.Close()
-	snapshot := s.db.NewSnapshot()
-	iter, err := snapshot.NewIter(&pebble.IterOptions{
-		LowerBound: start.buf,
-		UpperBound: end.buf,
-	})
-	if err != nil {
-		return nil, err
-	}
-	iter.First()
-	return &iterator{
-		snapshot: snapshot,
-		it:       iter,
-		vcodec:   s.vcodec,
-		start:    start,
-		end:      end,
-		p:        s.p,
-	}, nil
-}
-
-func (i *iterator) Next() (multihash.Multihash, []indexer.Value, error) {
-	switch {
-	case i.it.Error() != nil:
-		return nil, nil, i.it.Error()
-	case !i.it.Valid():
-		return nil, nil, io.EOF
-	}
-	keygen := i.p.leaseBlake3Keyer()
-	mhk := i.p.leaseKey()
-	mhk.append(i.it.Key()...)
-	mh, err := keygen.keyToMultihash(mhk)
-	_ = mhk.Close()
-	_ = keygen.Close()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// We don't need to copy the value since it is only used for fetching the
-	// indexer.Values, and not returned to the caller.
-	vks, err := i.vcodec.unmarshalValueKeys(i.it.Value())
-	if err != nil {
-		return nil, nil, err
-	}
-	defer vks.Close()
-	vs := make([]indexer.Value, len(vks.keys))
-	for j, vk := range vks.keys {
-		bv, c, err := i.snapshot.Get(vk.buf)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		v, err := i.vcodec.unmarshalValue(bv)
-		_ = c.Close()
-		if err != nil {
-			return nil, nil, err
-		}
-		vs[j] = *v
-	}
-	i.it.Next()
-	return mh, vs, err
-}
-
-func (i *iterator) Close() error {
-	_ = i.start.Close()
-	_ = i.end.Close()
-	// Check if closed already and do not re-call, since pebble
-	// panics if snapshot is closed more than once.
-	if i.closed {
-		return nil
-	}
-	serr := i.snapshot.Close()
-	ierr := i.it.Close()
-	i.closed = true
-	// Prioritise returning the iterator closure error. Because, that error
-	// is more likely to be meaningful to the caller.
-	if ierr != nil {
-		return ierr
-	}
-	return serr
 }
