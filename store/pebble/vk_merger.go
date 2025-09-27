@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"slices"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -97,9 +98,7 @@ func (v *valueKeysValueMerger) Finish(_ bool) ([]byte, io.Closer, error) {
 		return nil, nil, nil
 	}
 	if v.reverse {
-		for one, other := 0, len(v.merges)-1; one < other; one, other = one+1, other-1 {
-			v.merges[one], v.merges[other] = v.merges[other], v.merges[one]
-		}
+		slices.Reverse(v.merges)
 	}
 	return v.c.marshalValueKeys(v.merges)
 }
@@ -111,21 +110,16 @@ func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool,
 
 // prune removes value-keys that are present in deletes from merges
 func (v *valueKeysValueMerger) prune() {
-	pruned := v.merges[:0]
-	for _, x := range v.merges {
-		if _, ok := v.deletes[string(x)]; !ok {
-			pruned = append(pruned, x)
-		}
-	}
-	v.merges = pruned
+	v.merges = slices.DeleteFunc(v.merges, func(vk []byte) bool {
+		_, ok := v.deletes[string(vk)]
+		return ok
+	})
 }
 
 // addToMerges checks whether the given value exists and if not adds it to the list of merges.
 func (v *valueKeysValueMerger) addToMerges(value []byte) {
 	if !v.exists(value) {
-		dst := make([]byte, len(value))
-		copy(dst, value)
-		v.merges = append(v.merges, dst)
+		v.merges = append(v.merges, bytes.Clone(value))
 	}
 }
 
