@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"io"
 	"sync"
 	"testing"
 
@@ -129,52 +128,6 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	}
 	if !vals[1].Equal(value2) {
 		t.Fatal("Got wrong value for single multihash")
-	}
-
-	// Iterate values
-	t.Log("Iterating values")
-	var indexCount int
-	seen := make(map[string]struct{})
-	iter, err := s.Iter()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer iter.Close()
-
-	for {
-		m, _, err := iter.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			t.Fatalf("Iteration error: %s", err)
-		}
-
-		mb58 := m.B58String()
-		t.Logf("Visited: %s", mb58)
-		_, already := seen[mb58]
-		if already {
-			t.Errorf("Error: multihash already seen: %q", mb58)
-		} else {
-			seen[mb58] = struct{}{}
-		}
-		indexCount++
-	}
-	t.Logf("Visited %d multihashes", indexCount)
-	if indexCount != len(batch)+1 {
-		t.Errorf("Wrong iteration count: expected %d, got %d", len(batch)+1, indexCount)
-	}
-	for i := range batch {
-		b58 := batch[i].B58String()
-		_, ok := seen[b58]
-		if !ok {
-			t.Fatalf("Did not iterate multihash %s", b58)
-		}
-	}
-
-	_, _, err = iter.Next()
-	if err != io.EOF {
-		t.Fatal("caling iter.Next() after iteration finished should yield same result")
 	}
 
 	// Get a key that is not set

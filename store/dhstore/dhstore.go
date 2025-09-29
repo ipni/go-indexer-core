@@ -282,10 +282,6 @@ func (s *dhStore) Flush() error { return nil }
 
 func (s *dhStore) Close() error { return nil }
 
-func (s *dhStore) Iter() (indexer.Iterator, error) {
-	return nil, ErrNotSupported
-}
-
 func (s *dhStore) Stats() (*indexer.Stats, error) {
 	return nil, nil
 }

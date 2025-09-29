@@ -47,25 +47,9 @@ type Interface interface {
 	// Close gracefully closes the store flushing all pending data from memory,
 	Close() error
 
-	// Iter creates a new value store iterator.
-	Iter() (Iterator, error)
-
 	// Stats returns statistical information about the indexed values.
 	// If unsupported by the backing store, ErrStatsNotSupported is returned.
 	Stats() (*Stats, error)
-}
-
-// Iterator iterates multihashes and values in the value store. Any write
-// operation invalidates the iterator.
-type Iterator interface {
-	// Next returns the next multihash and the value it indexer. Returns io.EOF
-	// when finished iterating.
-	Next() (multihash.Multihash, []Value, error)
-
-	// Close closes the iterator releasing any resources that may be occupied by it.
-	// The iterator will no longer be usable after a call to this function and is
-	// discarded.
-	Close() error
 }
 
 // Stats provides statistics about the indexed values.

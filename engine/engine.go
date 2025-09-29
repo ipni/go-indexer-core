@@ -208,10 +208,6 @@ func (e *Engine) Close() error {
 	return e.valueStore.Close()
 }
 
-func (e *Engine) Iter() (indexer.Iterator, error) {
-	return e.valueStore.Iter()
-}
-
 func (e *Engine) updateCacheStats() {
 	st := e.resultCache.Stats()
 	var prevStats *cache.Stats
