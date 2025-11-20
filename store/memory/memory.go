@@ -12,8 +12,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
-	"iter"
 	"strings"
 	"sync"
 
@@ -29,11 +27,6 @@ type memoryStore struct {
 	// IndexEntry interning
 	interns *radixtree.Tree[*indexer.Value]
 	mutex   sync.Mutex
-}
-
-type memoryIter struct {
-	iterNext func() (string, []*indexer.Value, bool)
-	iterStop func()
 }
 
 var _ indexer.Interface = (*memoryStore)(nil)
@@ -188,14 +181,6 @@ func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
-func (s *memoryStore) Iter() (indexer.Iterator, error) {
-	next, stop := iter.Pull2[string, []*indexer.Value](s.rtree.Iter())
-	return &memoryIter{
-		iterNext: next,
-		iterStop: stop,
-	}, nil
-}
-
 func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	var count uint64
 	s.mutex.Lock()
@@ -205,23 +190,6 @@ func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	return &indexer.Stats{
 		MultihashCount: count,
 	}, nil
-}
-
-func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
-	key, vals, ok := it.iterNext()
-	if !ok {
-		return nil, nil, io.EOF
-	}
-	values := make([]indexer.Value, len(vals))
-	for i, v := range vals {
-		values[i] = *v
-	}
-	return multihash.Multihash(key), values, nil
-}
-
-func (it *memoryIter) Close() error {
-	it.iterStop()
-	return nil
 }
 
 func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
