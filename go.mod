@@ -6,10 +6,10 @@ require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/gammazero/radixtree v0.4.0
 	github.com/ipfs/go-cid v0.5.0
-	github.com/ipfs/go-log/v2 v2.8.2
+	github.com/ipfs/go-log/v2 v2.9.0
 	github.com/ipfs/go-test v0.2.3
-	github.com/ipni/go-libipni v0.7.1
-	github.com/libp2p/go-libp2p v0.44.0
+	github.com/ipni/go-libipni v0.7.2
+	github.com/libp2p/go-libp2p v0.45.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.0.7
@@ -55,9 +55,9 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.42.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
-	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
