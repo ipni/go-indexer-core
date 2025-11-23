@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 	logging "github.com/ipfs/go-log/v2"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
@@ -62,11 +62,11 @@ var (
 		" compaction. Such files are compacted in a rewrite compaction"+
 		" when no other compactions are picked.", stats.UnitDimensionless)
 
-	// l0NumFiles is the total number of files in L0. The number of L0 files should not be in the high thousands.
-	// High values indicate heavy write load that is causing accumulation of files in level 0. These files are not
+	// l0TablesCount is the total count of sstables in L0. The number of L0 sstables should not be in the high thousands.
+	// High values indicate heavy write load that is causing accumulation of sstables in level 0. These sstables are not
 	// being compacted quickly enough to lower levels, resulting in a misshapen LSM.
-	l0NumFiles = stats.Int64("ipni/pebble/compact_l0_num_files", "The total number of files in L0. The number of L0 files should not be in the high thousands."+
-		" High values indicate heavy write load that is causing accumulation of files in level 0. These files are not"+
+	l0TablesCount = stats.Int64("ipni/pebble/compact_l0_tables_count", "The total count of sstables in L0. The number of L0 sstables should not be in the high thousands."+
+		" High values indicate heavy write load that is causing accumulation of sstables in level 0. These sstables are not"+
 		" being compacted quickly enough to lower levels, resulting in a misshapen LSM.", stats.UnitDimensionless)
 )
 
@@ -120,8 +120,8 @@ var (
 		Measure:     compactMarkedFiles,
 		Aggregation: view.LastValue(),
 	}
-	l0NumFilesView = &view.View{
-		Measure:     l0NumFiles,
+	l0TablesCountView = &view.View{
+		Measure:     l0TablesCount,
 		Aggregation: view.LastValue(),
 	}
 )
@@ -139,7 +139,7 @@ var PebbleViews = []*view.View{
 	compactInProgressBytesView,
 	compactNumInProgressView,
 	compactMarkedFilesView,
-	l0NumFilesView,
+	l0TablesCountView,
 }
 
 // ObservePebbleMetrics is used to periodically report metrics from the pebble database
@@ -176,7 +176,7 @@ func reportMetrics(m *pebble.Metrics) {
 		compactInProgressBytes.M(int64(m.Compact.InProgressBytes)),
 		compactNumInProgress.M(int64(m.Compact.NumInProgress)),
 		compactMarkedFiles.M(int64(m.Compact.MarkedFiles)),
-		l0NumFiles.M(int64(m.Levels[0].NumFiles)))
+		l0TablesCount.M(int64(m.Levels[0].TablesCount)))
 
 	// Block cache metrics
 	stats.RecordWithOptions(ctx,
@@ -195,20 +195,20 @@ func reportMetrics(m *pebble.Metrics) {
 		stats.WithMeasurements(cacheMisses.M(m.BlockCache.Misses)),
 		stats.WithTags(tag.Insert(cacheTag, "block")))
 
-	// Table cache metrics
+	// File cache metrics
 	stats.RecordWithOptions(ctx,
-		stats.WithMeasurements(cacheCount.M(m.TableCache.Count)),
-		stats.WithTags(tag.Insert(cacheTag, "table")))
+		stats.WithMeasurements(cacheCount.M(m.FileCache.TableCount+m.FileCache.BlobFileCount)),
+		stats.WithTags(tag.Insert(cacheTag, "file")))
 
 	stats.RecordWithOptions(ctx,
-		stats.WithMeasurements(cacheSize.M(m.TableCache.Size)),
-		stats.WithTags(tag.Insert(cacheTag, "table")))
+		stats.WithMeasurements(cacheSize.M(m.FileCache.Size)),
+		stats.WithTags(tag.Insert(cacheTag, "file")))
 
 	stats.RecordWithOptions(ctx,
-		stats.WithMeasurements(cacheHits.M(m.TableCache.Hits)),
-		stats.WithTags(tag.Insert(cacheTag, "table")))
+		stats.WithMeasurements(cacheHits.M(m.FileCache.Hits)),
+		stats.WithTags(tag.Insert(cacheTag, "file")))
 
 	stats.RecordWithOptions(ctx,
-		stats.WithMeasurements(cacheMisses.M(m.TableCache.Misses)),
-		stats.WithTags(tag.Insert(cacheTag, "table")))
+		stats.WithMeasurements(cacheMisses.M(m.FileCache.Misses)),
+		stats.WithTags(tag.Insert(cacheTag, "file")))
 }
