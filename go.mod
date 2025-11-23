@@ -3,7 +3,7 @@ module github.com/ipni/go-indexer-core
 go 1.24.6
 
 require (
-	github.com/cockroachdb/pebble/v2 v2.1.1
+	github.com/cockroachdb/pebble/v2 v2.1.2
 	github.com/gammazero/radixtree v0.4.0
 	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-log/v2 v2.9.0
