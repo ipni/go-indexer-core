@@ -5,7 +5,7 @@ go 1.24.6
 require (
 	github.com/cockroachdb/pebble/v2 v2.1.2
 	github.com/gammazero/radixtree v0.4.0
-	github.com/ipfs/go-cid v0.5.0
+	github.com/ipfs/go-cid v0.6.0
 	github.com/ipfs/go-log/v2 v2.9.0
 	github.com/ipfs/go-test v0.2.3
 	github.com/ipni/go-libipni v0.7.2
