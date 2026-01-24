@@ -3,7 +3,7 @@ module github.com/ipni/go-indexer-core
 go 1.24.6
 
 require (
-	github.com/cockroachdb/pebble/v2 v2.1.3
+	github.com/cockroachdb/pebble/v2 v2.1.4
 	github.com/gammazero/radixtree v0.4.0
 	github.com/ipfs/go-cid v0.6.0
 	github.com/ipfs/go-log/v2 v2.9.0
@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/RaduBerinde/axisds v0.0.0-20250419182453-5135a0650657 // indirect
+	github.com/RaduBerinde/axisds v0.1.0 // indirect
 	github.com/RaduBerinde/btreemap v0.0.0-20250419174037-3d62b7205d54 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
