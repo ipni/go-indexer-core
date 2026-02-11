@@ -239,7 +239,7 @@ func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
 func generateRandomValueKeys(count int) [][]byte {
 	var vks [][]byte
 	rng := rand.New(rand.NewSource(1413))
-	for i := 0; i < count; i++ {
+	for range count {
 		vk := make([]byte, rng.Intn(127)+1)
 		vks = append(vks, vk)
 	}

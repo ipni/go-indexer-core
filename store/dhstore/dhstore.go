@@ -123,10 +123,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-	size := s.batchSize
-	if len(mhs) < size {
-		size = len(mhs)
-	}
+	size := min(len(mhs), s.batchSize)
 	merges := make([]client.Index, 0, size)
 	for _, mh := range mhs {
 		if _, err = multihash.Decode(mh); err != nil {
@@ -161,10 +158,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 func (s *dhStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	ctx := context.Background()
 	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
-	size := s.batchSize
-	if len(mhs) < size {
-		size = len(mhs)
-	}
+	size := min(len(mhs), s.batchSize)
 	dels := make([]client.Index, 0, size)
 
 	for _, mh := range mhs {

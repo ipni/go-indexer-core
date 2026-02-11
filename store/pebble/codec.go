@@ -81,7 +81,7 @@ func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 	}
 	vks := c.p.leaseKeyList()
 	vks.maybeGrow(vkl)
-	for i := 0; i < vkl; i++ {
+	for i := range vkl {
 		vk := c.p.leaseKey()
 		offset := marshalledValueKeyLength * i
 		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
