@@ -273,7 +273,7 @@ func TestUnboundedGrowth(t *testing.T) {
 
 	s = New(maxSize)
 
-	for i := 0; i < maxSize; i++ {
+	for i := range maxSize {
 		value.ContextID = []byte(mhs[i])
 		s.Put(value, mhash)
 		s.Remove(value, mhash)
@@ -556,7 +556,7 @@ func TestMemSingleVsMany(t *testing.T) {
 
 	t.Run(fmt.Sprintf("Put %d Single multihashes", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1024)
-		for i := 0; i < 1024; i++ {
+		for range 1024 {
 			mhs = random.Multihashes(1024)
 			for j := range mhs {
 				s.Put(value, mhs[j])
@@ -570,7 +570,7 @@ func TestMemSingleVsMany(t *testing.T) {
 
 	t.Run(fmt.Sprintf("Put %d multihashes in groups of 1024", 1024*1024), func(t *testing.T) {
 		s := New(1024 * 1024)
-		for i := 0; i < 1024; i++ {
+		for range 1024 {
 			mhs = random.Multihashes(1024)
 			s.Put(value, mhs...)
 		}

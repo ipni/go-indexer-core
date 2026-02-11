@@ -632,7 +632,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 
 	// Test parallel writes over same multihash
 	wg.Add(5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		i := i
 		go func() {
 			t.Log("Put/Get different multihash")
@@ -661,7 +661,7 @@ func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
 
 	// Test remove for all except one
 	wg.Add(4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		i := i
 		go func() {
 			t.Log("Remove multihash")
