@@ -144,29 +144,25 @@ var PebbleViews = []*view.View{
 
 // ObservePebbleMetrics is used to periodically report metrics from the pebble database
 func ObservePebbleMetrics(ctx context.Context, interval time.Duration, db *pebble.DB) {
-	var t *time.Timer
 	log.Infow("Started observing pebble metrics")
+	reportMetrics(ctx, db.Metrics())
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+
 	for {
 		select {
+		case <-timer.C:
+			reportMetrics(ctx, db.Metrics())
+			timer.Reset(interval)
 		case <-ctx.Done():
 			log.Infow("Finished observing pebble metrics")
 			return
-		default:
-			reportMetrics(db.Metrics())
-		}
-
-		t = time.NewTimer(interval)
-		select {
-		case <-ctx.Done():
-			log.Infow("Finished observing pebble metrics")
-			return
-		case <-t.C:
 		}
 	}
 }
 
-func reportMetrics(m *pebble.Metrics) {
-	ctx := context.Background()
+func reportMetrics(ctx context.Context, m *pebble.Metrics) {
 	stats.Record(ctx,
 		flushCount.M(m.Flush.Count),
 		readAmp.M(int64(m.ReadAmp())),

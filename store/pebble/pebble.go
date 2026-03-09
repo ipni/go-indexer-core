@@ -41,7 +41,7 @@ type store struct {
 	p             *pool
 	closed        bool
 	comparer      *pebble.Comparer
-	metricsCancel context.CancelFunc
+	cancelMetrics context.CancelFunc
 }
 
 // New instantiates a new instance of a store backed by Pebble.
@@ -70,7 +70,7 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 		p:             p,
 		vcodec:        c,
 		comparer:      opts.Comparer,
-		metricsCancel: cancelFunc,
+		cancelMetrics: cancelFunc,
 	}
 
 	go metrics.ObservePebbleMetrics(metricsContext, metricsReportingInterval, db)
@@ -261,8 +261,9 @@ func (s *store) Close() error {
 	if s.closed {
 		return nil
 	}
-	s.metricsCancel()
 	s.closed = true
+	// Stop reporting pebble metrics.
+	s.cancelMetrics()
 
 	// Close also performs a flush.
 	return s.db.Close()
