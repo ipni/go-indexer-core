@@ -2,7 +2,6 @@ package radixcache
 
 import (
 	"bytes"
-	"context"
 	"slices"
 	"strings"
 	"sync"
@@ -11,10 +10,8 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/cache"
-	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"go.opencensus.io/stats"
 )
 
 var log = logging.Logger("indexer-core/cache")
@@ -130,7 +127,6 @@ keysLoop:
 				"values", c.curEnts.Len, "multihashes", c.current.Len())
 			c.rotate()
 			c.rotate()
-			stats.Record(context.Background(), metrics.CacheMisuse.M(1))
 		}
 	}
 
