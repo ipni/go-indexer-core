@@ -29,6 +29,10 @@ var (
 	_ indexer.Interface = (*store)(nil)
 )
 
+func init() {
+	metrics.SetupPebbleMetrics()
+}
+
 type store struct {
 	db *pebble.DB
 	// Only support binary format since in pebble we need the capability to merge keys and
