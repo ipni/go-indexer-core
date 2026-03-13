@@ -18,14 +18,11 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-indexer-core"
-	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/ipni/go-indexer-core/store/dhstore/client"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mr-tron/base58"
 	"github.com/multiformats/go-multihash"
-	"go.opencensus.io/stats"
-	"go.opencensus.io/tag"
 )
 
 const defaultMaxIdleConns = 128
@@ -112,16 +109,10 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		return err
 	}
 
-	start := time.Now()
-
 	ctx := context.Background()
 	if err = s.sendDHMetadata(ctx, metaReq); err != nil {
 		return err
 	}
-
-	stats.RecordWithOptions(context.Background(),
-		stats.WithTags(tag.Insert(metrics.Method, "put")),
-		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
 	size := min(len(mhs), s.batchSize)
 	merges := make([]client.Index, 0, size)
@@ -249,7 +240,6 @@ func (s *dhStore) sendDelContextRequest(ctx context.Context, dhURL string) error
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	start := time.Now()
 	rsp, err := s.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -260,10 +250,6 @@ func (s *dhStore) sendDelContextRequest(ctx context.Context, dhURL string) error
 	if rsp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to delete metadata at %s: %s", dhURL, http.StatusText(rsp.StatusCode))
 	}
-
-	stats.RecordWithOptions(context.Background(),
-		stats.WithTags(tag.Insert(metrics.Method, "delete")),
-		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
 	return nil
 }
@@ -350,7 +336,6 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 
 	req.Header.Set("Content-Type", "application/json")
 
-	start := time.Now()
 	rsp, err := s.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -361,10 +346,6 @@ func (s *dhStore) sendDHMergeIndexRequest(ctx context.Context, merges []client.I
 	if rsp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("failed to send merges: %v", http.StatusText(rsp.StatusCode))
 	}
-
-	stats.RecordWithOptions(context.Background(),
-		stats.WithTags(tag.Insert(metrics.Method, "put")),
-		stats.WithMeasurements(metrics.DHMultihashLatency.M(metrics.MsecSince(start))))
 
 	return nil
 }
