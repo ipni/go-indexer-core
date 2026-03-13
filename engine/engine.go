@@ -87,56 +87,45 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 	mhsCount := len(mhs)
 
 	if e.resultCache != nil {
-		var addToCache []multihash.Multihash
-		var copied bool
-		// If using a value store, make sure give a copy of mhs to the
-		// valuestore, as some implementations may expect to take ownership.
-		if e.valueStore != nil {
-			mhs = slices.Clone(mhs)
-			copied = true
-		}
-
-		for i := 0; i < len(mhs); {
-			v, found := e.resultCache.Get(mhs[i])
-
-			// If multihash found, check if value already exists in cache.
-			// Values in cache must already be in the value store, in which
-			// case there is no need to store anything new.
-			if found {
-				found = false
+		if e.cacheOnPut {
+			mhs = slices.DeleteFunc(mhs, func(mh multihash.Multihash) bool {
+				v, found := e.resultCache.Get(mh)
+				if !found {
+					return false
+				}
+				// If multihash cached, check if value already exists in cache.
+				// Values in cache must already be in the value store, in which
+				// case there is nothing new to store.
 				for j := range v {
 					if v[j].Equal(value) {
-						found = true
-						break
+						return true
 					}
 				}
-				if found {
-					// The multihash was found and is already mapped to this
-					// value, so do not try to put it in the value store. The
-					// value store will handle this, but at a higher cost
-					// requiring reading from disk.
-					if !copied {
-						// Copy-on-write
-						mhs = slices.Clone(mhs)
-						copied = true
-					}
-					mhs[i] = mhs[len(mhs)-1]
-					mhs[len(mhs)-1] = nil
-					mhs = mhs[:len(mhs)-1]
-					continue
+				// Add this new value to those already in the result cache.
+				return false
+			})
+			e.resultCache.Put(value, mhs...)
+		} else {
+			var addToCache []multihash.Multihash
+			mhs = slices.DeleteFunc(mhs, func(mh multihash.Multihash) bool {
+				v, found := e.resultCache.Get(mh)
+				if !found {
+					return false
 				}
-				// Add this value to those already in the result cache, since
-				// the multihash was already cached.
-				addToCache = append(addToCache, mhs[i])
-			} else if e.cacheOnPut {
-				addToCache = append(addToCache, mhs[i])
-			}
-			i++
+				// If multihash cached, check if value already exists in cache.
+				// Values in cache must already be in the value store, in which
+				// case there is nothing new to store.
+				for j := range v {
+					if v[j].Equal(value) {
+						return true
+					}
+				}
+				// Add this new value to those already in the result cache.
+				addToCache = append(addToCache, mh)
+				return false
+			})
+			e.resultCache.Put(value, addToCache...)
 		}
-
-		// Update value for existing multihashes, or add new index entries to
-		// cache if cacheOnPut is set.
-		e.resultCache.Put(value, addToCache...)
 		e.updateCacheStats()
 	}
 
@@ -220,20 +209,24 @@ func (e *Engine) updateCacheStats() {
 	}
 
 	// Only record stats that have changed.
-	var ms []stats.Measurement
+	var ms [3]stats.Measurement
+	var n int
 	if st.Indexes != prevStats.Indexes {
-		ms = append(ms, metrics.CacheMultihashes.M(int64(st.Indexes)))
+		ms[n] = metrics.CacheMultihashes.M(int64(st.Indexes))
+		n++
 	}
 	if st.Values != prevStats.Values {
-		ms = append(ms, metrics.CacheValues.M(int64(st.Values)))
+		ms[n] = metrics.CacheValues.M(int64(st.Values))
+		n++
 	}
 	if st.Evictions != prevStats.Evictions {
-		ms = append(ms, metrics.CacheEvictions.M(int64(st.Evictions)))
+		ms[n] = metrics.CacheEvictions.M(int64(st.Evictions))
+		n++
 	}
 
-	if len(ms) != 0 {
+	if n != 0 {
 		e.prevCacheStats.Store(&st)
-		stats.Record(context.Background(), ms...)
+		stats.Record(context.Background(), ms[:n]...)
 	}
 }
 
