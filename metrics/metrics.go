@@ -46,8 +46,8 @@ var (
 
 	GetIndexLatency = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "core_get_index_latency_msec",
-			Help: "Internal lookup time for a single index",
+			Name: "core_get_index_latency",
+			Help: "Internal lookup time for a single index in milliseconds",
 		},
 	)
 
