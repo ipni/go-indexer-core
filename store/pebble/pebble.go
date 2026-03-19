@@ -91,6 +91,10 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 	return st, nil
 }
 
+func (s *store) DumpPebbleMetrics() string {
+	return s.db.Metrics().String()
+}
+
 func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 	keygen := s.p.leaseBlake3Keyer()
 	mhk, err := keygen.multihashKey(mh)
