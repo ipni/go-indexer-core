@@ -8,7 +8,7 @@ require (
 	github.com/ipfs/go-cid v0.6.0
 	github.com/ipfs/go-log/v2 v2.9.1
 	github.com/ipfs/go-test v0.2.3
-	github.com/ipni/go-libipni v0.7.6-0.20260320161931-a5807cc341e5
+	github.com/ipni/go-libipni v0.7.6
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.2.3
