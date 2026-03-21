@@ -11,7 +11,6 @@ import (
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
-	"go.opencensus.io/stats"
 )
 
 // Engine is an implementation of indexer.Interface that combines a value store
@@ -25,6 +24,10 @@ type Engine struct {
 }
 
 var _ indexer.Interface = &Engine{}
+
+func init() {
+	metrics.SetupMetrics()
+}
 
 // New implements the indexer.Interface. It creates a new Engine with the given
 // result cache and value store.
@@ -47,9 +50,8 @@ func New(valueStore indexer.Interface, options ...Option) *Engine {
 
 func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	startTime := time.Now()
-	ctx := context.Background()
 	defer func() {
-		stats.Record(ctx, metrics.GetIndexLatency.M(metrics.MsecSince(startTime)))
+		metrics.GetIndexLatency.Set(metrics.MsecSince(startTime))
 	}()
 
 	// If there is a result cache, look there first. If the value is in the
@@ -57,10 +59,10 @@ func (e *Engine) Get(m multihash.Multihash) ([]indexer.Value, bool, error) {
 	if e.resultCache != nil {
 		v, found := e.resultCache.Get(m)
 		if found {
-			stats.Record(ctx, metrics.CacheHits.M(1))
+			metrics.CacheHits.Inc()
 			return v, true, nil
 		}
-		stats.Record(ctx, metrics.CacheMisses.M(1))
+		metrics.CacheMisses.Inc()
 	}
 
 	v, found, err := e.valueStore.Get(m)
@@ -134,7 +136,7 @@ func (e *Engine) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		return err
 	}
 
-	stats.Record(context.Background(), metrics.IngestMultihashes.M(int64(mhsCount)))
+	metrics.IngestMultihashes.Add(float64(mhsCount))
 
 	return nil
 }
@@ -160,7 +162,7 @@ func (e *Engine) RemoveProvider(ctx context.Context, providerID peer.ID) error {
 	if err != nil {
 		return err
 	}
-	stats.Record(context.Background(), metrics.RemovedProviders.M(1))
+	metrics.RemovedProviders.Inc()
 
 	if e.resultCache != nil {
 		e.resultCache.RemoveProvider(providerID)
@@ -209,24 +211,22 @@ func (e *Engine) updateCacheStats() {
 	}
 
 	// Only record stats that have changed.
-	var ms [3]stats.Measurement
-	var n int
+	var updated bool
 	if st.Indexes != prevStats.Indexes {
-		ms[n] = metrics.CacheMultihashes.M(int64(st.Indexes))
-		n++
+		metrics.CacheMultihashes.Set(float64(st.Indexes))
+		updated = true
 	}
 	if st.Values != prevStats.Values {
-		ms[n] = metrics.CacheValues.M(int64(st.Values))
-		n++
+		metrics.CacheValues.Set(float64(st.Values))
+		updated = true
 	}
 	if st.Evictions != prevStats.Evictions {
-		ms[n] = metrics.CacheEvictions.M(int64(st.Evictions))
-		n++
+		metrics.CacheEvictions.Set(float64(st.Evictions))
+		updated = true
 	}
 
-	if n != 0 {
+	if updated {
 		e.prevCacheStats.Store(&st)
-		stats.Record(context.Background(), ms[:n]...)
 	}
 }
 
