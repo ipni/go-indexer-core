@@ -2,18 +2,18 @@ package indexer_test
 
 import (
 	"bytes"
-	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/multiformats/go-varint"
 )
 
 func TestValueCodec_MarshalUnmarshal(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	wantValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
 	wantValueKeys := generateRandomValueKeys(43)
 
@@ -166,9 +166,8 @@ func TestBinaryValueCodec_MarshalUnmarshalEmptyValues(t *testing.T) {
 }
 
 func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
-	wantValueKeys := generateRandomValueKeys(43)
 
 	subject := indexer.BinaryWithJsonFallbackCodec{}
 
@@ -187,6 +186,7 @@ func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
 		}
 	}
 
+	wantValueKeys := generateRandomValueKeys(43)
 	gotJson, err := indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
 	if err != nil {
 		t.Fatal(err)
@@ -201,9 +201,8 @@ func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
 }
 
 func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
-	wantValueKeys := generateRandomValueKeys(43)
 
 	binCodec := indexer.BinaryValueCodec{}
 	subject := indexer.BinaryWithJsonFallbackCodec{}
@@ -223,6 +222,7 @@ func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
 		}
 	}
 
+	wantValueKeys := generateRandomValueKeys(43)
 	wantBinVK, err := binCodec.MarshalValueKeys(wantValueKeys)
 	if err != nil {
 		t.Fatal(err)
@@ -238,9 +238,9 @@ func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
 
 func generateRandomValueKeys(count int) [][]byte {
 	var vks [][]byte
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	for range count {
-		vk := make([]byte, rng.Intn(127)+1)
+		vk := make([]byte, rng.IntN(127)+1)
 		vks = append(vks, vk)
 	}
 	return vks
