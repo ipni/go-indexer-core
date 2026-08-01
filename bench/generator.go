@@ -1,9 +1,9 @@
 package bench
 
 import (
-	"math/rand"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -77,7 +77,7 @@ func (gc GeneratorConfig) withDefaults() GeneratorConfig {
 
 // GenerateRandomValues generates a set of random GeneratedValue and returns them along with their
 // total size in bytes.
-func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]GeneratedValue, int) {
+func GenerateRandomValues(b testing.TB, rng *random.Random, cfg GeneratorConfig) ([]GeneratedValue, int) {
 	cfg = cfg.withDefaults()
 	var gvs []GeneratedValue
 	var totalSize int
@@ -104,7 +104,7 @@ func GenerateRandomValues(b testing.TB, rng *rand.Rand, cfg GeneratorConfig) ([]
 			totalSize += n
 
 			if i > 0 && cfg.DuplicateEntries() {
-				pi := rng.Intn(len(gvs) - j)
+				pi := rng.IntN(len(gvs) - j)
 				gv.Entries = gvs[pi].Entries
 			}
 

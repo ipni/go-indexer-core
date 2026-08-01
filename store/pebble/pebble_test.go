@@ -1,9 +1,9 @@
 package pebble
 
 import (
-	"math/rand"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/ipni/go-indexer-core/store/test"
@@ -84,7 +84,7 @@ func TestStats(t *testing.T) {
 		t.Fatal()
 	}
 	defer subject.Close()
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	values, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{
 		NumProviders:         1,
 		NumValuesPerProvider: func() uint64 { return 123 },
