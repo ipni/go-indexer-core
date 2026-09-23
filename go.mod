@@ -1,6 +1,6 @@
 module github.com/ipni/go-indexer-core
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/cockroachdb/pebble/v2 v2.1.7
@@ -8,8 +8,8 @@ require (
 	github.com/ipfs/go-cid v0.6.2
 	github.com/ipfs/go-log/v2 v2.9.2
 	github.com/ipfs/go-test v0.4.1
-	github.com/ipni/go-libipni v0.8.2
-	github.com/libp2p/go-libp2p v0.49.0
+	github.com/ipni/go-libipni v0.9.0
+	github.com/libp2p/go-libp2p v0.50.0
 	github.com/mr-tron/base58 v1.3.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.1.0
@@ -58,9 +58,9 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
