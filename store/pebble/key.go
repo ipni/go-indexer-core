@@ -52,7 +52,13 @@ const (
 	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
 	// it should be removed during merge. See: valueKeysValueMerger.
 	mergeDeleteKeyPrefix
+	// meteringKeyPrefix represents keys used by the per-provider metering scanner.
+	meteringKeyPrefix
 )
+
+// providerHashLen is the blake3 output length used for both halves of a value
+// key: the provider ID and the context ID.
+const providerHashLen = 10
 
 // prefix returns the keyPrefix of this key by checking its first byte.
 // If no known prefix is found unknownKeyPrefix is returned.
@@ -67,6 +73,8 @@ func (k *key) prefix() keyPrefix {
 		return valueKeyPrefix
 	case byte(mergeDeleteKeyPrefix):
 		return mergeDeleteKeyPrefix
+	case byte(meteringKeyPrefix):
+		return meteringKeyPrefix
 	default:
 		return unknownKeyPrefix
 	}
@@ -140,22 +148,14 @@ func (kl *keyList) Close() error {
 	return nil
 }
 
-// newBlake3Keyer instantiates a new keyer that uses blake3 hash function, where the
-// generated key lengths are:
-// - l + 1 for indexer.Value keys
-// - l + 2 for merge-delete indexer.Value keys
-// - multihash length + 1 for multihash keys
-func newBlake3Keyer(l int, p *pool) *blake3Keyer {
+// newBlake3Keyer instantiates a keyer that uses blake3.
+// hashLen is the blake3 output size in bytes for the provider ID and the context ID.
+// Value keys are prefix + provider hash + context hash.
+// Merge-delete keys add one extra prefix byte.
+// Multihash keys are prefix + raw multihash.
+func newBlake3Keyer(hashLen int, p *pool) *blake3Keyer {
 	return &blake3Keyer{
-		// Instantiate the hasher with half the given length. Because,
-		// hasher is only used for generating indexer.Value keys, and
-		// such keys are made up of: some prefix + hash of provider ID
-		// + hash of context ID.
-		// Using half the given length means we will avoid doubling the
-		// key length while maintaining the ability to lookup values
-		// key-range by provider ID since all such keys will have the
-		// same prefix.
-		hasher: blake3.New(l/2, nil),
+		hasher: blake3.New(hashLen, nil),
 		p:      p,
 	}
 }

@@ -181,6 +181,18 @@ func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
+func (s *memoryStore) MeteringAllStats(context.Context, []peer.ID) (*indexer.AllStatsReport, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *memoryStore) MeteringScanStatus(context.Context, []peer.ID) (*indexer.ScanStatus, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *memoryStore) MeteringTriggerScan(context.Context) error {
+	return indexer.ErrMeteringNotSupported
+}
+
 func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	var count uint64
 	s.mutex.Lock()

@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	// marshalledValueKeyLength length is the default key length plus the length of the prefix i.e. 1, plus
-	// the length of its varint length which is also 1.
-	marshalledValueKeyLength = defaultKeyerLength + 1 + 1
+	// marshalledValueKeyLength is one packed value key inside a multihash
+	// record: a 1-byte varint length, the value-key prefix, the provider hash,
+	// and the context hash.
+	marshalledValueKeyLength = 1 + 1 + providerHashLen + providerHashLen
 )
 
 // codec offers marshalling compatible with indexer.BinaryValueCodec format but optimised for use
