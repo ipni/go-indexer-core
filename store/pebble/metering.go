@@ -298,7 +298,10 @@ func (r *meteringRunner) runMultihashScanBatch(
 	if err := b.Set(meteringProgressKey, progressBytes, nil); err != nil {
 		return false, err
 	}
-	if err := b.Commit(pebble.Sync); err != nil {
+	// Progress is accepted into the memtable without waiting for a WAL fsync.
+	// A crash can drop the latest unfinished batches; resume then continues
+	// from the last durable cursor.
+	if err := b.Commit(pebble.NoSync); err != nil {
 		return false, err
 	}
 
