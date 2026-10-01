@@ -92,6 +92,11 @@ type ScanStatus struct {
 	// CursorKey is the latest key the scan has finished. JSON encodes it as
 	// base64. Empty until the first batch is committed.
 	CursorKey []byte
+	// EstimatedPercentDone is the estimated progress of the scan, from 0 to 100.
+	EstimatedPercentDone float64
+	// EstimatedFinish is when the scan is expected to complete. Nil when the
+	// estimate is not available.
+	EstimatedFinish *time.Time
 	// Current is the statistics committed by finished batches of this scan.
 	// Totals cover the whole store. Providers follows the requested selection.
 	Current StatsSnapshot

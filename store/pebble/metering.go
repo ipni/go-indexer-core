@@ -642,7 +642,26 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 	if len(p.Cursor) > 0 {
 		st.CursorKey = slices.Clone(p.Cursor)
 	}
+
+	if st.InProgress {
+		st.EstimatedPercentDone, st.EstimatedFinish = scanEstimate(p.StartedAt, st.CursorKey, time.Now())
+	}
+
 	return st, nil
+}
+
+// scanEstimate reports estimated percent done, from 0 to 100, and a finish time.
+// The finish time is nil when progress is still 0 or the start time is unset.
+func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *time.Time) {
+	frac := sha256MultihashKeyFraction(cursor)
+	percent := frac * 100
+	if frac <= 0 || started.IsZero() || !now.After(started) {
+		return percent, nil
+	}
+	elapsed := now.Sub(started)
+	remaining := time.Duration(float64(elapsed) * (1 - frac) / frac)
+	finish := now.Add(remaining)
+	return percent, &finish
 }
 
 // publishMeteringGauges records whole-store gauges from a completed scan.

@@ -443,3 +443,25 @@ func TestMeteringFailedScanNotResumed(t *testing.T) {
 	require.NotNil(t, report)
 	require.EqualValues(t, 5, report.Totals.Multihashes)
 }
+
+func TestSha256ScanEstimate(t *testing.T) {
+	key := make([]byte, 1+2+32)
+	key[0] = byte(multihashKeyPrefix)
+	key[1] = byte(multihash.SHA2_256)
+	key[2] = 32
+	key[3] = 0x80
+	frac := sha256MultihashKeyFraction(key)
+	require.InDelta(t, 0.5, frac, 0.01)
+	require.EqualValues(t, 0, sha256MultihashKeyFraction([]byte{byte(multihashKeyPrefix)}))
+	after := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 33}
+	require.EqualValues(t, 1, sha256MultihashKeyFraction(after))
+	now := time.Now()
+	percent, finish := scanEstimate(now.Add(-time.Hour), key, now)
+	require.InDelta(t, 50, percent, 1)
+	require.NotNil(t, finish)
+	require.False(t, finish.Before(now.Add(50*time.Minute)))
+	require.False(t, finish.After(now.Add(70*time.Minute)))
+	percent, finish = scanEstimate(now, []byte{0x01, 0x00}, now)
+	require.EqualValues(t, 0, percent)
+	require.Nil(t, finish)
+}
