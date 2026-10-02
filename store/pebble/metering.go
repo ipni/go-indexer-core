@@ -24,8 +24,12 @@ type meteringRunner struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	scanning atomic.Bool
-	trigger  chan struct{}
+	// scanCancel is the current scan's context cancel, or nil when no scan is
+	// running. A new WithCancelCause context is created for each scan so a
+	// previous cancel cannot affect the next one. The first CancelCause wins;
+	// later calls do not replace the cause.
+	scanCancel atomic.Pointer[context.CancelCauseFunc]
+	trigger    chan struct{}
 }
 
 // startMetering launches the scanner goroutine.
@@ -56,8 +60,8 @@ func (r *meteringRunner) run(ctx context.Context) {
 	if progress, err := r.loadMultihashScanProgress(r.db); err != nil {
 		log.Errorw("metering: failed to load progress on startup", "err", err)
 	} else if progress != nil && progress.Error == "" {
-		if err := r.runMultihashScan(ctx, progress); err != nil && !errors.Is(err, context.Canceled) {
-			log.Errorw("metering: resumed scan failed", "err", err)
+		if err := r.runMultihashScan(ctx, progress); err != nil {
+			logScanErr("metering: resumed scan failed", err)
 		}
 	} else if cur, err := r.loadCompletedScan(r.db); err != nil {
 		log.Errorw("metering: failed to load completed scan on startup", "err", err)
@@ -89,15 +93,15 @@ func (r *meteringRunner) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-r.trigger:
-			if err := r.runMultihashScan(ctx, nil); err != nil && !errors.Is(err, context.Canceled) {
-				log.Errorw("metering: triggered scan failed", "err", err)
+			if err := r.runMultihashScan(ctx, nil); err != nil {
+				logScanErr("metering: triggered scan failed", err)
 			}
 			if timer != nil {
 				timer.Reset(r.cfg.Interval)
 			}
 		case <-tick:
-			if err := r.runMultihashScan(ctx, nil); err != nil && !errors.Is(err, context.Canceled) {
-				log.Errorw("metering: scheduled scan failed", "err", err)
+			if err := r.runMultihashScan(ctx, nil); err != nil {
+				logScanErr("metering: scheduled scan failed", err)
 			}
 			timer.Reset(r.cfg.Interval)
 		}
@@ -133,19 +137,35 @@ func (r *meteringRunner) createMultihashScanProgress() (*multihashScanProgressRe
 	return progress, nil
 }
 
+// logScanErr logs a scan failure unless the scan was cancelled by shutdown or
+// by MeteringCancelScan.
+func logScanErr(msg string, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	if errors.Is(err, indexer.ErrScanCancelled) {
+		log.Infow("metering: scan cancelled", "err", err)
+		return
+	}
+	log.Errorw(msg, "err", err)
+}
+
 // runMultihashScan counts multihash keys to completion.
 // A nil progress starts a new scan; otherwise the passed progress is resumed.
-// scanning stays set until this returns.
+// scanCancel stays set until this returns.
 func (r *meteringRunner) runMultihashScan(
 	ctx context.Context,
 	progress *multihashScanProgressRecord,
 ) (
 	err error,
 ) {
-	if !r.scanning.CompareAndSwap(false, true) {
+	scanCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
+	if !r.scanCancel.CompareAndSwap(nil, &cancel) {
 		return nil
 	}
-	defer r.scanning.Store(false)
+	defer r.scanCancel.Store(nil)
 
 	// Persist failures against this progress record instead of reloading it.
 	defer func() { r.persistScanError(progress, err) }()
@@ -179,13 +199,13 @@ func (r *meteringRunner) runMultihashScan(
 	providerIDs := make(map[string]peer.ID)
 
 	for {
-		if err = ctx.Err(); err != nil {
+		if err = context.Cause(scanCtx); err != nil {
 			return err
 		}
 
 		batchStart := time.Now()
 
-		if done, err := r.runMultihashScanBatch(ctx, progress, counters, providerIDs); err != nil {
+		if done, err := r.runMultihashScanBatch(scanCtx, progress, counters, providerIDs); err != nil {
 			return err
 		} else if done {
 			break
@@ -193,7 +213,7 @@ func (r *meteringRunner) runMultihashScan(
 
 		if pause := batchSleep(time.Since(batchStart), r.cfg.TimeFill); pause > 0 {
 			select {
-			case <-ctx.Done():
+			case <-scanCtx.Done():
 			case <-time.After(pause):
 			}
 		}
@@ -259,7 +279,7 @@ func (r *meteringRunner) runMultihashScanBatch(
 	var lastKey []byte
 	valid := iter.First()
 	for valid && keysRead < r.cfg.BatchSize {
-		if err := ctx.Err(); err != nil {
+		if err := context.Cause(ctx); err != nil {
 			return false, err
 		}
 
@@ -429,7 +449,7 @@ func (r *meteringRunner) loadCompletedScan(rd pebble.Reader) (*multihashScanResu
 
 // triggerScan signals the runner to start a scan when none is running.
 func (r *meteringRunner) triggerScan() error {
-	if r.scanning.Load() {
+	if r.scanCancel.Load() != nil {
 		return indexer.ErrScanInProgress
 	}
 	select {
@@ -439,8 +459,22 @@ func (r *meteringRunner) triggerScan() error {
 	return nil
 }
 
+// cancelScan cancels the in-progress scan with ScanCancelledError as the
+// context cause. A second cancel does not replace the cause.
+func (r *meteringRunner) cancelScan(reason string) error {
+	p := r.scanCancel.Load()
+	if p == nil {
+		return indexer.ErrScanNotInProgress
+	}
+	(*p)(indexer.ScanCancelledError(reason))
+	return nil
+}
+
 // persistScanError records scanErr on progress so status reports can show why
-// the scan stopped. Cancellation and an already-recorded Error are ignored.
+// the scan stopped. A shutdown cancel has no cause, so it is context.Canceled
+// and is not stored; the unfinished scan resumes on the next start. A user
+// cancel carries ErrScanCancelled as the cause and is stored. An already-
+// recorded Error is left as-is.
 func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord, scanErr error) {
 	if progress == nil ||
 		scanErr == nil ||
@@ -620,6 +654,10 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 	}
 	st := &indexer.ScanStatus{}
 	if p == nil {
+		// The progress row is removed when a scan finishes, and it does not
+		// exist yet at the start of a scan. The cancel func is set for the
+		// whole run, so it is what marks the scan as still in progress.
+		st.InProgress = r.scanCancel.Load() != nil
 		return st, nil
 	}
 	st.ScanID = p.ScanID
@@ -629,7 +667,7 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 	st.Error = p.Error
 
 	// A failed scan keeps its progress row with Error set; that is not in progress.
-	st.InProgress = r.scanning.Load() || (p.Error == "" && !p.Done)
+	st.InProgress = r.scanCancel.Load() != nil || (p.Error == "" && !p.Done)
 
 	totals, err := r.loadScanTotals(snap, p.ScanID)
 	if err != nil {

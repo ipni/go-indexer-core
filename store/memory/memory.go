@@ -193,6 +193,10 @@ func (s *memoryStore) MeteringTriggerScan(context.Context) error {
 	return indexer.ErrMeteringNotSupported
 }
 
+func (s *memoryStore) MeteringCancelScan(context.Context, string) error {
+	return indexer.ErrMeteringNotSupported
+}
+
 func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	var count uint64
 	s.mutex.Lock()

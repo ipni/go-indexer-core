@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -14,6 +15,11 @@ var (
 	ErrMeteringNotSupported = errors.New("metering is not supported by store")
 	// ErrScanInProgress is returned by MeteringTriggerScan when a scan is already running.
 	ErrScanInProgress = errors.New("metering scan already in progress")
+	// ErrScanNotInProgress is returned by MeteringCancelScan when no scan is running.
+	ErrScanNotInProgress = errors.New("metering scan is not in progress")
+	// ErrScanCancelled is recorded on scan status when MeteringCancelScan stops a scan.
+	// A non-empty reason is appended after this text.
+	ErrScanCancelled = errors.New("user cancelled")
 )
 
 // StatsMeter is embedded in Interface. Implementations that cannot scan
@@ -36,6 +42,21 @@ type StatsMeter interface {
 	// a scan is already running. Progress is available from MeteringScanStatus while
 	// the scan runs, and from MeteringAllStats after it completes.
 	MeteringTriggerScan(ctx context.Context) error
+	// MeteringCancelScan asks the in-progress scan to stop. reason is recorded
+	// after ErrScanCancelled on MeteringScanStatus. An empty reason records
+	// ErrScanCancelled alone. The caller formats reason.
+	// ErrScanNotInProgress means no scan is running. A second cancel while the
+	// same scan is still stopping is a no-op.
+	MeteringCancelScan(ctx context.Context, reason string) error
+}
+
+// ScanCancelledError is ErrScanCancelled, optionally annotated with reason.
+// The result is always errors.Is(..., ErrScanCancelled).
+func ScanCancelledError(reason string) error {
+	if reason == "" {
+		return ErrScanCancelled
+	}
+	return fmt.Errorf("%w: %s", ErrScanCancelled, reason)
 }
 
 // CompletedScanStats is a completed metering scan: when it was measured and the

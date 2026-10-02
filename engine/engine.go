@@ -245,3 +245,7 @@ func (e *Engine) MeteringScanStatus(ctx context.Context, providerIDs []peer.ID) 
 func (e *Engine) MeteringTriggerScan(ctx context.Context) error {
 	return e.valueStore.MeteringTriggerScan(ctx)
 }
+
+func (e *Engine) MeteringCancelScan(ctx context.Context, reason string) error {
+	return e.valueStore.MeteringCancelScan(ctx, reason)
+}

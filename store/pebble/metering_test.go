@@ -188,6 +188,74 @@ func TestMeteringTriggerWhileInProgress(t *testing.T) {
 	_ = waitScanDone(t, pm, 10*time.Second)
 }
 
+func TestMeteringCancelScan(t *testing.T) {
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 0.05})
+	p1 := random.Peers(1)[0]
+	putValue(t, s, p1, []byte("ctx"), []byte("meta"), random.Multihashes(80)...)
+
+	require.ErrorIs(t, pm.MeteringCancelScan(context.Background(), ""), indexer.ErrScanNotInProgress)
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := pm.MeteringScanStatus(context.Background(), nil)
+		require.NoError(t, err)
+		if st.InProgress && st.KeysRead > 0 {
+			break
+		}
+		require.False(t, time.Now().After(deadline), "scan did not start")
+		time.Sleep(time.Millisecond)
+	}
+
+	require.NoError(t, pm.MeteringCancelScan(context.Background(), "paused for gc"))
+	// A second cancel while the same scan is stopping is a no-op.
+	_ = pm.MeteringCancelScan(context.Background(), "ignored")
+
+	wantCancel := indexer.ScanCancelledError("paused for gc")
+	deadline = time.Now().Add(5 * time.Second)
+	var st *indexer.ScanStatus
+	for {
+		var err error
+		st, err = pm.MeteringScanStatus(context.Background(), nil)
+		require.NoError(t, err)
+		if !st.InProgress {
+			break
+		}
+		require.False(t, time.Now().After(deadline), "scan did not stop after cancel")
+		time.Sleep(time.Millisecond)
+	}
+	require.Equal(t, wantCancel.Error(), st.Error)
+	require.ErrorIs(t, pm.MeteringCancelScan(context.Background(), ""), indexer.ErrScanNotInProgress)
+
+	empty, err := pm.MeteringAllStats(context.Background(), nil)
+	require.NoError(t, err)
+	require.Nil(t, empty)
+
+	// A new cancel cause is used for the next scan.
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	deadline = time.Now().Add(10 * time.Second)
+	var report *indexer.AllStatsReport
+	for time.Now().Before(deadline) {
+		st, err = pm.MeteringScanStatus(context.Background(), nil)
+		require.NoError(t, err)
+		if st.Error == wantCancel.Error() {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		require.Empty(t, st.Error, "scan failed: %s", st.Error)
+		if !st.InProgress {
+			report, err = pm.MeteringAllStats(context.Background(), nil)
+			require.NoError(t, err)
+			if report != nil {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.NotNil(t, report, "timeout waiting for scan after cancel")
+	require.GreaterOrEqual(t, report.Totals.Multihashes, uint64(80))
+}
+
 func TestMeteringRetentionOnlyCurrent(t *testing.T) {
 	s, pm := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1})
 	store := s.(*store)
@@ -274,6 +342,8 @@ func TestMeteringNotSupportedWithoutOption(t *testing.T) {
 	pm, ok := s.(indexer.StatsMeter)
 	require.True(t, ok, "store should still implement StatsMeter")
 	_, err = pm.MeteringAllStats(context.Background(), nil)
+	require.ErrorIs(t, err, indexer.ErrMeteringNotSupported)
+	err = pm.MeteringCancelScan(context.Background(), "")
 	require.ErrorIs(t, err, indexer.ErrMeteringNotSupported)
 }
 
@@ -374,6 +444,17 @@ func TestMeteringPersistScanError(t *testing.T) {
 	require.Empty(t, st.Error)
 	// Unfinished progress without Error is reported as in progress.
 	require.True(t, st.InProgress)
+
+	store.metering.persistScanError(progress, indexer.ErrScanCancelled)
+	st, err = pm.MeteringScanStatus(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, indexer.ErrScanCancelled.Error(), st.Error)
+	require.False(t, st.InProgress)
+
+	progress.Error = ""
+	raw, err = encodeMultihashScanProgress(progress)
+	require.NoError(t, err)
+	require.NoError(t, store.db.Set(meteringProgressKey, raw, pebble.Sync))
 
 	store.metering.persistScanError(progress, errors.New("boom"))
 	st, err = pm.MeteringScanStatus(context.Background(), nil)

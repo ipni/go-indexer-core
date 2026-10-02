@@ -339,3 +339,11 @@ func (s *store) MeteringTriggerScan(ctx context.Context) error {
 	}
 	return s.metering.triggerScan()
 }
+
+func (s *store) MeteringCancelScan(ctx context.Context, reason string) error {
+	_ = ctx
+	if s.metering == nil {
+		return indexer.ErrMeteringNotSupported
+	}
+	return s.metering.cancelScan(reason)
+}

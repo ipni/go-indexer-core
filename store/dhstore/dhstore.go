@@ -292,6 +292,10 @@ func (s *dhStore) MeteringTriggerScan(context.Context) error {
 	return indexer.ErrMeteringNotSupported
 }
 
+func (s *dhStore) MeteringCancelScan(context.Context, string) error {
+	return indexer.ErrMeteringNotSupported
+}
+
 func makeDHMerge(mh multihash.Multihash, valueKey []byte) (client.Index, error) {
 	// Encrypt value key with original multihash.
 	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
