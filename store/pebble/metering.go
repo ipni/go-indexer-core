@@ -56,10 +56,12 @@ func (r *meteringRunner) stop() {
 
 // run resumes an unfinished scan, then starts a new one when the interval
 // elapses or a manual trigger arrives. A manual trigger restarts the interval.
+// DoneAt is written in the same batch as the completed-scan header, so a scan
+// with DoneAt set is finished and is left as-is.
 func (r *meteringRunner) run(ctx context.Context) {
 	if progress, err := r.loadMultihashScanProgress(r.db); err != nil {
 		log.Errorw("metering: failed to load progress on startup", "err", err)
-	} else if progress != nil && progress.Error == "" {
+	} else if r.scanNeedsResume(progress) {
 		if err := r.runMultihashScan(ctx, progress); err != nil {
 			logScanErr("metering: resumed scan failed", err)
 		}
@@ -106,6 +108,13 @@ func (r *meteringRunner) run(ctx context.Context) {
 			timer.Reset(r.cfg.Interval)
 		}
 	}
+}
+
+// scanNeedsResume reports whether startup should continue this progress record.
+// A failed scan is not resumed. DoneAt is stored with the completed header, so
+// a scan with DoneAt set is already finished.
+func (r *meteringRunner) scanNeedsResume(progress *multihashScanProgressRecord) bool {
+	return progress != nil && progress.Error == "" && progress.DoneAt.IsZero()
 }
 
 // createMultihashScanProgress persists a new scan with empty totals and returns its progress record.
@@ -196,7 +205,11 @@ func (r *meteringRunner) runMultihashScan(
 		)
 	}
 
-	providerIDs := make(map[string]peer.ID)
+	// providerIDByHash remembers value-record lookups for this scan. A value key maps
+	// to the provider ID in that record. A provider hash maps to an ID read
+	// from any remaining record for that provider. An empty ID means the
+	// lookup ran and the record is gone.
+	providerIDByHash := make(map[string]peer.ID)
 
 	for {
 		if err = context.Cause(scanCtx); err != nil {
@@ -205,7 +218,7 @@ func (r *meteringRunner) runMultihashScan(
 
 		batchStart := time.Now()
 
-		if done, err := r.runMultihashScanBatch(scanCtx, progress, counters, providerIDs); err != nil {
+		if done, err := r.runMultihashScanBatch(scanCtx, progress, counters, providerIDByHash); err != nil {
 			return err
 		} else if done {
 			break
@@ -251,12 +264,12 @@ func (r *meteringRunner) runMultihashScanBatch(
 	ctx context.Context,
 	progress *multihashScanProgressRecord,
 	counters *multihashScanCounters,
-	providerIDs map[string]peer.ID,
+	providerIDByHash map[string]peer.ID,
 ) (
 	done bool,
 	err error,
 ) {
-	if progress.Done {
+	if !progress.DoneAt.IsZero() {
 		return true, nil
 	}
 	lower, upper := multihashScanBounds(progress.Cursor)
@@ -289,7 +302,14 @@ func (r *meteringRunner) runMultihashScanBatch(
 			return false, err
 		}
 		bytesRead += uint64(len(key) + len(value))
-		r.countMultihashScanRecord(counters, key, value, modifiedProviderContext, providerIDs)
+		if err := r.countMultihashScanRecord(
+			counters,
+			key, value,
+			modifiedProviderContext,
+			providerIDByHash,
+		); err != nil {
+			return false, err
+		}
 		lastKey = append(lastKey[:0], key...)
 
 		keysRead++
@@ -301,9 +321,6 @@ func (r *meteringRunner) runMultihashScanBatch(
 	progress.BytesRead += bytesRead
 	if keysRead > 0 {
 		progress.Cursor = slices.Clone(lastKey)
-	}
-	if exhausted {
-		progress.Done = true
 	}
 
 	b := r.db.NewBatch()
@@ -330,7 +347,9 @@ func (r *meteringRunner) runMultihashScanBatch(
 		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
 	)
 
-	return progress.Done, nil
+	// DoneAt stays unset here. The finish batch writes it together with the
+	// completed-scan header, so a crash cannot observe one without the other.
+	return exhausted, nil
 }
 
 // countMultihashScanRecord adds one multihash key to the scan counters.
@@ -338,24 +357,31 @@ func (r *meteringRunner) countMultihashScanRecord(
 	counters *multihashScanCounters,
 	key, value []byte,
 	modifiedProviderContext map[string]struct{},
-	providerIDs map[string]peer.ID,
-) {
+	providerIDByHash map[string]peer.ID,
+) error {
 	if len(key) == 0 || keyPrefix(key[0]) != multihashKeyPrefix {
-		return
+		return nil
 	}
 
 	vks, err := r.vcodec.unmarshalValueKeys(value)
 	if err != nil {
+		counters.totals.Invalid.Entries++
+		counters.totals.Invalid.KeyBytes += uint64(len(key))
+		counters.totals.Invalid.ValueBytes += uint64(len(value))
 		log.Warnw("metering: skip undecodable multihash value", "err", err)
-		return
+		return nil
 	}
 	defer vks.Close()
 
-	r.countMultihashScanKey(counters, key, value, vks, modifiedProviderContext, providerIDs)
+	return r.countMultihashScanKey(counters, key, value, vks, modifiedProviderContext, providerIDByHash)
 }
 
 // finishMultihashScan stores this scan as the latest completed result and deletes older scan rows.
-func (r *meteringRunner) finishMultihashScan(progress *multihashScanProgressRecord, counters *multihashScanCounters) error {
+// DoneAt on the progress record is set in this same batch.
+func (r *meteringRunner) finishMultihashScan(
+	progress *multihashScanProgressRecord,
+	counters *multihashScanCounters,
+) error {
 	completedAt := time.Now().UTC()
 
 	b := r.db.NewBatch()
@@ -372,7 +398,14 @@ func (r *meteringRunner) finishMultihashScan(progress *multihashScanProgressReco
 	if err := b.Set(meteringCurrentKey, curBytes, nil); err != nil {
 		return err
 	}
-	if err := b.Delete(meteringProgressKey, nil); err != nil {
+	// Keep the progress record after success so status can still show this
+	// scan as done, with the counters it produced. The next scan replaces it.
+	progress.DoneAt = completedAt
+	progressBytes, err := encodeMultihashScanProgress(progress)
+	if err != nil {
+		return err
+	}
+	if err := b.Set(meteringProgressKey, progressBytes, nil); err != nil {
 		return err
 	}
 	scanPrefix, nextScanPrefix := meteringScanIDRange(progress.ScanID)
@@ -390,8 +423,9 @@ func (r *meteringRunner) finishMultihashScan(progress *multihashScanProgressReco
 		"scanID", progress.ScanID,
 		"keysRead", progress.KeysRead,
 		"bytesRead", progress.BytesRead,
-		"multihashes", counters.totals.Multihashes,
-		"slots", counters.totals.Slots,
+		"active", counters.totals.Active.Entries,
+		"deleted", counters.totals.Deleted.Entries,
+		"slots", counters.totals.Active.Slots,
 		"duration", completedAt.Sub(progress.StartedAt),
 	)
 
@@ -421,7 +455,7 @@ func (r *meteringRunner) finishMultihashScan(progress *multihashScanProgressReco
 	return nil
 }
 
-// loadMultihashScanProgress returns the unfinished scan, or nil when none is stored.
+// loadMultihashScanProgress returns the latest scan's progress record, or nil when none is stored.
 func (r *meteringRunner) loadMultihashScanProgress(rd pebble.Reader) (*multihashScanProgressRecord, error) {
 	b, closer, err := rd.Get(meteringProgressKey)
 	if errors.Is(err, pebble.ErrNotFound) {
@@ -497,7 +531,13 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 
 // loadAllStats returns the latest completed scan.
 // providerIDs filters provider rows; totals are always for the whole store.
-func (r *meteringRunner) loadAllStats(ctx context.Context, providerIDs []peer.ID) (*indexer.AllStatsReport, error) {
+func (r *meteringRunner) loadAllStats(
+	ctx context.Context,
+	providerIDs []peer.ID,
+) (
+	*indexer.AllStatsReport,
+	error,
+) {
 	_ = ctx
 
 	// Load data from a snapshot to ensure consistent view of the database.
@@ -524,7 +564,14 @@ func (r *meteringRunner) loadAllStats(ctx context.Context, providerIDs []peer.ID
 // loadProviderStats returns provider rows for scanID.
 // A nil providerIDs returns every provider with a known ID. An empty slice returns none.
 // Rows whose provider ID is still empty are omitted; those exist only so a scan can resume.
-func (r *meteringRunner) loadProviderStats(rd pebble.Reader, scanID uint64, providerIDs []peer.ID) ([]indexer.ProviderStats, error) {
+func (r *meteringRunner) loadProviderStats(
+	rd pebble.Reader,
+	scanID uint64,
+	providerIDs []peer.ID,
+) (
+	[]indexer.ProviderStats,
+	error,
+) {
 	if providerIDs != nil && len(providerIDs) == 0 {
 		return []indexer.ProviderStats{}, nil
 	}
@@ -604,7 +651,13 @@ func (r *meteringRunner) loadScanTotals(rd pebble.Reader, scanID uint64) (*index
 }
 
 // loadMultihashScanCounters reads the totals and every provider row committed for scanID.
-func (r *meteringRunner) loadMultihashScanCounters(rd pebble.Reader, scanID uint64) (*multihashScanCounters, error) {
+func (r *meteringRunner) loadMultihashScanCounters(
+	rd pebble.Reader,
+	scanID uint64,
+) (
+	*multihashScanCounters,
+	error,
+) {
 	totals, err := r.loadScanTotals(rd, scanID)
 	if err != nil {
 		return nil, err
@@ -642,7 +695,7 @@ func (r *meteringRunner) loadMultihashScanCounters(rd pebble.Reader, scanID uint
 	return result, nil
 }
 
-// loadScanStatus reports the unfinished multihash scan and the counters committed so far.
+// loadScanStatus reports the latest multihash scan and the counters it has committed.
 // providerIDs filters provider rows the same way as loadAllStats.
 func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.ID) (*indexer.ScanStatus, error) {
 	_ = ctx
@@ -654,20 +707,20 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 	}
 	st := &indexer.ScanStatus{}
 	if p == nil {
-		// The progress row is removed when a scan finishes, and it does not
-		// exist yet at the start of a scan. The cancel func is set for the
-		// whole run, so it is what marks the scan as still in progress.
-		st.InProgress = r.scanCancel.Load() != nil
+		st.State = indexer.ScanStateNone
 		return st, nil
 	}
 	st.ScanID = p.ScanID
 	st.StartedAt = p.StartedAt
-	st.KeysRead = p.KeysRead
-	st.BytesRead = p.BytesRead
 	st.Error = p.Error
-
-	// A failed scan keeps its progress row with Error set; that is not in progress.
-	st.InProgress = r.scanCancel.Load() != nil || (p.Error == "" && !p.Done)
+	switch {
+	case st.Error != "":
+		st.State = indexer.ScanStateError
+	case !p.DoneAt.IsZero():
+		st.State = indexer.ScanStateDone
+	default:
+		st.State = indexer.ScanStateInProgress
+	}
 
 	totals, err := r.loadScanTotals(snap, p.ScanID)
 	if err != nil {
@@ -684,8 +737,12 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 		st.CursorKey = slices.Clone(p.Cursor)
 	}
 
-	if st.InProgress {
+	switch st.State {
+	case indexer.ScanStateInProgress:
 		st.EstimatedPercentDone, st.EstimatedFinish = scanEstimate(p.StartedAt, st.CursorKey, time.Now())
+
+	case indexer.ScanStateDone:
+		st.EstimatedPercentDone, st.EstimatedFinish = 100, &p.DoneAt
 	}
 
 	return st, nil
@@ -710,8 +767,9 @@ func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *ti
 func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, duration time.Duration) {
 	ctx := context.Background()
 	stats.Record(ctx,
-		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Multihashes)),
-		metrics.MeteringTotalSlots.M(int64(report.Totals.Slots)),
+		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Active.Entries)),
+		metrics.MeteringTotalSlots.M(int64(report.Totals.Active.Slots)),
+		metrics.MeteringTotalDeleted.M(int64(report.Totals.Deleted.Entries)),
 		metrics.MeteringScanCompletedAt.M(float64(report.MeasuredAt.Unix())),
 		metrics.MeteringScanDurationMs.M(float64(duration.Milliseconds())),
 	)
@@ -732,8 +790,11 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 	}
 }
 
-// multihashScanCounters holds the totals for one multihash scan.
-// Each provider row is keyed by the provider hash from the multihash slots.
+// multihashScanCounters is the in-memory copy of one scan's committed
+// counters. totals is written to the scan-id totals key at the end of each
+// batch and copied into multihashScanResults at the finish. providers is
+// keyed by provider hash; only rows touched by the current batch are written
+// to the scan-id provider keys. A resume loads both back from those keys.
 type multihashScanCounters struct {
 	totals    indexer.StoreTotals
 	providers map[string]*indexer.ProviderStats
@@ -751,16 +812,18 @@ func (s *multihashScanCounters) providerStats(providerHash []byte) (string, *ind
 	return key, stats
 }
 
-// cachedProviderID returns the peer ID for a provider hash, reading one value record
-// the first time this scan sees that hash. An empty ID means that lookup already ran.
-// Value records hold the peer ID written when the advertisement was indexed.
-func cachedProviderID(providerIDs map[string]peer.ID, providerHash []byte, readProviderID func([]byte) peer.ID) peer.ID {
+// providerIDForHash returns the peer ID for a provider hash, reading one value
+// record the first time this scan sees that hash. providerIDByHash is the
+// scan-wide lookup cache. An empty ID means that lookup already ran and no
+// record remains. Value records hold the peer ID written when the advertisement
+// was indexed.
+func (r *meteringRunner) providerIDForHash(providerIDByHash map[string]peer.ID, providerHash []byte) peer.ID {
 	key := string(providerHash)
-	if id, ok := providerIDs[key]; ok {
+	if id, ok := providerIDByHash[key]; ok {
 		return id
 	}
-	id := readProviderID(providerHash)
-	providerIDs[key] = id
+	id := r.readProviderID(providerHash)
+	providerIDByHash[key] = id
 	return id
 }
 
@@ -795,30 +858,109 @@ func (r *meteringRunner) readProviderID(providerHash []byte) peer.ID {
 }
 
 // countMultihashScanKey adds one multihash key: one multihash, its key and
-// value sizes, and one multihash for each distinct provider in its slots.
-func (r *meteringRunner) countMultihashScanKey(counters *multihashScanCounters, key, value []byte, valueKeys *keyList, modifiedProviderContext map[string]struct{}, providerIDs map[string]peer.ID) {
-	counters.totals.Multihashes++
-	counters.totals.MultihashKeyBytes += uint64(len(key))
-	counters.totals.MultihashValueBytes += uint64(len(value))
-	counters.totals.Slots += uint64(len(valueKeys.keys))
-
+// value sizes, and one slot for each remaining value record. A provider's
+// multihash count increases once per key, even when that key has several of
+// its contexts. Slots whose value record is gone are deleted contexts when
+// the provider remains, or part of a deleted entry when no provider on the
+// key remains.
+func (r *meteringRunner) countMultihashScanKey(
+	counters *multihashScanCounters,
+	key, value []byte,
+	valueKeys *keyList,
+	modifiedProviderContext map[string]struct{},
+	providerIDByHash map[string]peer.ID,
+) error {
+	anyLive := false
 	providersInMultihash := make(map[string]struct{}, len(valueKeys.keys))
 	for _, valueKey := range valueKeys.keys {
 		providerHash := providerHashFromValueKey(valueKey.buf)
 		if providerHash == nil {
+			// Invalid value key?
 			continue
 		}
+
+		// Check if the providerID can be detected from provider+context hash
+		providerID, err := r.providerIDForValueKey(providerIDByHash, valueKey.buf)
+		if err != nil {
+			return err
+		}
+		deletedContext := providerID == ""
+
+		if deletedContext {
+			// Try to detect the providerID from the provider hash itself
+			providerID = r.providerIDForHash(providerIDByHash, providerHash)
+		}
+		deletedProvider := providerID == ""
+
+		if deletedProvider {
+			continue
+		}
+
 		providerKey, provider := counters.providerStats(providerHash)
 		if provider.ProviderID == "" {
-			provider.ProviderID = cachedProviderID(providerIDs, providerHash, r.readProviderID)
+			provider.ProviderID = providerID
 		}
-		if _, ok := providersInMultihash[providerKey]; ok {
+
+		if deletedContext {
+			provider.DeletedContexts++
+			modifiedProviderContext[providerKey] = struct{}{}
 			continue
 		}
-		providersInMultihash[providerKey] = struct{}{}
-		provider.Multihashes++
+
+		anyLive = true
+		provider.Slots++
 		modifiedProviderContext[providerKey] = struct{}{}
+
+		if _, notThereYet := providersInMultihash[providerKey]; !notThereYet {
+			providersInMultihash[providerKey] = struct{}{}
+			provider.Multihashes++
+		}
 	}
+
+	bucket := &counters.totals.Active
+	if !anyLive && len(valueKeys.keys) > 0 {
+		bucket = &counters.totals.Deleted
+	}
+
+	bucket.Entries++
+	bucket.KeyBytes += uint64(len(key))
+	bucket.ValueBytes += uint64(len(value))
+	bucket.Slots += uint64(len(valueKeys.keys))
+	return nil
+}
+
+// providerIDForValueKey returns the provider ID stored in the value record for
+// valueKey. providerIDByHash remembers the lookup. An empty ID means the record
+// is absent. A present record also records that ID under the provider hash, so
+// a later missing slot can tell that the provider still has a value record.
+func (r *meteringRunner) providerIDForValueKey(providerIDByHash map[string]peer.ID, valueKey []byte) (peer.ID, error) {
+	key := string(valueKey)
+	if providerID, ok := providerIDByHash[key]; ok {
+		return providerID, nil
+	}
+	raw, closer, err := r.db.Get(valueKey)
+	if errors.Is(err, pebble.ErrNotFound) {
+		providerIDByHash[key] = ""
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer closer.Close()
+	v, err := r.vcodec.unmarshalValue(slices.Clone(raw))
+	if err != nil {
+		return "", err
+	}
+	providerID := peer.ID(slices.Clone([]byte(v.ProviderID)))
+	providerIDByHash[key] = providerID
+	if providerID != "" {
+		if providerHash := providerHashFromValueKey(valueKey); providerHash != nil {
+			if _, ok := providerIDByHash[string(providerHash)]; !ok {
+				providerIDByHash[string(providerHash)] = providerID
+			}
+		}
+	}
+	return providerID, nil
 }
 
 // writeModifiedCounters puts the current store totals and the provider rows

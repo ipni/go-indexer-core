@@ -31,8 +31,9 @@ var (
 	DHMultihashLatency = stats.Float64("core/dh_multihash_latency", "Time that the indexer spends on sending encrypted multihashes to dhstore", stats.UnitMilliseconds)
 	DHMetadataLatency  = stats.Float64("core/dh_metadata_latency", "Time that the indexer spends on sending encrypted metadata to dhstore", stats.UnitMilliseconds)
 
-	MeteringTotalMultihashes = stats.Int64("core/metering/total_multihashes", "Total multihashes from the latest metering scan", stats.UnitDimensionless)
-	MeteringTotalSlots       = stats.Int64("core/metering/total_slots", "Total multihash value-key slots from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalMultihashes = stats.Int64("core/metering/total_multihashes", "Active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalSlots       = stats.Int64("core/metering/total_slots", "Value-key slots in active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalDeleted     = stats.Int64("core/metering/total_deleted", "Multihashes whose providers were all removed, from the latest metering scan", stats.UnitDimensionless)
 	MeteringScanCompletedAt  = stats.Float64("core/metering/scan_completed_at", "Unix timestamp of the latest completed metering scan", stats.UnitDimensionless)
 	MeteringScanDurationMs   = stats.Float64("core/metering/scan_duration_ms", "Duration of the latest completed metering scan in milliseconds", stats.UnitMilliseconds)
 	MeteringScanKeysRead     = stats.Int64("core/metering/scan_keys_read", "Keys read so far in the in-progress metering scan", stats.UnitDimensionless)
@@ -106,6 +107,10 @@ var (
 		Measure:     MeteringTotalSlots,
 		Aggregation: view.LastValue(),
 	}
+	meteringTotalDeletedView = &view.View{
+		Measure:     MeteringTotalDeleted,
+		Aggregation: view.LastValue(),
+	}
 	meteringScanCompletedAtView = &view.View{
 		Measure:     MeteringScanCompletedAt,
 		Aggregation: view.LastValue(),
@@ -153,6 +158,7 @@ var DefaultViews = []*view.View{
 var MeteringViews = []*view.View{
 	meteringTotalMultihashesView,
 	meteringTotalSlotsView,
+	meteringTotalDeletedView,
 	meteringScanCompletedAtView,
 	meteringScanDurationMsView,
 	meteringScanKeysReadView,

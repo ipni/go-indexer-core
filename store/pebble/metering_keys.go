@@ -27,30 +27,65 @@ const (
 	meteringScanProvider = 'v'
 )
 
-// multihashScanProgressRecord is the cursor of a multihash scan. The scan walks
-// multihashes. Cursor is the last multihash finished; empty means none has
-// been committed yet. Done is set when the walk is finished.
+// multihashScanProgressRecord is the persisted process view of one scan, at
+// the single progress key. MeteringScanStatus copies it into ScanStatus and
+// computes EstimatedPercentDone and EstimatedFinish from StartedAt and Cursor.
+// Each batch overwrites this record. Success keeps it with DoneAt set, so
+// status can still show the finished scan. The next scan replaces it.
+// Failure keeps it and sets Error, which stops the next startup from
+// resuming the walk.
+//
+// KeysRead and BytesRead count every visited key. They are not part of
+// StoreTotals: decoded keys are StoreTotals.Active or StoreTotals.Deleted,
+// and undecodable keys are StoreTotals.Invalid.
 //
 // A future shard keeps its own progress record under a separate key, so
 // workers do not write the same record.
 type multihashScanProgressRecord struct {
-	ScanID    uint64
+	// ScanID is the walk identity, the start time in microseconds. It selects
+	// the per-scan totals and provider rows.
+	ScanID uint64
+	// StartedAt is when the walk started. The status estimate uses it with
+	// Cursor to project a finish time.
 	StartedAt time.Time
-	KeysRead  uint64
+	// KeysRead is how many keys the iterator has visited, including values
+	// that did not decode. It drives the cursor and the finish estimate.
+	// It is not part of StoreTotals; decoded keys are StoreTotals.Active or
+	// StoreTotals.Deleted, and undecodable keys are StoreTotals.Invalid.
+	KeysRead uint64
+	// BytesRead is the total size of visited keys and values, including values
+	// that did not decode. Same split as KeysRead: the public counters are
+	// StoreTotals.Active, StoreTotals.Deleted, and StoreTotals.Invalid.
 	BytesRead uint64
-	Cursor    []byte
-	Done      bool
-	// Error is set when the scan stopped with a failure. Cleared when a new
-	// scan starts.
+	// Cursor is the last multihash key finished. Empty until the first batch
+	// commits. The next batch starts strictly after it. Copied to
+	// ScanStatus.CursorKey.
+	Cursor []byte
+	// DoneAt is when the scan finished. It is written in the same batch as the
+	// completed-scan header. Zero while the scan is unfinished. Status reports
+	// this as the finish time once the scan is done.
+	DoneAt time.Time `json:",omitzero"`
+	// Error is why the scan stopped, when it stopped with a failure. Empty
+	// while the scan is running. A non-empty Error is not resumed on startup.
 	Error string `json:",omitempty"`
 }
 
-// multihashScanResults is the latest completed multihash scan.
+// multihashScanResults is the persisted header of the latest finished scan,
+// at the single current-scan key. It becomes CompletedScanStats inside
+// AllStatsReport. Provider rows are not in this record; they stay under the
+// scan-id prefix and are loaded when the report is read. The next successful
+// scan replaces this record and deletes every other scan-id prefix.
 type multihashScanResults struct {
-	ScanID      uint64
-	StartedAt   time.Time
+	// ScanID selects the provider rows that belong to this finished scan.
+	ScanID uint64
+	// StartedAt is when the walk started.
+	StartedAt time.Time
+	// CompletedAt is when counting finished. Reported as MeasuredAt.
 	CompletedAt time.Time
-	Totals      indexer.StoreTotals
+	// Totals is the whole-store counters at completion. The same value is
+	// stored under the scan-id totals key during the walk; this copy is the
+	// one MeteringAllStats returns.
+	Totals indexer.StoreTotals
 }
 
 var (

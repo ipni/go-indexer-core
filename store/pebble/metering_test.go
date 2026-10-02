@@ -40,7 +40,7 @@ func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *i
 		st, err := pm.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
 		require.Empty(t, st.Error, "scan failed: %s", st.Error)
-		if !st.InProgress {
+		if st.State == indexer.ScanStateDone {
 			report, err := pm.MeteringAllStats(context.Background(), nil)
 			require.NoError(t, err)
 			if report != nil {
@@ -85,20 +85,31 @@ func TestMeteringBasicCounts(t *testing.T) {
 	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
 	report := waitScanDone(t, pm, 5*time.Second)
 
-	require.EqualValues(t, 5, report.Totals.Multihashes)
+	require.EqualValues(t, 5, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Deleted.Entries)
 	// slots: p1 has 3+2=5, p2 has 2 → 7
-	require.EqualValues(t, 7, report.Totals.Slots)
+	require.EqualValues(t, 7, report.Totals.Active.Slots)
+
+	st, err := pm.MeteringScanStatus(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, indexer.ScanStateDone, st.State)
+	require.Empty(t, st.Error)
+	require.Equal(t, report.Totals, st.Current.Totals)
+	require.Equal(t, 100.0, st.EstimatedPercentDone)
+	require.NotNil(t, st.EstimatedFinish)
 	byID := map[peer.ID]indexer.ProviderStats{}
 	for _, ps := range report.Providers {
 		byID[ps.ProviderID] = ps
 	}
 	require.EqualValues(t, 4, byID[p1].Multihashes)
+	require.EqualValues(t, 5, byID[p1].Slots)
 	require.EqualValues(t, 2, byID[p2].Multihashes)
+	require.EqualValues(t, 2, byID[p2].Slots)
 
 	filtered, err := pm.MeteringAllStats(context.Background(), []peer.ID{p1})
 	require.NoError(t, err)
 	require.NotNil(t, filtered)
-	require.Equal(t, report.Totals.Multihashes, filtered.Totals.Multihashes)
+	require.Equal(t, report.Totals.Active.Entries, filtered.Totals.Active.Entries)
 	require.Len(t, filtered.Providers, 1)
 	require.Equal(t, p1, filtered.Providers[0].ProviderID)
 	require.EqualValues(t, 4, filtered.Providers[0].Multihashes)
@@ -106,7 +117,7 @@ func TestMeteringBasicCounts(t *testing.T) {
 	none, err := pm.MeteringAllStats(context.Background(), []peer.ID{})
 	require.NoError(t, err)
 	require.NotNil(t, none)
-	require.Equal(t, report.Totals.Multihashes, none.Totals.Multihashes)
+	require.Equal(t, report.Totals.Active.Entries, none.Totals.Active.Entries)
 	require.Empty(t, none.Providers)
 
 	missing, err := pm.MeteringAllStats(context.Background(), []peer.ID{peer.ID("missing-provider")})
@@ -127,9 +138,51 @@ func TestMeteringOrphanSlotsAfterRemoveProviderContext(t *testing.T) {
 	report := waitScanDone(t, pm, 5*time.Second)
 
 	// Removing a context deletes its value record and leaves the multihash slots.
-	// Provider IDs are read from value records, so these slots stay in the store totals.
-	require.EqualValues(t, 3, report.Totals.Slots)
+	// No provider value remains, so the three keys are deleted entries.
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Active.Slots)
+	require.EqualValues(t, 3, report.Totals.Deleted.Entries)
+	require.EqualValues(t, 3, report.Totals.Deleted.Slots)
 	require.Empty(t, report.Providers)
+}
+
+func TestMeteringDeletedProvider(t *testing.T) {
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(3)
+	putValue(t, s, p1, []byte("ctx"), []byte("meta"), mhs...)
+
+	require.NoError(t, s.RemoveProvider(context.Background(), p1))
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.Zero(t, report.Totals.Active.Entries)
+	require.EqualValues(t, 3, report.Totals.Deleted.Entries)
+	require.EqualValues(t, 3, report.Totals.Deleted.Slots)
+	require.Empty(t, report.Providers)
+}
+
+func TestMeteringDeletedContextKeptProvider(t *testing.T) {
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(3)
+	// mh0 and mh1 keep ctxA. mh1 and mh2 lose ctxB.
+	putValue(t, s, p1, []byte("ctxA"), []byte("metaA"), mhs[0], mhs[1])
+	putValue(t, s, p1, []byte("ctxB"), []byte("metaB"), mhs[1], mhs[2])
+	require.NoError(t, s.RemoveProviderContext(p1, []byte("ctxB")))
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.EqualValues(t, 2, report.Totals.Active.Entries)
+	// Only mh2 has no remaining value record.
+	require.EqualValues(t, 1, report.Totals.Deleted.Entries)
+	require.Len(t, report.Providers, 1)
+	require.Equal(t, p1, report.Providers[0].ProviderID)
+	require.EqualValues(t, 2, report.Providers[0].Multihashes)
+	require.EqualValues(t, 2, report.Providers[0].Slots)
+	require.EqualValues(t, 2, report.Providers[0].DeletedContexts)
 }
 
 func TestMeteringResume(t *testing.T) {
@@ -149,7 +202,7 @@ func TestMeteringResume(t *testing.T) {
 	for time.Now().Before(deadline) {
 		st, err := pm1.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
-		if st.InProgress && st.KeysRead > 0 {
+		if st.State == indexer.ScanStateInProgress && st.Current.Totals.Active.Entries > 0 {
 			break
 		}
 		time.Sleep(2 * time.Millisecond)
@@ -162,8 +215,8 @@ func TestMeteringResume(t *testing.T) {
 	defer s2.Close()
 	pm2 := s2.(indexer.StatsMeter)
 	report := waitScanDone(t, pm2, 10*time.Second)
-	require.EqualValues(t, 20, report.Totals.Multihashes)
-	require.EqualValues(t, 20, report.Totals.Slots)
+	require.EqualValues(t, 20, report.Totals.Active.Entries)
+	require.EqualValues(t, 20, report.Totals.Active.Slots)
 }
 
 func TestMeteringTriggerWhileInProgress(t *testing.T) {
@@ -178,7 +231,7 @@ func TestMeteringTriggerWhileInProgress(t *testing.T) {
 	for time.Now().Before(deadline) {
 		st, err := pm.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
-		if st.InProgress {
+		if st.State == indexer.ScanStateInProgress {
 			gotErr = pm.MeteringTriggerScan(context.Background())
 			break
 		}
@@ -200,7 +253,7 @@ func TestMeteringCancelScan(t *testing.T) {
 	for {
 		st, err := pm.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
-		if st.InProgress && st.KeysRead > 0 {
+		if st.State == indexer.ScanStateInProgress && st.Current.Totals.Active.Entries > 0 {
 			break
 		}
 		require.False(t, time.Now().After(deadline), "scan did not start")
@@ -218,14 +271,24 @@ func TestMeteringCancelScan(t *testing.T) {
 		var err error
 		st, err = pm.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
-		if !st.InProgress {
+		if st.State == indexer.ScanStateError {
 			break
 		}
 		require.False(t, time.Now().After(deadline), "scan did not stop after cancel")
 		time.Sleep(time.Millisecond)
 	}
 	require.Equal(t, wantCancel.Error(), st.Error)
-	require.ErrorIs(t, pm.MeteringCancelScan(context.Background(), ""), indexer.ErrScanNotInProgress)
+	// Status can show the error before the scan goroutine clears its cancel func.
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		err := pm.MeteringCancelScan(context.Background(), "")
+		if errors.Is(err, indexer.ErrScanNotInProgress) {
+			break
+		}
+		require.NoError(t, err)
+		require.False(t, time.Now().After(deadline), "scan did not leave the in-progress state")
+		time.Sleep(time.Millisecond)
+	}
 
 	empty, err := pm.MeteringAllStats(context.Background(), nil)
 	require.NoError(t, err)
@@ -243,7 +306,7 @@ func TestMeteringCancelScan(t *testing.T) {
 			continue
 		}
 		require.Empty(t, st.Error, "scan failed: %s", st.Error)
-		if !st.InProgress {
+		if st.State == indexer.ScanStateDone {
 			report, err = pm.MeteringAllStats(context.Background(), nil)
 			require.NoError(t, err)
 			if report != nil {
@@ -253,7 +316,7 @@ func TestMeteringCancelScan(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	require.NotNil(t, report, "timeout waiting for scan after cancel")
-	require.GreaterOrEqual(t, report.Totals.Multihashes, uint64(80))
+	require.GreaterOrEqual(t, report.Totals.Active.Entries, uint64(80))
 }
 
 func TestMeteringRetentionOnlyCurrent(t *testing.T) {
@@ -289,7 +352,7 @@ func TestMeteringRetentionOnlyCurrent(t *testing.T) {
 		require.NoError(t, err)
 		report, err := pm.MeteringAllStats(context.Background(), nil)
 		require.NoError(t, err)
-		if report != nil && !report.MeasuredAt.Equal(r1.MeasuredAt) && !st.InProgress {
+		if report != nil && !report.MeasuredAt.Equal(r1.MeasuredAt) && st.State == indexer.ScanStateDone {
 			r2 = report
 			break
 		}
@@ -332,7 +395,7 @@ func TestMeteringConcurrentPut(t *testing.T) {
 	report := waitScanDone(t, pm, 10*time.Second)
 	wg.Wait()
 
-	require.GreaterOrEqual(t, report.Totals.Multihashes, uint64(100))
+	require.GreaterOrEqual(t, report.Totals.Active.Entries, uint64(100))
 }
 
 func TestMeteringNotSupportedWithoutOption(t *testing.T) {
@@ -359,18 +422,18 @@ func TestScanStatusCurrent(t *testing.T) {
 	for time.Now().Before(deadline) {
 		got, err := pm.MeteringScanStatus(context.Background(), nil)
 		require.NoError(t, err)
-		if got.InProgress && got.Current.Totals.Multihashes == 1 {
+		if got.State == indexer.ScanStateInProgress && got.Current.Totals.Active.Entries == 1 {
 			st = got
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
 	require.NotNil(t, st, "scan did not report partial progress")
-	require.EqualValues(t, 1, st.Current.Totals.Multihashes)
+	require.EqualValues(t, 1, st.Current.Totals.Active.Entries)
 	emptySel, err := pm.MeteringScanStatus(context.Background(), []peer.ID{})
 	require.NoError(t, err)
 	require.Empty(t, emptySel.Current.Providers)
-	require.EqualValues(t, 1, emptySel.Current.Totals.Multihashes)
+	require.EqualValues(t, 1, emptySel.Current.Totals.Active.Entries)
 	_ = waitScanDone(t, pm, 15*time.Second)
 }
 
@@ -382,7 +445,7 @@ func TestMeteringKeysRoundTrip(t *testing.T) {
 		KeysRead:  99,
 		BytesRead: 1000,
 		Cursor:    []byte{1, 2},
-		Done:      true,
+		DoneAt:    now,
 		Error:     "scan failed",
 	}
 	raw, err := encodeMultihashScanProgress(&p)
@@ -392,18 +455,21 @@ func TestMeteringKeysRoundTrip(t *testing.T) {
 	require.Equal(t, p.ScanID, got.ScanID)
 	require.Equal(t, p.KeysRead, got.KeysRead)
 	require.Equal(t, p.BytesRead, got.BytesRead)
-	require.Equal(t, p.Done, got.Done)
+	require.True(t, got.DoneAt.Equal(p.DoneAt))
 	require.Equal(t, p.Cursor, got.Cursor)
 	require.Equal(t, p.Error, got.Error)
 	require.True(t, got.StartedAt.Equal(p.StartedAt))
+
+	open, err := encodeMultihashScanProgress(&multihashScanProgressRecord{ScanID: 1, StartedAt: now})
+	require.NoError(t, err)
+	require.NotContains(t, string(open), "DoneAt")
 
 	cur := multihashScanResults{
 		ScanID:      99,
 		StartedAt:   now,
 		CompletedAt: now.Add(time.Second),
 		Totals: indexer.StoreTotals{
-			Multihashes: 1, Slots: 2, MultihashKeyBytes: 3,
-			MultihashValueBytes: 4,
+			Active: indexer.EntryMeters{Entries: 1, KeyBytes: 3, ValueBytes: 4, Slots: 2},
 		},
 	}
 	rawCur, err := encodeMultihashScanResults(&cur)
@@ -415,6 +481,7 @@ func TestMeteringKeysRoundTrip(t *testing.T) {
 	ps := indexer.ProviderStats{
 		ProviderID:  random.Peers(1)[0],
 		Multihashes: 2,
+		Slots:       3,
 	}
 	rawPS, err := encodeProviderStats(&ps)
 	require.NoError(t, err)
@@ -443,13 +510,13 @@ func TestMeteringPersistScanError(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, st.Error)
 	// Unfinished progress without Error is reported as in progress.
-	require.True(t, st.InProgress)
+	require.Equal(t, indexer.ScanStateInProgress, st.State)
 
 	store.metering.persistScanError(progress, indexer.ErrScanCancelled)
 	st, err = pm.MeteringScanStatus(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, indexer.ErrScanCancelled.Error(), st.Error)
-	require.False(t, st.InProgress)
+	require.Equal(t, indexer.ScanStateError, st.State)
 
 	progress.Error = ""
 	raw, err = encodeMultihashScanProgress(progress)
@@ -461,8 +528,7 @@ func TestMeteringPersistScanError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "boom", st.Error)
 	require.EqualValues(t, 42, st.ScanID)
-	require.EqualValues(t, 7, st.KeysRead)
-	require.False(t, st.InProgress)
+	require.Equal(t, indexer.ScanStateError, st.State)
 
 	store.metering.persistScanError(progress, errors.New("second"))
 	st, err = pm.MeteringScanStatus(context.Background(), nil)
@@ -502,7 +568,7 @@ func TestMeteringFailedScanNotResumed(t *testing.T) {
 	st, err := pm2.MeteringScanStatus(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, "injected failure", st.Error)
-	require.False(t, st.InProgress)
+	require.Equal(t, indexer.ScanStateError, st.State)
 	report, err := pm2.MeteringAllStats(context.Background(), nil)
 	require.NoError(t, err)
 	require.Nil(t, report)
@@ -515,14 +581,14 @@ func TestMeteringFailedScanNotResumed(t *testing.T) {
 		require.NoError(t, err)
 		report, err = pm2.MeteringAllStats(context.Background(), nil)
 		require.NoError(t, err)
-		if report != nil && !st.InProgress {
+		if report != nil && st.State == indexer.ScanStateDone {
 			require.Empty(t, st.Error)
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	require.NotNil(t, report)
-	require.EqualValues(t, 5, report.Totals.Multihashes)
+	require.EqualValues(t, 5, report.Totals.Active.Entries)
 }
 
 func TestSha256ScanEstimate(t *testing.T) {
