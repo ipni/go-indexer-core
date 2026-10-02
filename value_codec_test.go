@@ -186,17 +186,31 @@ func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
 		}
 	}
 
-	wantValueKeys := generateRandomValueKeys(43)
-	gotJson, err := indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
-	if err != nil {
-		t.Fatal(err)
+	// Binary decoding is tried first. JSON that also parses as binary never
+	// reaches the fallback, so keep a payload that binary decoding rejects.
+	var wantValueKeys [][]byte
+	var gotJson []byte
+	for range 20 {
+		wantValueKeys = generateRandomValueKeys(43)
+		var err error
+		gotJson, err = indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (indexer.BinaryValueCodec{}).UnmarshalValueKeys(gotJson); err != nil {
+			break
+		}
+		gotJson = nil
+	}
+	if gotJson == nil {
+		t.Fatal("could not generate JSON value keys that binary decoding rejects")
 	}
 	gotValueKeys, err := subject.UnmarshalValueKeys(gotJson)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(wantValueKeys, gotValueKeys) {
-		t.Fatal()
+		t.Fatalf("value keys mismatch: got %x want %x", gotValueKeys, wantValueKeys)
 	}
 }
 
@@ -241,6 +255,7 @@ func generateRandomValueKeys(count int) [][]byte {
 	rng := random.New()
 	for range count {
 		vk := make([]byte, rng.IntN(127)+1)
+		_, _ = rng.Read(vk)
 		vks = append(vks, vk)
 	}
 	return vks

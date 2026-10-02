@@ -233,3 +233,19 @@ func (e *Engine) updateCacheStats() {
 func (e *Engine) Stats() (*indexer.Stats, error) {
 	return e.valueStore.Stats()
 }
+
+func (e *Engine) MeteringAllStats(ctx context.Context, providerIDs []peer.ID) (*indexer.AllStatsReport, error) {
+	return e.valueStore.MeteringAllStats(ctx, providerIDs)
+}
+
+func (e *Engine) MeteringScanStatus(ctx context.Context, providerIDs []peer.ID) (*indexer.ScanStatus, error) {
+	return e.valueStore.MeteringScanStatus(ctx, providerIDs)
+}
+
+func (e *Engine) MeteringTriggerScan(ctx context.Context) error {
+	return e.valueStore.MeteringTriggerScan(ctx)
+}
+
+func (e *Engine) MeteringCancelScan(ctx context.Context, reason string) error {
+	return e.valueStore.MeteringCancelScan(ctx, reason)
+}

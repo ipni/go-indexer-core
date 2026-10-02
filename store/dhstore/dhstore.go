@@ -280,6 +280,22 @@ func (s *dhStore) Stats() (*indexer.Stats, error) {
 	return nil, nil
 }
 
+func (s *dhStore) MeteringAllStats(context.Context, []peer.ID) (*indexer.AllStatsReport, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringScanStatus(context.Context, []peer.ID) (*indexer.ScanStatus, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringTriggerScan(context.Context) error {
+	return indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringCancelScan(context.Context, string) error {
+	return indexer.ErrMeteringNotSupported
+}
+
 func makeDHMerge(mh multihash.Multihash, valueKey []byte) (client.Index, error) {
 	// Encrypt value key with original multihash.
 	encValueKey, err := dhash.EncryptValueKey(valueKey, mh)
