@@ -50,6 +50,10 @@ type Interface interface {
 	// Stats returns statistical information about the indexed values.
 	// If unsupported by the backing store, ErrStatsNotSupported is returned.
 	Stats() (*Stats, error)
+
+	// StatsMeter reports storage statistics from a background scan.
+	// Implementations that cannot scan return ErrMeteringNotSupported.
+	StatsMeter
 }
 
 // Stats provides statistics about the indexed values.

@@ -33,7 +33,7 @@ func newPool() *pool {
 		}
 	}
 	p.blake3KeyerPool.New = func() any {
-		return newBlake3Keyer(defaultKeyerLength, &p)
+		return newBlake3Keyer(providerHashLen, &p)
 	}
 	p.sectionBufferPool.New = func() any {
 		return &sectionBuffer{

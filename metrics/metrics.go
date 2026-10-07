@@ -10,7 +10,8 @@ import (
 
 // Keys
 var (
-	Method, _ = tag.NewKey("method")
+	Method, _   = tag.NewKey("method")
+	Provider, _ = tag.NewKey("provider")
 )
 
 // Measures
@@ -29,6 +30,16 @@ var (
 
 	DHMultihashLatency = stats.Float64("core/dh_multihash_latency", "Time that the indexer spends on sending encrypted multihashes to dhstore", stats.UnitMilliseconds)
 	DHMetadataLatency  = stats.Float64("core/dh_metadata_latency", "Time that the indexer spends on sending encrypted metadata to dhstore", stats.UnitMilliseconds)
+
+	MeteringTotalMultihashes = stats.Int64("core/metering/total_multihashes", "Active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalSlots       = stats.Int64("core/metering/total_slots", "Value-key slots in active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalDeleted     = stats.Int64("core/metering/total_deleted", "Multihashes whose providers were all removed, from the latest metering scan", stats.UnitDimensionless)
+	MeteringScanCompletedAt  = stats.Float64("core/metering/scan_completed_at", "Unix timestamp of the latest completed metering scan", stats.UnitDimensionless)
+	MeteringScanDurationMs   = stats.Float64("core/metering/scan_duration_ms", "Duration of the latest completed metering scan in milliseconds", stats.UnitMilliseconds)
+	MeteringScanKeysRead     = stats.Int64("core/metering/scan_keys_read", "Keys read so far in the in-progress metering scan", stats.UnitDimensionless)
+	MeteringScanBytesRead    = stats.Int64("core/metering/scan_bytes_read", "Bytes read so far in the in-progress metering scan", stats.UnitBytes)
+
+	MeteringProviderMultihashes = stats.Int64("core/metering/provider_multihashes", "Distinct multihashes per provider from the latest metering scan", stats.UnitDimensionless)
 )
 
 // Views
@@ -87,6 +98,43 @@ var (
 		Aggregation: view.Distribution(0, 10, 20, 50, 70, 100, 200, 300, 400, 500, 1000, 2000, 3000, 5000, 7000, 10_000, 30_000, 60_000),
 		TagKeys:     []tag.Key{Method},
 	}
+
+	meteringTotalMultihashesView = &view.View{
+		Measure:     MeteringTotalMultihashes,
+		Aggregation: view.LastValue(),
+	}
+	meteringTotalSlotsView = &view.View{
+		Measure:     MeteringTotalSlots,
+		Aggregation: view.LastValue(),
+	}
+	meteringTotalDeletedView = &view.View{
+		Measure:     MeteringTotalDeleted,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanCompletedAtView = &view.View{
+		Measure:     MeteringScanCompletedAt,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanDurationMsView = &view.View{
+		Measure:     MeteringScanDurationMs,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanKeysReadView = &view.View{
+		Measure:     MeteringScanKeysRead,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanBytesReadView = &view.View{
+		Measure:     MeteringScanBytesRead,
+		Aggregation: view.LastValue(),
+	}
+
+	// Per-provider series. One time series per provider for each view. Do not
+	// register these unless the operator has a bounded provider set.
+	meteringProviderMultihashesView = &view.View{
+		Measure:     MeteringProviderMultihashes,
+		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Provider},
+	}
 )
 
 // DefaultViews with all views in it.
@@ -103,6 +151,25 @@ var DefaultViews = []*view.View{
 	storeSizeView,
 	dhMultihashLatency,
 	dhMetadataLatency,
+}
+
+// MeteringViews are OpenCensus views for metering scan totals and progress.
+// These series are not labeled by provider.
+var MeteringViews = []*view.View{
+	meteringTotalMultihashesView,
+	meteringTotalSlotsView,
+	meteringTotalDeletedView,
+	meteringScanCompletedAtView,
+	meteringScanDurationMsView,
+	meteringScanKeysReadView,
+	meteringScanBytesReadView,
+}
+
+// MeteringProviderViews are OpenCensus views labeled by provider. Registering
+// them exports one series per provider for each view. Leave them unregistered
+// when the provider set is unbounded.
+var MeteringProviderViews = []*view.View{
+	meteringProviderMultihashesView,
 }
 
 func MsecSince(startTime time.Time) float64 {
