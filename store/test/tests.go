@@ -492,6 +492,27 @@ func (c *conformanceTestSuite) TestRemoveProvider() {
 	c.requireOnly(t, mh, kept)
 }
 
+func (c *conformanceTestSuite) TestRemoveContextThenPutDifferentMultihashes() {
+	t := c.T()
+	pid := random.Peers(1)[0]
+	mhs := random.Multihashes(3)
+	oldOnly, overlap, newOnly := mhs[0], mhs[1], mhs[2]
+	contextID := []byte("ctx")
+
+	require.NoError(t, c.store.Put(valueOf(pid, "ctx", "old-meta"), oldOnly, overlap))
+	c.requireOnly(t, oldOnly, valueOf(pid, "ctx", "old-meta"))
+	c.requireOnly(t, overlap, valueOf(pid, "ctx", "old-meta"))
+
+	require.NoError(t, c.store.RemoveProviderContext(pid, contextID))
+	c.requireAbsent(t, oldOnly)
+	c.requireAbsent(t, overlap)
+
+	require.NoError(t, c.store.Put(valueOf(pid, "ctx", "new-meta"), overlap, newOnly))
+	c.requireOnly(t, overlap, valueOf(pid, "ctx", "new-meta"))
+	c.requireOnly(t, newOnly, valueOf(pid, "ctx", "new-meta"))
+	c.requireAbsent(t, oldOnly)
+}
+
 func (c *conformanceTestSuite) requireAbsent(t *testing.T, mh multihash.Multihash) {
 	t.Helper()
 	vals, found, err := c.store.Get(mh)
