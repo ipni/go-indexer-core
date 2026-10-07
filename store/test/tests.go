@@ -9,12 +9,39 @@ import (
 	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-// TODO: rewrite these tests with test-runner so that they are individually re-runnable
+// conformanceTestSuite is the indexer.Interface behavior every store must implement.
+// NewStore is called for each test and must return an open store.
+type conformanceTestSuite struct {
+	suite.Suite
+	NewStore func(t *testing.T) indexer.Interface
+	store    indexer.Interface
+}
+
+func (c *conformanceTestSuite) SetupTest() {
+	c.store = c.NewStore(c.T())
+}
+
+func (c *conformanceTestSuite) TearDownTest() {
+	t := c.T()
+	require.NoError(t, c.store.Close())
+}
+
+// RunConformance runs the conformance suite against stores from newStore.
+func RunConformance(t *testing.T, newStore func(t *testing.T) indexer.Interface) {
+	suite.Run(t, &conformanceTestSuite{NewStore: newStore})
+}
+
 // TODO: use bench.GenerateRandomValues in testing.
 
-func E2ETest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestPutGetAndRemove() {
+	t := c.T()
+	s := c.store
+
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -110,9 +137,6 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatalf("Error putting single multihash: %s", err)
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := s.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -140,12 +164,12 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 		t.Error("Error, the key for the multihash should not be set")
 	}
 
-	// Check that a v1 CID hash can be stored.
-	c, err := cid.Decode("baguqeeqqskyz3yh4jxnsdj57v5blazexyy")
+	// Check that a short v1 CID hash can be stored.
+	v1cid, err := cid.Decode("baguqeeqqskyz3yh4jxnsdj57v5blazexyy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1mh := c.Hash()
+	v1mh := v1cid.Hash()
 	err = s.Put(value2, v1mh)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +250,10 @@ func E2ETest(t *testing.T, s indexer.Interface) {
 
 }
 
-func SizeTest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestSize() {
+	t := c.T()
+	s := c.store
+
 	// Init storage
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -240,8 +267,8 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 		ContextID:     []byte(mhs[0]),
 		MetadataBytes: []byte("test-metadata"),
 	}
-	for _, c := range mhs[1:] {
-		err = s.Put(value, c)
+	for _, mh := range mhs[1:] {
+		err = s.Put(value, mh)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,12 +283,16 @@ func SizeTest(t *testing.T, s indexer.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size == int64(0) {
-		t.Error("failed to compute storage size")
+	// A store with no persistent files, such as the memory store, reports 0.
+	if size < 0 {
+		t.Error("storage size is negative")
 	}
 }
 
-func RemoveTest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestRemove() {
+	t := c.T()
+	s := c.store
+
 	// Create new valid peer.ID
 	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -343,7 +374,10 @@ func RemoveTest(t *testing.T, s indexer.Interface) {
 	}
 }
 
-func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestRemoveProviderContextValues() {
+	t := c.T()
+	s := c.store
+
 	// Create new valid peer.ID
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -512,7 +546,10 @@ func RemoveProviderContextTest(t *testing.T, s indexer.Interface) {
 	}
 }
 
-func RemoveProviderTest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestRemoveProviderValues() {
+	t := c.T()
+	s := c.store
+
 	// Create new valid peer.ID
 	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
 	if err != nil {
@@ -616,7 +653,10 @@ func RemoveProviderTest(t *testing.T, s indexer.Interface) {
 	}
 }
 
-func ParallelUpdateTest(t *testing.T, s indexer.Interface) {
+func (c *conformanceTestSuite) TestParallelUpdate() {
+	t := c.T()
+	s := c.store
+
 	mhs := random.Multihashes(15)
 
 	// Create new valid peer.ID

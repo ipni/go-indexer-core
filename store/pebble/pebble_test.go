@@ -7,6 +7,8 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/ipni/go-indexer-core/store/test"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/stretchr/testify/require"
 )
 
 func initPebble(t *testing.T) indexer.Interface {
@@ -17,52 +19,10 @@ func initPebble(t *testing.T) indexer.Interface {
 	return s
 }
 
-func TestE2E(t *testing.T) {
-	s := initPebble(t)
-	test.E2ETest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSize(t *testing.T) {
-	s := initPebble(t)
-	test.SizeTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestMany(t *testing.T) {
-	s := initPebble(t)
-	test.RemoveTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRemoveProviderContext(t *testing.T) {
-	s := initPebble(t)
-	test.RemoveProviderContextTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRemoveProvider(t *testing.T) {
-	s := initPebble(t)
-	test.RemoveProviderTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestParallel(t *testing.T) {
-	s := initPebble(t)
-	test.ParallelUpdateTest(t, s)
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
+func TestConformance(t *testing.T) {
+	test.RunConformance(t, func(t *testing.T) indexer.Interface {
+		return initPebble(t)
+	})
 }
 
 func TestClose(t *testing.T) {
@@ -75,6 +35,39 @@ func TestClose(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestSize(t *testing.T) {
+	s, err := New(t.TempDir(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, s.Close())
+	})
+
+	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	require.NoError(t, err)
+
+	mhs := random.Multihashes(151)
+	value := indexer.Value{
+		ProviderID:    p,
+		ContextID:     []byte(mhs[0]),
+		MetadataBytes: []byte("test-metadata"),
+	}
+	require.NoError(t, s.Put(value, mhs[1:]...))
+	require.NoError(t, s.Flush())
+
+	size, err := s.Size()
+	require.NoError(t, err)
+	// Size estimates flushed sstable bytes. Each multihash key is one prefix
+	// byte plus the multihash, and those digests do not compress, so the
+	// estimate is at least one key per multihash. The value slot stored on
+	// every multihash is identical and does compress, so the raw key-plus-slot
+	// size is only an upper bound, with room for sstable overhead.
+	n := len(mhs) - 1
+	perKey := 1 + len(mhs[1])
+	perSlot := marshalledValueKeyLength
+	require.GreaterOrEqual(t, size, int64(n*perKey))
+	require.LessOrEqual(t, size, int64(4*n*(perKey+perSlot)))
 }
 
 func TestStats(t *testing.T) {
