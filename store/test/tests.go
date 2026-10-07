@@ -726,3 +726,87 @@ func (c *conformanceTestSuite) TestParallelUpdate() {
 		t.Error("Value has not been removed by routines correctly", len(x))
 	}
 }
+
+func (c *conformanceTestSuite) TestPutUpdatesMetadata() {
+	t := c.T()
+	pid := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	require.NoError(t, c.store.Put(valueOf(pid, "ctx", "old-meta"), mhs...))
+
+	updated := valueOf(pid, "ctx", "new-meta")
+	require.NoError(t, c.store.Put(updated))
+
+	for _, mh := range mhs {
+		c.requireOnly(t, mh, updated)
+	}
+	c.requireAbsent(t, random.Multihashes(1)[0])
+}
+
+func (c *conformanceTestSuite) TestTwoProviders() {
+	t := c.T()
+	pids := random.Peers(2)
+	mh := random.Multihashes(1)[0]
+	first := valueOf(pids[0], "ctx-a", "meta-a")
+	second := valueOf(pids[1], "ctx-b", "meta-b")
+	require.NoError(t, c.store.Put(first, mh))
+	require.NoError(t, c.store.Put(second, mh))
+
+	c.requireValues(t, mh, first, second)
+}
+
+func (c *conformanceTestSuite) TestRemoveProviderContext() {
+	t := c.T()
+	pid := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	kept := valueOf(pid, "kept", "kept-meta")
+	dropped := valueOf(pid, "dropped", "dropped-meta")
+	require.NoError(t, c.store.Put(kept, mhs[0]))
+	require.NoError(t, c.store.Put(dropped, mhs[0], mhs[1]))
+
+	require.NoError(t, c.store.RemoveProviderContext(pid, dropped.ContextID))
+
+	c.requireOnly(t, mhs[0], kept)
+	c.requireAbsent(t, mhs[1])
+}
+
+func (c *conformanceTestSuite) TestRemoveProvider() {
+	t := c.T()
+	pids := random.Peers(2)
+	mh := random.Multihashes(1)[0]
+	dropped := valueOf(pids[0], "ctx", "dropped-meta")
+	kept := valueOf(pids[1], "ctx", "kept-meta")
+	require.NoError(t, c.store.Put(dropped, mh))
+	require.NoError(t, c.store.Put(kept, mh))
+
+	require.NoError(t, c.store.RemoveProvider(context.Background(), pids[0]))
+
+	c.requireOnly(t, mh, kept)
+}
+
+func (c *conformanceTestSuite) requireAbsent(t *testing.T, mh multihash.Multihash) {
+	t.Helper()
+	vals, found, err := c.store.Get(mh)
+	require.NoError(t, err)
+	require.False(t, found, "multihash still resolves: %+v", vals)
+}
+
+func (c *conformanceTestSuite) requireOnly(t *testing.T, mh multihash.Multihash, want indexer.Value) {
+	t.Helper()
+	c.requireValues(t, mh, want)
+}
+
+func (c *conformanceTestSuite) requireValues(t *testing.T, mh multihash.Multihash, want ...indexer.Value) {
+	t.Helper()
+	vals, found, err := c.store.Get(mh)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.ElementsMatch(t, want, vals)
+}
+
+func valueOf(pid peer.ID, contextID, meta string) indexer.Value {
+	return indexer.Value{
+		ProviderID:    pid,
+		ContextID:     []byte(contextID),
+		MetadataBytes: []byte(meta),
+	}
+}
