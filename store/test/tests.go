@@ -37,16 +37,11 @@ func RunConformance(t *testing.T, newStore func(t *testing.T) indexer.Interface)
 	suite.Run(t, &conformanceTestSuite{NewStore: newStore})
 }
 
-// TODO: use bench.GenerateRandomValues in testing.
-
 func (c *conformanceTestSuite) TestPutGetAndRemove() {
 	t := c.T()
 	s := c.store
 
-	// Create new valid peer.ID
-	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
-
+	p := random.Peers(1)[0]
 	mhs := random.Multihashes(15)
 
 	ctxid1 := []byte(mhs[0])
@@ -167,9 +162,7 @@ func (c *conformanceTestSuite) TestSize() {
 	t := c.T()
 	s := c.store
 
-	// Init storage
-	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
+	p := random.Peers(1)[0]
 
 	mhs := random.Multihashes(151)
 
@@ -195,10 +188,7 @@ func (c *conformanceTestSuite) TestRemove() {
 	t := c.T()
 	s := c.store
 
-	// Create new valid peer.ID
-	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
-
+	p := random.Peers(1)[0]
 	mhs := random.Multihashes(15)
 
 	value := indexer.Value{
@@ -242,11 +232,8 @@ func (c *conformanceTestSuite) TestRemoveProviderContextValues() {
 	t := c.T()
 	s := c.store
 
-	// Create new valid peer.ID
-	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
-	prov2, err := peer.Decode("12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV")
-	require.NoError(t, err)
+	pids := random.Peers(2)
+	prov1, prov2 := pids[0], pids[1]
 
 	mhs := random.Multihashes(2)
 
@@ -338,11 +325,8 @@ func (c *conformanceTestSuite) TestRemoveProviderValues() {
 	t := c.T()
 	s := c.store
 
-	// Create new valid peer.ID
-	prov1, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
-	prov2, err := peer.Decode("12D3KooWD1XypSuBmhebQcvq7Sf1XJZ1hKSfYCED4w6eyxhzwqnV")
-	require.NoError(t, err)
+	pids := random.Peers(2)
+	prov1, prov2 := pids[0], pids[1]
 
 	ctx1id := []byte("ctxid-1")
 	ctx2id := []byte("ctxid-2")
@@ -407,10 +391,7 @@ func (c *conformanceTestSuite) TestParallelUpdate() {
 
 	mhs := random.Multihashes(15)
 
-	// Create new valid peer.ID
-	p, err := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
-	require.NoError(t, err)
-
+	p := random.Peers(1)[0]
 	single := mhs[14]
 	metadata := []byte("test-metadata")
 
