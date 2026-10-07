@@ -12,6 +12,7 @@ func BenchmarkBinaryValueCodec_MarshalValue(b *testing.B) {
 }
 
 func BenchmarkJsonValueCodec_MarshalValue(b *testing.B) {
+	//lint:ignore SA1019 benchmarks JsonValueCodec until it is removed
 	benchmarkMarshalValue(b, indexer.JsonValueCodec{})
 }
 
@@ -20,6 +21,7 @@ func BenchmarkBinaryValueCodec_UnmarshalValue(b *testing.B) {
 }
 
 func BenchmarkJsonValueCodec_UnmarshalValue(b *testing.B) {
+	//lint:ignore SA1019 benchmarks JsonValueCodec until it is removed
 	benchmarkUnmarshalValue(b, indexer.JsonValueCodec{})
 }
 

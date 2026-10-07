@@ -530,6 +530,7 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//lint:ignore SA1019 records the deprecated json codec until it is removed
 	vsi.Codec = vsinfo.JsonCodec
 	if err = vsi.Save(tempDir); err != nil {
 		t.Fatal(err)
@@ -538,7 +539,9 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//lint:ignore SA1019 records the deprecated json codec until it is removed
 	if vsi.Codec != vsinfo.JsonCodec {
+		//lint:ignore SA1019 records the deprecated json codec until it is removed
 		t.Fatal("Codec should be", vsinfo.JsonCodec, "got", vsi.Codec)
 	}
 	var valueStore indexer.Interface
@@ -592,6 +595,7 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//lint:ignore SA1019 records the deprecated binaryjson codec until it is removed
 	vsi.Codec = vsinfo.BinaryJsonCodec
 	if err = vsi.Save(tempDir); err != nil {
 		t.Fatal(err)
@@ -617,7 +621,9 @@ func TestMultiCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//lint:ignore SA1019 records the deprecated binaryjson codec until it is removed
 	if vsi.Codec != vsinfo.BinaryJsonCodec {
+		//lint:ignore SA1019 records the deprecated binaryjson codec until it is removed
 		t.Fatal("Codec should be", vsinfo.BinaryJsonCodec, "got", vsi.Codec)
 	}
 

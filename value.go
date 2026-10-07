@@ -47,6 +47,8 @@ type (
 
 	// JsonValueCodec serializes and deserializes Value as JSON.
 	// See: json.Marshal, json.Unmarshal
+	//
+	// Deprecated: no store reads or writes values with this codec. It will be removed.
 	JsonValueCodec struct{}
 
 	// BinaryValueCodec serializes and deserializes Value as binary sections
@@ -66,6 +68,8 @@ type (
 	// BinaryWithJsonFallbackCodec always serialises values as binary but deserializes
 	// both from binary and JSON, which gracefully and opportunistically migrates codec
 	// from JSON to the more efficient binary format.
+	//
+	// Deprecated: no store reads or writes values with this codec. It will be removed.
 	BinaryWithJsonFallbackCodec struct {
 		BinaryValueCodec
 		JsonValueCodec
