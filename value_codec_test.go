@@ -10,6 +10,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/multiformats/go-varint"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValueCodec_MarshalUnmarshal(t *testing.T) {
@@ -166,52 +167,33 @@ func TestBinaryValueCodec_MarshalUnmarshalEmptyValues(t *testing.T) {
 }
 
 func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
-	rng := random.New()
-	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
-
 	subject := indexer.BinaryWithJsonFallbackCodec{}
+	jsonCodec := indexer.JsonValueCodec{}
 
-	for _, wantGenValue := range wantGenValues {
-		wantValue := wantGenValue.Value
-		gotJson, err := indexer.JsonValueCodec{}.MarshalValue(wantValue)
-		if err != nil {
-			t.Fatal(err)
-		}
-		gotValue, err := subject.UnmarshalValue(gotJson)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(wantValue, gotValue) {
-			t.Fatal()
-		}
+	// The binary decoder reads the first byte as a payload length. JSON
+	// starts with '{' or '['. These encodings are shorter than that length,
+	// so the binary decode fails and the JSON fallback is what runs.
+	wantValue := indexer.Value{
+		ProviderID:    random.Peers(1)[0],
+		ContextID:     []byte{1},
+		MetadataBytes: []byte{2},
 	}
+	valueJSON, err := jsonCodec.MarshalValue(wantValue)
+	require.NoError(t, err)
+	require.NotEmpty(t, valueJSON)
+	require.Less(t, len(valueJSON), int(valueJSON[0])+1)
+	gotValue, err := subject.UnmarshalValue(valueJSON)
+	require.NoError(t, err)
+	require.Equal(t, wantValue, gotValue)
 
-	// Binary decoding is tried first. JSON that also parses as binary never
-	// reaches the fallback, so keep a payload that binary decoding rejects.
-	var wantValueKeys [][]byte
-	var gotJson []byte
-	for range 20 {
-		wantValueKeys = generateRandomValueKeys(43)
-		var err error
-		gotJson, err = indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := (indexer.BinaryValueCodec{}).UnmarshalValueKeys(gotJson); err != nil {
-			break
-		}
-		gotJson = nil
-	}
-	if gotJson == nil {
-		t.Fatal("could not generate JSON value keys that binary decoding rejects")
-	}
-	gotValueKeys, err := subject.UnmarshalValueKeys(gotJson)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(wantValueKeys, gotValueKeys) {
-		t.Fatalf("value keys mismatch: got %x want %x", gotValueKeys, wantValueKeys)
-	}
+	wantKeys := [][]byte{{1}, {2, 3}, {4}}
+	keysJSON, err := jsonCodec.MarshalValueKeys(wantKeys)
+	require.NoError(t, err)
+	require.NotEmpty(t, keysJSON)
+	require.Less(t, len(keysJSON), int(keysJSON[0])+1)
+	gotKeys, err := subject.UnmarshalValueKeys(keysJSON)
+	require.NoError(t, err)
+	require.Equal(t, wantKeys, gotKeys)
 }
 
 func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
