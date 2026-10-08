@@ -2,6 +2,7 @@ package pebble
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/ipni/go-indexer-core"
@@ -14,6 +15,24 @@ var (
 	value2 = &indexer.Value{ProviderID: "in", ContextID: []byte("2"), MetadataBytes: []byte("lulu")}
 	value3 = &indexer.Value{ProviderID: "dasea", ContextID: []byte("3"), MetadataBytes: []byte{141}}
 )
+
+func sortedMergeSlots(t *testing.T, cdc *codec, got []byte) [][]byte {
+	t.Helper()
+	if len(got) == 0 {
+		return nil
+	}
+	kl, err := cdc.unmarshalValueKeys(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kl.Close()
+	out := make([][]byte, 0, len(kl.keys))
+	for _, k := range kl.keys {
+		out = append(out, bytes.Clone(k.buf))
+	}
+	slices.SortFunc(out, bytes.Compare)
+	return out
+}
 
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	p := newPool()
@@ -47,7 +66,7 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	if err := oneMerge.MergeOlder(c.buf); err != nil {
 		t.Fatal(err)
 	}
-	gotOne, _, err := oneMerge.Finish(false)
+	gotOne, _, err := oneMerge.Finish(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +81,7 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	if err := anotherMerge.MergeNewer(a.buf); err != nil {
 		t.Fatal(err)
 	}
-	gotAnother, _, err := anotherMerge.Finish(false)
+	gotAnother, _, err := anotherMerge.Finish(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +132,7 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Assert that vk2 is not present since its delete key, dvk2, is also merged.
-	gotVKs, _, err := oneMerge.Finish(false)
+	gotVKs, _, err := oneMerge.Finish(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +144,91 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 
 	if !bytes.Equal(wantVKs, gotVKs) {
 		t.Fatalf("expected %v but got %v", wantVKs, gotVKs)
+	}
+}
+
+func TestValueKeysMerger_FinishWithoutBaseKeepsDeletes(t *testing.T) {
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
+	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vk1, err := bk.valueKey(value1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vk2, err := bk.valueKey(value2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dvk2, err := bk.valueKey(value2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subject := newValueKeysMerger(cdc)
+	m, err := subject.Merge(mk.buf, vk1.buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MergeNewer(vk2.buf); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MergeNewer(dvk2.buf); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := m.Finish(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, dvk2.buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(want, got) {
+		t.Fatalf("expected %v but got %v", want, got)
+	}
+}
+
+func TestValueKeysMerger_FinishWithoutBaseDropsSupersededDeletes(t *testing.T) {
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
+	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vk1, err := bk.valueKey(value1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dvk1, err := bk.valueKey(value1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subject := newValueKeysMerger(cdc)
+	m, err := subject.Merge(mk.buf, dvk1.buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MergeNewer(vk1.buf); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := m.Finish(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(want, got) {
+		t.Fatalf("expected %v but got %v", want, got)
 	}
 }
 
@@ -142,7 +245,7 @@ func TestValueKeysMerger_OldDeleteOperand(t *testing.T) {
 	vk3, err := bk.valueKey(value3, false)
 	require.NoError(t, err)
 
-	// Older delete operands prepended mergeDeleteKeyPrefix to the value key.
+	// Legacy delete operands prepended legacyMergeDeleteKeyPrefix to the value key.
 	oldDelete := append([]byte{byte(legacyMergeDeleteKeyPrefix)}, vk2.buf...)
 
 	subject := newValueKeysMerger(cdc)
@@ -152,7 +255,7 @@ func TestValueKeysMerger_OldDeleteOperand(t *testing.T) {
 	require.NoError(t, m.MergeNewer(vk3.buf))
 	require.NoError(t, m.MergeNewer(oldDelete))
 
-	got, _, err := m.Finish(false)
+	got, _, err := m.Finish(true)
 	require.NoError(t, err)
 	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk3.buf})
 	require.NoError(t, err)
@@ -173,7 +276,7 @@ func TestValueKeysMerger_DropsShortDeleteOperand(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, m.MergeNewer([]byte{byte(mergeDeleteValueKeyPrefix), 1, 2, 3}))
 
-	got, _, err := m.Finish(false)
+	got, _, err := m.Finish(true)
 	require.NoError(t, err)
 	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf})
 	require.NoError(t, err)
@@ -208,7 +311,6 @@ func TestValueKeysMerger_ShortDeleteDoesNotMatchZeroPaddedSuffix(t *testing.T) {
 }
 
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
-
 	p := newPool()
 	cdc := &codec{p: p}
 	bk := p.leaseBlake3Keyer()
@@ -231,7 +333,6 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Repeatedly marshall the marshalled value
 	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk2.buf, vk3.buf})
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +356,7 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, _, err := m.Finish(false)
+		got, _, err := m.Finish(true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,7 +376,7 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		if err := m.MergeNewer(mvk3); err != nil {
 			t.Fatal(err)
 		}
-		got, _, err := m.Finish(false)
+		got, _, err := m.Finish(true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -311,12 +412,13 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 		if err := m.MergeOlder(vk2.buf); err != nil {
 			t.Fatal(err)
 		}
-		got, _, err := m.Finish(false)
+		got, _, err := m.Finish(true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(want, got) {
-			t.Fatal()
+		wantSlots := sortedMergeSlots(t, cdc, want)
+		if !slices.EqualFunc(wantSlots, sortedMergeSlots(t, cdc, got), bytes.Equal) {
+			t.Fatalf("expected %v but got %v", wantSlots, sortedMergeSlots(t, cdc, got))
 		}
 	})
 }

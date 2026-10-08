@@ -2,7 +2,6 @@ package pebble
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -20,7 +19,6 @@ var (
 type valueKeysValueMerger struct {
 	merges  [][]byte
 	deletes map[string]struct{}
-	reverse bool
 	c       *codec
 }
 
@@ -44,66 +42,117 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	if len(value) == 0 {
 		return nil
 	}
-	// Look at value prefix to determine if this value is being added to or
-	// removed from the set of values the multihash key maps to.
 	switch keyPrefix(value[0]) {
 	case legacyMergeDeleteKeyPrefix:
-		v.addToDeletes(string(value[1:]))
+		v.mergeNewerDelete(string(value[1:]))
 	case mergeDeleteValueKeyPrefix:
-		v.addToDeletes(reconstructValueKey(value))
+		v.mergeNewerDelete(reconstructValueKey(value))
 	case valueKeyPrefix:
-		v.addToMerges(value)
+		v.mergeNewerAdd(value)
 	default:
-		return v.mergeMarshalled(value)
+		return v.mergeMarshalledNewer(value)
 	}
-	return nil
-}
-
-// mergeMarshalled extracts value-keys by unmarshalling the given value and adds them to merges.
-// This function recursively unmarshalls value-keys to gracefully correct previous behaviour
-// of this merger where in certain scenarios already marshalled value-keys may have been
-// re-marshalled. This assures that any such records are opportunistically unmarshalled and
-// de-duplicated whenever they are read or changed.
-//
-// See: https://github.com/ipni/go-indexer-core/issues/94
-func (v *valueKeysValueMerger) mergeMarshalled(value []byte) error {
-	offset := len(value) % marshalledValueKeyLength
-	if offset < 0 {
-		return errors.New("invalid marshalled value key")
-	}
-
-	// The given value is marshalled value-keys; decode it and populate merge values.
-	vks, err := v.c.unmarshalValueKeys(value[offset:])
-	if err != nil {
-		return err
-	}
-	defer vks.Close()
-	// Attempt to grow the capacity of v.merge to reduce append footprint loop below.
-	v.merges = maybeGrow(v.merges, len(vks.keys))
-	for _, vk := range vks.keys {
-		// Recursively merge the value key to accommodate previous behaviour of the value-key
-		// merger, where the value-keys may have been marshalled multiple times.
-		// Recursion here will gracefully and opportunistically correct any such cases.
-		v.addToMerges(vk.buf)
-	}
-
 	return nil
 }
 
 func (v *valueKeysValueMerger) MergeOlder(value []byte) error {
-	v.reverse = true
-	return v.MergeNewer(value)
+	if len(value) == 0 {
+		return nil
+	}
+	switch keyPrefix(value[0]) {
+	case legacyMergeDeleteKeyPrefix:
+		v.mergeOlderDelete(string(value[1:]))
+	case mergeDeleteValueKeyPrefix:
+		v.mergeOlderDelete(reconstructValueKey(value))
+	case valueKeyPrefix:
+		v.mergeOlderAdd(value)
+	default:
+		return v.mergeMarshalledOlder(value)
+	}
+	return nil
 }
 
-func (v *valueKeysValueMerger) Finish(_ bool) ([]byte, io.Closer, error) {
-	v.prune()
-	if len(v.merges) == 0 {
+func (v *valueKeysValueMerger) mergeNewerDelete(vk string) {
+	// If delete is newer, it removes existing live slots.
+	v.removeFromMerges(vk)
+	v.addToDeletes(vk)
+}
+
+func (v *valueKeysValueMerger) mergeOlderDelete(vk string) {
+	// If delete is older, it adds to the delete set, existing slots are unaffected
+	// as those are chronologically after the delete operation.
+	v.addToDeletes(vk)
+}
+
+// mergeMarshalledNewer unpacks a previous merge result and applies MergeNewer
+// rules to each slot: live slots are appended, delete slots remove a live slot
+// and join the delete set.
+func (v *valueKeysValueMerger) mergeMarshalledNewer(value []byte) error {
+	vks, err := v.unpackSlots(value)
+	if err != nil {
+		return err
+	}
+	defer vks.Close()
+
+	for _, vk := range vks.keys {
+		if err := v.MergeNewer(vk.buf); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// mergeMarshalledOlder unpacks a previous merge result. Live slots that are not
+// already deleted are prepended as a block (preserving their relative order) so
+// older values stay ahead of newer ones. Delete slots then extend the delete
+// set. Packed results store deletes after live slots, so that order matches.
+func (v *valueKeysValueMerger) mergeMarshalledOlder(value []byte) error {
+	vks, err := v.unpackSlots(value)
+	if err != nil {
+		return err
+	}
+	defer vks.Close()
+
+	for _, vk := range vks.keys {
+		if err := v.MergeOlder(vk.buf); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *valueKeysValueMerger) unpackSlots(value []byte) (*keyList, error) {
+	offset := len(value) % marshalledValueKeyLength
+	return v.c.unmarshalValueKeys(value[offset:])
+}
+
+func (v *valueKeysValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
+	out := make([][]byte, 0, len(v.merges)+len(v.deletes))
+	out = append(out, v.merges...)
+	if !includesBase {
+		// Only emit delete marks for keys that are not live. A key in both
+		// merges and deletes was re-added after a delete; the add is newer, so
+		// serializing the delete would make a later MergeNewer of this blob
+		// remove the value again.
+		dks := make([][]byte, 0, len(v.deletes))
+		for deleted := range v.deletes {
+			if v.hasMerge([]byte(deleted)) {
+				continue
+			}
+			dk := make([]byte, len(deleted))
+			dk[0] = byte(mergeDeleteValueKeyPrefix)
+			copy(dk[1:], deleted[1:])
+			dks = append(dks, dk)
+		}
+		slices.SortFunc(dks, bytes.Compare)
+		out = append(out, dks...)
+	}
+	if len(out) == 0 {
 		return nil, nil, nil
 	}
-	if v.reverse {
-		slices.Reverse(v.merges)
-	}
-	return v.c.marshalValueKeys(v.merges)
+	return v.c.marshalValueKeys(out)
 }
 
 func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool, io.Closer, error) {
@@ -111,26 +160,19 @@ func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool,
 	return b, len(b) == 0, c, err
 }
 
-// prune removes value-keys that are present in deletes from merges
-func (v *valueKeysValueMerger) prune() {
-	v.merges = slices.DeleteFunc(v.merges, func(vk []byte) bool {
-		_, ok := v.deletes[string(vk)]
-		return ok
-	})
-}
-
-// addToMerges checks whether the given value exists and if not adds it to the list of merges.
-func (v *valueKeysValueMerger) addToMerges(value []byte) {
-	if !v.exists(value) {
+func (v *valueKeysValueMerger) mergeNewerAdd(value []byte) {
+	if !v.hasMerge(value) {
 		v.merges = append(v.merges, bytes.Clone(value))
 	}
 }
 
-// exists checks whether the given value is already present, either pending merge or deletion.
-func (v *valueKeysValueMerger) exists(value []byte) bool {
-	if _, pendingDelete := v.deletes[string(value)]; pendingDelete {
-		return true
+func (v *valueKeysValueMerger) mergeOlderAdd(value []byte) {
+	if !v.isDeleted(value) && !v.hasMerge(value) {
+		v.merges = slices.Insert(v.merges, 0, bytes.Clone(value))
 	}
+}
+
+func (v *valueKeysValueMerger) hasMerge(value []byte) bool {
 	for _, x := range v.merges {
 		if bytes.Equal(x, value) {
 			return true
@@ -139,7 +181,17 @@ func (v *valueKeysValueMerger) exists(value []byte) bool {
 	return false
 }
 
-// addToMerges checks whether the given value exists and if not adds it to the list of deletes.
+func (v *valueKeysValueMerger) removeFromMerges(vk string) {
+	v.merges = slices.DeleteFunc(v.merges, func(m []byte) bool {
+		return string(m) == vk
+	})
+}
+
+func (v *valueKeysValueMerger) isDeleted(value []byte) bool {
+	_, ok := v.deletes[string(value)]
+	return ok
+}
+
 func (v *valueKeysValueMerger) addToDeletes(value string) {
 	if v.deletes == nil {
 		// Lazily instantiate the deletes map since deletions are far less common than merges.
@@ -148,22 +200,25 @@ func (v *valueKeysValueMerger) addToDeletes(value string) {
 	v.deletes[value] = struct{}{}
 }
 
-// maybeGrow grows the capacity of the given slice if necessary, such that it can fit n more
-// elements and returns the resulting slice.
-func maybeGrow(s [][]byte, n int) [][]byte {
-	const growthFactor = 2
-	l := len(s)
-	switch {
-	case n <= cap(s)-l:
-		return s
-	case l == 0:
-		return make([][]byte, 0, n*growthFactor)
+// valueKeyFromDeleteOperand returns the live value-key string for a delete
+// operand. Legacy operands are prefix ‖ value key; compact operands use
+// reconstructValueKey.
+func valueKeyFromDeleteOperand(value []byte) string {
+	switch keyPrefix(value[0]) {
+	case legacyMergeDeleteKeyPrefix:
+		if len(value) < 2 {
+			return ""
+		}
+		return string(value[1:])
+	case mergeDeleteValueKeyPrefix:
+		return reconstructValueKey(value)
 	default:
-		return append(make([][]byte, 0, (l+n)*growthFactor), s...)
+		return ""
 	}
 }
 
-// reconstructValueKey builds the live value key for a delete operand
+// reconstructValueKey builds the live value-key string for a compact delete
+// operand by replacing mergeDeleteValueKeyPrefix with valueKeyPrefix.
 func reconstructValueKey(value []byte) string {
 	b := strings.Builder{}
 	b.Grow(len(value))
