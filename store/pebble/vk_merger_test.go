@@ -16,15 +16,13 @@ var (
 	value3 = &indexer.Value{ProviderID: "dasea", ContextID: []byte("3"), MetadataBytes: []byte{141}}
 )
 
-func sortedMergeSlots(t *testing.T, cdc *codec, got []byte) [][]byte {
+func unpackMergeSlots(t *testing.T, cdc *codec, got []byte) [][]byte {
 	t.Helper()
 	if len(got) == 0 {
 		return nil
 	}
 	kl, err := cdc.unmarshalValueKeys(got)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer kl.Close()
 	out := make([][]byte, 0, len(kl.keys))
 	for _, k := range kl.keys {
@@ -34,60 +32,45 @@ func sortedMergeSlots(t *testing.T, cdc *codec, got []byte) [][]byte {
 	return out
 }
 
+func requireMergeSlotsEqual(t *testing.T, cdc *codec, got []byte, want ...[]byte) {
+	t.Helper()
+	wantSorted := make([][]byte, len(want))
+	for i, w := range want {
+		wantSorted[i] = bytes.Clone(w)
+	}
+	slices.SortFunc(wantSorted, bytes.Compare)
+	require.Equal(t, wantSorted, unpackMergeSlots(t, cdc, got))
+}
+
 func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	p := newPool()
 	cdc := &codec{p: p}
 	bk := p.leaseBlake3Keyer()
 	k, err := bk.multihashKey(multihash.Multihash("fish"))
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 	a, err := bk.valueKey(value1, false)
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 	b, err := bk.valueKey(value2, false)
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 	c, err := bk.valueKey(value3, false)
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 
 	subject := newValueKeysMerger(cdc)
 	oneMerge, err := subject.Merge(k.buf, a.buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := oneMerge.MergeOlder(b.buf); err != nil {
-		t.Fatal(err)
-	}
-	if err := oneMerge.MergeOlder(c.buf); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, oneMerge.MergeOlder(b.buf))
+	require.NoError(t, oneMerge.MergeOlder(c.buf))
 	gotOne, _, err := oneMerge.Finish(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	anotherMerge, err := subject.Merge(k.buf, c.buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := anotherMerge.MergeNewer(b.buf); err != nil {
-		t.Fatal(err)
-	}
-	if err := anotherMerge.MergeNewer(a.buf); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, anotherMerge.MergeNewer(b.buf))
+	require.NoError(t, anotherMerge.MergeNewer(a.buf))
 	gotAnother, _, err := anotherMerge.Finish(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(gotOne, gotAnother) {
-		t.Fatalf("merge is not associative. %v != %v", gotOne, gotAnother)
-	}
+	require.NoError(t, err)
+
+	require.Equal(t, gotOne, gotAnother)
 }
 
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
@@ -97,54 +80,26 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	bk := p.leaseBlake3Keyer()
 
 	vk1, err := bk.valueKey(value1, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk2, err := bk.valueKey(value2, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	dvk2, err := bk.valueKey(value2, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk3, err := bk.valueKey(value3, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	subject := newValueKeysMerger(cdc)
 	mk, err := bk.multihashKey(mh)
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 	oneMerge, err := subject.Merge(mk.buf, vk1.buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := oneMerge.MergeNewer(vk2.buf); err != nil {
-		t.Fatal(err)
-	}
-	if err := oneMerge.MergeNewer(vk3.buf); err != nil {
-		t.Fatal(err)
-	}
-	if err := oneMerge.MergeNewer(dvk2.buf); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, oneMerge.MergeNewer(vk2.buf))
+	require.NoError(t, oneMerge.MergeNewer(vk3.buf))
+	require.NoError(t, oneMerge.MergeNewer(dvk2.buf))
 
 	gotVKs, _, err := oneMerge.Finish(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	wantVKs, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk3.buf})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(wantVKs, gotVKs) {
-		t.Fatalf("expected %v but got %v", wantVKs, gotVKs)
-	}
+	require.NoError(t, err)
+	requireMergeSlotsEqual(t, cdc, gotVKs, vk1.buf, vk3.buf)
 }
 
 func TestValueKeysMerger_FinishWithoutBaseKeepsDeletes(t *testing.T) {
@@ -152,45 +107,23 @@ func TestValueKeysMerger_FinishWithoutBaseKeepsDeletes(t *testing.T) {
 	cdc := &codec{p: p}
 	bk := p.leaseBlake3Keyer()
 	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk1, err := bk.valueKey(value1, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk2, err := bk.valueKey(value2, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	dvk2, err := bk.valueKey(value2, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	subject := newValueKeysMerger(cdc)
 	m, err := subject.Merge(mk.buf, vk1.buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.MergeNewer(vk2.buf); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.MergeNewer(dvk2.buf); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, m.MergeNewer(vk2.buf))
+	require.NoError(t, m.MergeNewer(dvk2.buf))
 
 	got, _, err := m.Finish(false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, dvk2.buf})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(want, got) {
-		t.Fatalf("expected %v but got %v", want, got)
-	}
+	require.NoError(t, err)
+	requireMergeSlotsEqual(t, cdc, got, vk1.buf, dvk2.buf)
 }
 
 func TestValueKeysMerger_FinishWithoutBaseDropsSupersededDeletes(t *testing.T) {
@@ -198,38 +131,20 @@ func TestValueKeysMerger_FinishWithoutBaseDropsSupersededDeletes(t *testing.T) {
 	cdc := &codec{p: p}
 	bk := p.leaseBlake3Keyer()
 	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk1, err := bk.valueKey(value1, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	dvk1, err := bk.valueKey(value1, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	subject := newValueKeysMerger(cdc)
 	m, err := subject.Merge(mk.buf, dvk1.buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.MergeNewer(vk1.buf); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, m.MergeNewer(vk1.buf))
 
 	got, _, err := m.Finish(false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(want, got) {
-		t.Fatalf("expected %v but got %v", want, got)
-	}
+	require.NoError(t, err)
+	requireMergeSlotsEqual(t, cdc, got, vk1.buf)
 }
 
 func TestValueKeysMerger_OldDeleteOperand(t *testing.T) {
@@ -257,9 +172,7 @@ func TestValueKeysMerger_OldDeleteOperand(t *testing.T) {
 
 	got, _, err := m.Finish(true)
 	require.NoError(t, err)
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk3.buf})
-	require.NoError(t, err)
-	require.Equal(t, want, got)
+	requireMergeSlotsEqual(t, cdc, got, vk1.buf, vk3.buf)
 }
 
 func TestValueKeysMerger_DropsShortDeleteOperand(t *testing.T) {
@@ -278,9 +191,7 @@ func TestValueKeysMerger_DropsShortDeleteOperand(t *testing.T) {
 
 	got, _, err := m.Finish(true)
 	require.NoError(t, err)
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf})
-	require.NoError(t, err)
-	require.Equal(t, want, got)
+	requireMergeSlotsEqual(t, cdc, got, vk1.buf)
 }
 
 func TestValueKeysMerger_ShortDeleteDoesNotMatchZeroPaddedSuffix(t *testing.T) {
@@ -316,109 +227,59 @@ func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {
 	bk := p.leaseBlake3Keyer()
 	mh := multihash.Multihash("lobster")
 	k, err := bk.multihashKey(mh)
-	if err != nil {
-		t.Fatal()
-	}
+	require.NoError(t, err)
 
 	vk1, err := bk.valueKey(value1, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk2, err := bk.valueKey(value2, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vk3, err := bk.valueKey(value3, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk2.buf, vk3.buf})
-	if err != nil {
-		t.Fatal(err)
-	}
+	wantSlots := [][]byte{vk1.buf, vk2.buf, vk3.buf}
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys(wantSlots)
+	require.NoError(t, err)
 	mvk2, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{want})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mvk3, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{mvk2})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mvk4, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{mvk3})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	t.Run("four nested initial", func(t *testing.T) {
 		subject := newValueKeysMerger(cdc)
 		m, err := subject.Merge(k.buf, mvk4)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		got, _, err := m.Finish(true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(want, got) {
-			t.Fatal()
-		}
+		require.NoError(t, err)
+		requireMergeSlotsEqual(t, cdc, got, wantSlots...)
 	})
 	t.Run("mix nested newer", func(t *testing.T) {
 		subject := newValueKeysMerger(cdc)
 		m, err := subject.Merge(k.buf, vk1.buf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeNewer(vk2.buf); err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeNewer(mvk3); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+		require.NoError(t, m.MergeNewer(vk2.buf))
+		require.NoError(t, m.MergeNewer(mvk3))
 		got, _, err := m.Finish(true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(want, got) {
-			t.Fatal()
-		}
+		require.NoError(t, err)
+		requireMergeSlotsEqual(t, cdc, got, wantSlots...)
 	})
 
 	reverse, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk3.buf, vk2.buf, vk1.buf})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	rmvk2, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{reverse})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	t.Run("mix nested older", func(t *testing.T) {
 		subject := newValueKeysMerger(cdc)
 		m, err := subject.Merge(k.buf, vk3.buf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeOlder(rmvk2); err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeOlder(mvk3); err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeOlder(vk1.buf); err != nil {
-			t.Fatal(err)
-		}
-		if err := m.MergeOlder(vk2.buf); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+		require.NoError(t, m.MergeOlder(rmvk2))
+		require.NoError(t, m.MergeOlder(mvk3))
+		require.NoError(t, m.MergeOlder(vk1.buf))
+		require.NoError(t, m.MergeOlder(vk2.buf))
 		got, _, err := m.Finish(true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		wantSlots := sortedMergeSlots(t, cdc, want)
-		if !slices.EqualFunc(wantSlots, sortedMergeSlots(t, cdc, got), bytes.Equal) {
-			t.Fatalf("expected %v but got %v", wantSlots, sortedMergeSlots(t, cdc, got))
-		}
+		require.NoError(t, err)
+		requireMergeSlotsEqual(t, cdc, got, wantSlots...)
 	})
 }
