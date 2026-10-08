@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/cockroachdb/pebble/v2"
 )
@@ -46,8 +47,10 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	// Look at value prefix to determine if this value is being added to or
 	// removed from the set of values the multihash key maps to.
 	switch keyPrefix(value[0]) {
-	case mergeDeleteKeyPrefix:
-		v.addToDeletes(value[1:])
+	case legacyMergeDeleteKeyPrefix:
+		v.addToDeletes(string(value[1:]))
+	case mergeDeleteValueKeyPrefix:
+		v.addToDeletes(reconstructValueKey(value))
 	case valueKeyPrefix:
 		v.addToMerges(value)
 	default:
@@ -137,12 +140,12 @@ func (v *valueKeysValueMerger) exists(value []byte) bool {
 }
 
 // addToMerges checks whether the given value exists and if not adds it to the list of deletes.
-func (v *valueKeysValueMerger) addToDeletes(value []byte) {
+func (v *valueKeysValueMerger) addToDeletes(value string) {
 	if v.deletes == nil {
 		// Lazily instantiate the deletes map since deletions are far less common than merges.
 		v.deletes = make(map[string]struct{})
 	}
-	v.deletes[string(value)] = struct{}{}
+	v.deletes[value] = struct{}{}
 }
 
 // maybeGrow grows the capacity of the given slice if necessary, such that it can fit n more
@@ -158,4 +161,13 @@ func maybeGrow(s [][]byte, n int) [][]byte {
 	default:
 		return append(make([][]byte, 0, (l+n)*growthFactor), s...)
 	}
+}
+
+// reconstructValueKey builds the live value key for a delete operand
+func reconstructValueKey(value []byte) string {
+	b := strings.Builder{}
+	b.Grow(len(value))
+	b.WriteByte(byte(valueKeyPrefix))
+	b.Write(value[1:])
+	return b.String()
 }

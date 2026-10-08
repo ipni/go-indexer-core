@@ -49,11 +49,16 @@ const (
 	// valueKeyPrefix represents the prefix of a key that is associated to indexer.Value
 	// records.
 	valueKeyPrefix
-	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
-	// it should be removed during merge. See: valueKeysValueMerger.
-	mergeDeleteKeyPrefix
+	// legacyMergeDeleteKeyPrefix is the legacy multihash merge-delete operand: this
+	// byte prepended to a full value key. Still recognized by valueKeysValueMerger
+	// for backward compatibility.
+	legacyMergeDeleteKeyPrefix
 	// meteringKeyPrefix represents keys used by the per-provider metering scanner.
 	meteringKeyPrefix
+	// mergeDeleteValueKeyPrefix is the compact multihash merge-delete operand:
+	// this byte followed by provider and context hashes (same length as a value
+	// key for consistency between all operands). See valueKeysValueMerger.
+	mergeDeleteValueKeyPrefix
 )
 
 // providerHashLen is the blake3 output length used for both halves of a value
@@ -71,10 +76,12 @@ func (k *key) prefix() keyPrefix {
 		return multihashKeyPrefix
 	case byte(valueKeyPrefix):
 		return valueKeyPrefix
-	case byte(mergeDeleteKeyPrefix):
-		return mergeDeleteKeyPrefix
+	case byte(legacyMergeDeleteKeyPrefix):
+		return legacyMergeDeleteKeyPrefix
 	case byte(meteringKeyPrefix):
 		return meteringKeyPrefix
+	case byte(mergeDeleteValueKeyPrefix):
+		return mergeDeleteValueKeyPrefix
 	default:
 		return unknownKeyPrefix
 	}
@@ -151,7 +158,7 @@ func (kl *keyList) Close() error {
 // newBlake3Keyer instantiates a keyer that uses blake3.
 // hashLen is the blake3 output size in bytes for the provider ID and the context ID.
 // Value keys are prefix + provider hash + context hash.
-// Merge-delete keys add one extra prefix byte.
+// A merge-delete key uses mergeDeleteValueKeyPrefix in place of valueKeyPrefix.
 // Multihash keys are prefix + raw multihash.
 func newBlake3Keyer(hashLen int, p *pool) *blake3Keyer {
 	return &blake3Keyer{
@@ -201,13 +208,12 @@ func (b *blake3Keyer) valueKey(v *indexer.Value, md bool) (*key, error) {
 
 	vk := b.p.leaseKey()
 	klen := 1 + len(pidk) + len(ctxk)
+	vk.maybeGrow(klen)
 	if md {
-		vk.maybeGrow(1 + klen)
-		vk.append(byte(mergeDeleteKeyPrefix))
+		vk.append(byte(mergeDeleteValueKeyPrefix))
 	} else {
-		vk.maybeGrow(klen)
+		vk.append(byte(valueKeyPrefix))
 	}
-	vk.append(byte(valueKeyPrefix))
 	vk.append(pidk...)
 	vk.append(ctxk...)
 	return vk, nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ipni/go-indexer-core"
 	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -126,6 +127,84 @@ func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
 	if !bytes.Equal(wantVKs, gotVKs) {
 		t.Fatalf("expected %v but got %v", wantVKs, gotVKs)
 	}
+}
+
+func TestValueKeysMerger_OldDeleteOperand(t *testing.T) {
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
+	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
+	require.NoError(t, err)
+	vk1, err := bk.valueKey(value1, false)
+	require.NoError(t, err)
+	vk2, err := bk.valueKey(value2, false)
+	require.NoError(t, err)
+	vk3, err := bk.valueKey(value3, false)
+	require.NoError(t, err)
+
+	// Older delete operands prepended mergeDeleteKeyPrefix to the value key.
+	oldDelete := append([]byte{byte(legacyMergeDeleteKeyPrefix)}, vk2.buf...)
+
+	subject := newValueKeysMerger(cdc)
+	m, err := subject.Merge(mk.buf, vk1.buf)
+	require.NoError(t, err)
+	require.NoError(t, m.MergeNewer(vk2.buf))
+	require.NoError(t, m.MergeNewer(vk3.buf))
+	require.NoError(t, m.MergeNewer(oldDelete))
+
+	got, _, err := m.Finish(false)
+	require.NoError(t, err)
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf, vk3.buf})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestValueKeysMerger_DropsShortDeleteOperand(t *testing.T) {
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
+	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
+	require.NoError(t, err)
+	vk1, err := bk.valueKey(value1, false)
+	require.NoError(t, err)
+
+	subject := newValueKeysMerger(cdc)
+	m, err := subject.Merge(mk.buf, vk1.buf)
+	require.NoError(t, err)
+	require.NoError(t, m.MergeNewer([]byte{byte(mergeDeleteValueKeyPrefix), 1, 2, 3}))
+
+	got, _, err := m.Finish(false)
+	require.NoError(t, err)
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{vk1.buf})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestValueKeysMerger_ShortDeleteDoesNotMatchZeroPaddedSuffix(t *testing.T) {
+	p := newPool()
+	cdc := &codec{p: p}
+	bk := p.leaseBlake3Keyer()
+	mk, err := bk.multihashKey(multihash.Multihash("lobster"))
+	require.NoError(t, err)
+
+	shortDelete := []byte{byte(mergeDeleteValueKeyPrefix), 1, 2, 3}
+
+	// A full-length value key that equals what zero-padding the short delete
+	// would produce. Apply the delete first so a padded reconstruct would make
+	// exists() treat the later add as already deleted.
+	padded := [1 + providerHashLen*2]byte{byte(valueKeyPrefix)}
+	copy(padded[1:], shortDelete[1:])
+
+	subject := newValueKeysMerger(cdc)
+	m, err := subject.Merge(mk.buf, padded[:])
+	require.NoError(t, err)
+	require.NoError(t, m.MergeNewer(shortDelete))
+
+	got, _, err := m.Finish(true)
+	require.NoError(t, err)
+	want, err := indexer.BinaryValueCodec{}.MarshalValueKeys([][]byte{padded[:]})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }
 
 func TestValueKeysValueMerger_RepeatedlyMarshalledValueKeys(t *testing.T) {

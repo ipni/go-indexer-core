@@ -91,10 +91,13 @@ func Test_blake3Keyer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if dvk.prefix() != mergeDeleteKeyPrefix {
+		if dvk.prefix() != mergeDeleteValueKeyPrefix {
 			t.Fatal()
 		}
-		if !bytes.Equal(vk.buf, dvk.buf[1:]) {
+		if len(dvk.buf) != len(vk.buf) {
+			t.Fatal()
+		}
+		if !bytes.Equal(vk.buf[1:], dvk.buf[1:]) {
 			t.Fatal()
 		}
 	})
