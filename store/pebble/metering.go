@@ -192,6 +192,11 @@ func (r *meteringRunner) runMultihashScan(
 		}
 
 		log.Infow("metering: running scan", "scanID", progress.ScanID)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
 	} else {
 		counters, err = r.loadMultihashScanCounters(r.db, progress.ScanID)
 		if err != nil {
@@ -272,6 +277,12 @@ func (r *meteringRunner) runMultihashScanBatch(
 	if !progress.DoneAt.IsZero() {
 		return true, nil
 	}
+	batchStart := time.Now()
+	stats.Record(context.Background(),
+		metrics.MeteringBatchesStarted.M(1),
+		metrics.MeteringBatchStartedAt.M(float64(batchStart.Unix())),
+	)
+
 	lower, upper := multihashScanBounds(progress.Cursor)
 
 	iter, err := r.db.NewIter(&pebble.IterOptions{
@@ -347,8 +358,14 @@ func (r *meteringRunner) runMultihashScanBatch(
 	}
 
 	stats.Record(context.Background(),
+		metrics.MeteringBatchesFinished.M(1),
+		metrics.MeteringBatchDurationMs.M(float64(time.Since(batchStart).Milliseconds())),
 		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
 		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringTotalDeleted.M(int64(counters.totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
 	)
 
 	// DoneAt stays unset here. The finish batch writes it together with the
@@ -552,6 +569,7 @@ func (r *meteringRunner) finishMultihashScan(
 		},
 		completedAt.Sub(progress.StartedAt),
 	)
+	stats.Record(context.Background(), metrics.MeteringScansFinished.M(1))
 	stats.Record(context.Background(),
 		metrics.MeteringScanKeysRead.M(0),
 		metrics.MeteringScanBytesRead.M(0),
@@ -874,6 +892,9 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Active.Entries)),
 		metrics.MeteringTotalSlots.M(int64(report.Totals.Active.Slots)),
 		metrics.MeteringTotalDeleted.M(int64(report.Totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(report.Totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(report.Totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(report.Totals.Deleted.ValueBytes)),
 		metrics.MeteringScanCompletedAt.M(float64(report.MeasuredAt.Unix())),
 		metrics.MeteringScanDurationMs.M(float64(duration.Milliseconds())),
 	)
