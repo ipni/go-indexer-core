@@ -185,6 +185,66 @@ func TestMeteringDeletedContextKeptProvider(t *testing.T) {
 	require.EqualValues(t, 2, report.Providers[0].DeletedContexts)
 }
 
+func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	putValue(t, s, p1, []byte("ctxA"), []byte("metaA"), mhs[0], mhs[1])
+	putValue(t, s, p1, []byte("ctxB"), []byte("metaB"), mhs[1])
+	require.NoError(t, s.RemoveProviderContext(p1, []byte("ctxB")))
+	// A later advertisement of a different context must survive the cleanup.
+	putValue(t, s, p1, []byte("ctxC"), []byte("metaC"), mhs[1])
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.EqualValues(t, 2, report.Totals.Active.Entries)
+	require.EqualValues(t, 3, report.Totals.Active.Slots)
+	require.Zero(t, report.Totals.Deleted.Entries)
+	require.Len(t, report.Providers, 1)
+	require.EqualValues(t, 2, report.Providers[0].Multihashes)
+	require.EqualValues(t, 3, report.Providers[0].Slots)
+	require.Zero(t, report.Providers[0].DeletedContexts)
+
+	contextIDs := func(values []indexer.Value) [][]byte {
+		out := make([][]byte, len(values))
+		for i, v := range values {
+			out[i] = v.ContextID
+		}
+		return out
+	}
+
+	values, found, err := s.Get(mhs[0])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, [][]byte{[]byte("ctxA")}, contextIDs(values))
+
+	values, found, err = s.Get(mhs[1])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.ElementsMatch(t, [][]byte{[]byte("ctxA"), []byte("ctxC")}, contextIDs(values))
+}
+
+func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	putValue(t, s, p1, []byte("ctx"), []byte("meta"), mhs...)
+	require.NoError(t, s.RemoveProvider(context.Background(), p1))
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Deleted.Entries)
+	require.Empty(t, report.Providers)
+	for _, mh := range mhs {
+		_, found, err := s.Get(mh)
+		require.NoError(t, err)
+		require.False(t, found)
+	}
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}
