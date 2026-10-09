@@ -17,7 +17,7 @@ var (
 )
 
 type valueKeysValueMerger struct {
-	merges  [][]byte
+	merges  map[string]struct{}
 	deletes map[string]struct{}
 	c       *codec
 }
@@ -48,7 +48,7 @@ func (v *valueKeysValueMerger) MergeNewer(value []byte) error {
 	case mergeDeleteValueKeyPrefix:
 		v.mergeNewerDelete(reconstructValueKey(value))
 	case valueKeyPrefix:
-		v.mergeNewerAdd(value)
+		v.mergeNewerAdd(string(value))
 	default:
 		return v.mergeMarshalledNewer(value)
 	}
@@ -65,7 +65,7 @@ func (v *valueKeysValueMerger) MergeOlder(value []byte) error {
 	case mergeDeleteValueKeyPrefix:
 		v.mergeOlderDelete(reconstructValueKey(value))
 	case valueKeyPrefix:
-		v.mergeOlderAdd(value)
+		v.mergeOlderAdd(string(value))
 	default:
 		return v.mergeMarshalledOlder(value)
 	}
@@ -85,7 +85,7 @@ func (v *valueKeysValueMerger) mergeOlderDelete(vk string) {
 }
 
 // mergeMarshalledNewer unpacks a previous merge result and applies MergeNewer
-// rules to each slot: live slots are appended, delete slots remove a live slot
+// rules to each slot: live slots are added, delete slots remove a live slot
 // and join the delete set.
 func (v *valueKeysValueMerger) mergeMarshalledNewer(value []byte) error {
 	vks, err := v.unpackSlots(value)
@@ -104,9 +104,8 @@ func (v *valueKeysValueMerger) mergeMarshalledNewer(value []byte) error {
 }
 
 // mergeMarshalledOlder unpacks a previous merge result. Live slots that are not
-// already deleted are prepended as a block (preserving their relative order) so
-// older values stay ahead of newer ones. Delete slots then extend the delete
-// set. Packed results store deletes after live slots, so that order matches.
+// already deleted are added first. Delete slots then extend the delete set.
+// Packed results store deletes after live slots, so that order matches.
 func (v *valueKeysValueMerger) mergeMarshalledOlder(value []byte) error {
 	vks, err := v.unpackSlots(value)
 	if err != nil {
@@ -130,7 +129,11 @@ func (v *valueKeysValueMerger) unpackSlots(value []byte) (*keyList, error) {
 
 func (v *valueKeysValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
 	out := make([][]byte, 0, len(v.merges)+len(v.deletes))
-	out = append(out, v.merges...)
+	for merge := range v.merges {
+		out = append(out, []byte(merge))
+	}
+	// Order among live keys is not significant; sort for a stable encoding.
+	slices.SortFunc(out, bytes.Compare)
 	if !includesBase {
 		// Only emit delete marks for keys that are not live. A key in both
 		// merges and deletes was re-added after a delete; the add is newer, so
@@ -138,7 +141,7 @@ func (v *valueKeysValueMerger) Finish(includesBase bool) ([]byte, io.Closer, err
 		// remove the value again.
 		dks := make([][]byte, 0, len(v.deletes))
 		for deleted := range v.deletes {
-			if v.hasMerge([]byte(deleted)) {
+			if _, live := v.merges[deleted]; live {
 				continue
 			}
 			dk := make([]byte, len(deleted))
@@ -160,35 +163,29 @@ func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool,
 	return b, len(b) == 0, c, err
 }
 
-func (v *valueKeysValueMerger) mergeNewerAdd(value []byte) {
-	if !v.hasMerge(value) {
-		v.merges = append(v.merges, bytes.Clone(value))
+func (v *valueKeysValueMerger) mergeNewerAdd(value string) {
+	v.addToMerges(value)
+}
+
+func (v *valueKeysValueMerger) mergeOlderAdd(value string) {
+	if !v.isDeleted(value) {
+		v.addToMerges(value)
 	}
 }
 
-func (v *valueKeysValueMerger) mergeOlderAdd(value []byte) {
-	if !v.isDeleted(value) && !v.hasMerge(value) {
-		v.merges = slices.Insert(v.merges, 0, bytes.Clone(value))
+func (v *valueKeysValueMerger) addToMerges(value string) {
+	if v.merges == nil {
+		v.merges = make(map[string]struct{})
 	}
-}
-
-func (v *valueKeysValueMerger) hasMerge(value []byte) bool {
-	for _, x := range v.merges {
-		if bytes.Equal(x, value) {
-			return true
-		}
-	}
-	return false
+	v.merges[value] = struct{}{}
 }
 
 func (v *valueKeysValueMerger) removeFromMerges(vk string) {
-	v.merges = slices.DeleteFunc(v.merges, func(m []byte) bool {
-		return string(m) == vk
-	})
+	delete(v.merges, vk)
 }
 
-func (v *valueKeysValueMerger) isDeleted(value []byte) bool {
-	_, ok := v.deletes[string(value)]
+func (v *valueKeysValueMerger) isDeleted(value string) bool {
+	_, ok := v.deletes[value]
 	return ok
 }
 
@@ -198,23 +195,6 @@ func (v *valueKeysValueMerger) addToDeletes(value string) {
 		v.deletes = make(map[string]struct{})
 	}
 	v.deletes[value] = struct{}{}
-}
-
-// valueKeyFromDeleteOperand returns the live value-key string for a delete
-// operand. Legacy operands are prefix ‖ value key; compact operands use
-// reconstructValueKey.
-func valueKeyFromDeleteOperand(value []byte) string {
-	switch keyPrefix(value[0]) {
-	case legacyMergeDeleteKeyPrefix:
-		if len(value) < 2 {
-			return ""
-		}
-		return string(value[1:])
-	case mergeDeleteValueKeyPrefix:
-		return reconstructValueKey(value)
-	default:
-		return ""
-	}
 }
 
 // reconstructValueKey builds the live value-key string for a compact delete

@@ -13,6 +13,7 @@ import (
 	"github.com/ipni/go-indexer-core/store/vsinfo"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/require"
 )
 
 func initEngine(t *testing.T, withCache, cacheOnPut bool) *Engine {
@@ -635,21 +636,9 @@ func TestMultiCodec(t *testing.T) {
 
 	// Get both values, and confirm they are retrieved.
 	vals, found, err := eng.Get(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Errorf("Error finding multihash")
-	}
-	if len(vals) != 2 {
-		t.Fatalf("Expected 2 values, got %d", len(vals))
-	}
-	if !vals[0].Equal(value1) {
-		t.Errorf("Got wrong first value")
-	}
-	if !vals[1].Equal(value2) {
-		t.Errorf("Got wrong second value")
-	}
+	require.NoError(t, err)
+	require.True(t, found)
+	require.ElementsMatch(t, []indexer.Value{value1, value2}, vals)
 }
 
 func e2e(t *testing.T, eng *Engine) {
@@ -723,18 +712,9 @@ func e2e(t *testing.T, eng *Engine) {
 		t.Fatal(err)
 	}
 	i, found, err = eng.Get(single)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Errorf("Error finding a multihash from the batch")
-	}
-	if len(i) != 2 {
-		t.Fatal("Update over existing key not correct")
-	}
-	if !i[1].Equal(value2) {
-		t.Errorf("Got wrong value for single multihash")
-	}
+	require.NoError(t, err)
+	require.True(t, found)
+	require.ElementsMatch(t, []indexer.Value{value1, value2}, i)
 
 	// Get a key that is not set
 	t.Logf("Get non-existing key")

@@ -70,7 +70,7 @@ func TestValueKeysMerger_IsAssociative(t *testing.T) {
 	gotAnother, _, err := anotherMerge.Finish(true)
 	require.NoError(t, err)
 
-	require.Equal(t, gotOne, gotAnother)
+	require.Equal(t, unpackMergeSlots(t, cdc, gotOne), unpackMergeSlots(t, cdc, gotAnother))
 }
 
 func TestValueKeysValueMerger_DeleteKeyRemovesValueKeys(t *testing.T) {
