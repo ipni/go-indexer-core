@@ -27,6 +27,9 @@ type MeteringConfig struct {
 	// Prometheus series per provider. Leave false unless the provider set is
 	// known to be small; the HTTP stats API still returns every provider.
 	ExportProviderMetrics bool
+	// Cleanup removes multihash slots whose value record is already gone.
+	// Removed slots are not counted. Defaults to false.
+	Cleanup bool
 }
 
 func (c *MeteringConfig) withDefaults() MeteringConfig {
