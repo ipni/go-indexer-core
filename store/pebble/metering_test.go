@@ -10,9 +10,11 @@ import (
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"go.opencensus.io/stats/view"
 )
 
 func TestBatchSleep(t *testing.T) {
@@ -21,6 +23,26 @@ func TestBatchSleep(t *testing.T) {
 	require.EqualValues(t, 0, batchSleep(time.Second, 1))
 	require.Equal(t, minBatchElapsed, batchSleep(0, 0.5))
 	require.Equal(t, maxBatchSleep, batchSleep(maxBatchSleep, 0.01))
+}
+
+func registerMeteringViews(t *testing.T) {
+	t.Helper()
+	view.Unregister(metrics.MeteringViews...)
+	require.NoError(t, view.Register(metrics.MeteringViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringViews...) })
+}
+
+func meteringSum(t *testing.T, name string) float64 {
+	t.Helper()
+	rows, err := view.RetrieveData(name)
+	require.NoError(t, err)
+	if len(rows) == 0 {
+		return 0
+	}
+	require.Len(t, rows, 1)
+	sum, ok := rows[0].Data.(*view.SumData)
+	require.True(t, ok)
+	return sum.Value
 }
 
 func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.StatsMeter) {
@@ -186,6 +208,7 @@ func TestMeteringDeletedContextKeptProvider(t *testing.T) {
 }
 
 func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
+	registerMeteringViews(t)
 	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
 	p1 := random.Peers(1)[0]
 	mhs := random.Multihashes(2)
@@ -205,6 +228,10 @@ func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
 	require.EqualValues(t, 2, report.Providers[0].Multihashes)
 	require.EqualValues(t, 3, report.Providers[0].Slots)
 	require.Zero(t, report.Providers[0].DeletedContexts)
+	require.EqualValues(t, 1, meteringSum(t, "core/metering/cleanup_slots"))
+	require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
+	require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
+	require.EqualValues(t, marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
 
 	contextIDs := func(values []indexer.Value) [][]byte {
 		out := make([][]byte, len(values))
@@ -226,6 +253,7 @@ func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
 }
 
 func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
+	registerMeteringViews(t)
 	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
 	p1 := random.Peers(1)[0]
 	mhs := random.Multihashes(2)
@@ -238,6 +266,10 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	require.Zero(t, report.Totals.Active.Entries)
 	require.Zero(t, report.Totals.Deleted.Entries)
 	require.Empty(t, report.Providers)
+	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_slots"))
+	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_multihashes"))
+	require.EqualValues(t, 2*marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
+	require.Greater(t, meteringSum(t, "core/metering/cleanup_key_bytes"), float64(0))
 	for _, mh := range mhs {
 		_, found, err := s.Get(mh)
 		require.NoError(t, err)

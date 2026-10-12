@@ -192,6 +192,11 @@ func (r *meteringRunner) runMultihashScan(
 		}
 
 		log.Infow("metering: running scan", "scanID", progress.ScanID)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
 	} else {
 		counters, err = r.loadMultihashScanCounters(r.db, progress.ScanID)
 		if err != nil {
@@ -202,6 +207,24 @@ func (r *meteringRunner) runMultihashScan(
 			"scanID", progress.ScanID,
 			"keysRead", progress.KeysRead,
 			"startedAt", progress.StartedAt,
+		)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+			metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
+			metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		)
+		r.recordScanEstimate(progress, time.Now())
+	}
+
+	if r.cfg.Cleanup {
+		// A zero sample publishes the counters before the first removal.
+		// Summing zero does not change a counter that has already climbed.
+		stats.Record(context.Background(),
+			metrics.MeteringCleanupSlots.M(0),
+			metrics.MeteringCleanupMultihashes.M(0),
+			metrics.MeteringCleanupKeyBytes.M(0),
+			metrics.MeteringCleanupValueBytes.M(0),
 		)
 	}
 
@@ -272,6 +295,12 @@ func (r *meteringRunner) runMultihashScanBatch(
 	if !progress.DoneAt.IsZero() {
 		return true, nil
 	}
+	batchStart := time.Now()
+	stats.Record(context.Background(),
+		metrics.MeteringBatchesStarted.M(1),
+		metrics.MeteringBatchStartedAt.M(float64(batchStart.Unix())),
+	)
+
 	lower, upper := multihashScanBounds(progress.Cursor)
 
 	iter, err := r.db.NewIter(&pebble.IterOptions{
@@ -292,6 +321,7 @@ func (r *meteringRunner) runMultihashScanBatch(
 	// Only those rows are written later.
 	modifiedProviderContext := make(map[string]struct{})
 
+	var cleaned cleanupTally
 	keysRead := 0
 	var bytesRead uint64
 	var lastKey []byte
@@ -313,6 +343,7 @@ func (r *meteringRunner) runMultihashScanBatch(
 			modifiedProviderContext,
 			providerIDByHash,
 			b,
+			&cleaned,
 		); err != nil {
 			return false, err
 		}
@@ -346,10 +377,22 @@ func (r *meteringRunner) runMultihashScanBatch(
 		return false, err
 	}
 
+	now := time.Now()
 	stats.Record(context.Background(),
+		metrics.MeteringBatchesFinished.M(1),
+		metrics.MeteringBatchDurationMs.M(float64(now.Sub(batchStart).Milliseconds())),
 		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
 		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringTotalDeleted.M(int64(counters.totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
+		metrics.MeteringCleanupSlots.M(int64(cleaned.slots)),
+		metrics.MeteringCleanupMultihashes.M(int64(cleaned.multihashes)),
+		metrics.MeteringCleanupKeyBytes.M(int64(cleaned.keyBytes)),
+		metrics.MeteringCleanupValueBytes.M(int64(cleaned.valueBytes)),
 	)
+	r.recordScanEstimate(progress, now)
 
 	// DoneAt stays unset here. The finish batch writes it together with the
 	// completed-scan header, so a crash cannot observe one without the other.
@@ -374,6 +417,7 @@ func (r *meteringRunner) countMultihashScanRecord(
 	modifiedProviderContext map[string]struct{},
 	providerIDByHash map[string]peer.ID,
 	cleanupBatch *pebble.Batch,
+	cleaned *cleanupTally,
 ) error {
 	if len(key) == 0 || keyPrefix(key[0]) != multihashKeyPrefix {
 		return nil
@@ -390,6 +434,7 @@ func (r *meteringRunner) countMultihashScanRecord(
 	defer vks.Close()
 
 	liveSlots := 0
+	removedSlots := 0
 	providersInMultihash := make(map[string]struct{}, len(vks.keys))
 	for _, valueKey := range vks.keys {
 		providerHash := providerHashFromValueKey(valueKey.buf)
@@ -409,6 +454,7 @@ func (r *meteringRunner) countMultihashScanRecord(
 			if err = mergeDeleteSlot(cleanupBatch, key, valueKey.buf); err != nil {
 				return err
 			}
+			removedSlots++
 			continue
 		}
 
@@ -445,6 +491,14 @@ func (r *meteringRunner) countMultihashScanRecord(
 
 	if r.cfg.Cleanup {
 		// A key whose slots were all removed is gone. Count only what remains.
+		if removedSlots > 0 {
+			cleaned.slots += uint64(removedSlots)
+			cleaned.valueBytes += uint64(removedSlots * marshalledValueKeyLength)
+			if liveSlots == 0 {
+				cleaned.multihashes++
+				cleaned.keyBytes += uint64(len(key))
+			}
+		}
 		if liveSlots == 0 {
 			return nil
 		}
@@ -467,6 +521,15 @@ func (r *meteringRunner) countMultihashScanRecord(
 	bucket.Slots += uint64(len(vks.keys))
 
 	return nil
+}
+
+// cleanupTally is how much of one batch was merge-deleted. These amounts are
+// added to the process cleanup counters after the batch commits.
+type cleanupTally struct {
+	slots       uint64
+	multihashes uint64
+	keyBytes    uint64
+	valueBytes  uint64
 }
 
 // mergeDeleteSlot records a merge-delete of valueKey from multihashKey.
@@ -552,10 +615,8 @@ func (r *meteringRunner) finishMultihashScan(
 		},
 		completedAt.Sub(progress.StartedAt),
 	)
-	stats.Record(context.Background(),
-		metrics.MeteringScanKeysRead.M(0),
-		metrics.MeteringScanBytesRead.M(0),
-	)
+	stats.Record(context.Background(), metrics.MeteringScansFinished.M(1))
+	clearInProgressScanMetrics()
 	return nil
 }
 
@@ -630,7 +691,11 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 
 	if err := r.db.Set(meteringProgressKey, progressBytes, pebble.Sync); err != nil {
 		log.Errorw("metering: failed to persist scan error", "err", err)
+		return
 	}
+	// The walk is no longer running. A context cancel that only pauses for
+	// resume never reaches here.
+	clearInProgressScanMetrics()
 }
 
 // loadAllStats returns the latest completed scan.
@@ -866,6 +931,41 @@ func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *ti
 	return percent, &finish
 }
 
+// recordScanEstimate publishes in-progress percent-done, elapsed, and
+// remaining-time gauges.
+func (r *meteringRunner) recordScanEstimate(progress *multihashScanProgressRecord, now time.Time) {
+	percent, finish := scanEstimate(progress.StartedAt, progress.Cursor, now)
+	elapsed := 0.0
+	if !progress.StartedAt.IsZero() && now.After(progress.StartedAt) {
+		elapsed = now.Sub(progress.StartedAt).Seconds()
+	}
+	remaining := 0.0
+	if finish != nil {
+		remaining = finish.Sub(now).Seconds()
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+	stats.Record(context.Background(),
+		metrics.MeteringScanPercentDone.M(percent),
+		metrics.MeteringScanElapsedSeconds.M(elapsed),
+		metrics.MeteringScanRemainingSeconds.M(remaining),
+	)
+}
+
+// clearInProgressScanMetrics zeros gauges that describe a live walk so idle
+// scrapes do not look like a scan still running.
+func clearInProgressScanMetrics() {
+	stats.Record(context.Background(),
+		metrics.MeteringScanStartedAt.M(0),
+		metrics.MeteringScanKeysRead.M(0),
+		metrics.MeteringScanBytesRead.M(0),
+		metrics.MeteringScanPercentDone.M(0),
+		metrics.MeteringScanElapsedSeconds.M(0),
+		metrics.MeteringScanRemainingSeconds.M(0),
+	)
+}
+
 // publishMeteringGauges records whole-store gauges from a completed scan.
 // Per-provider gauges are recorded only when ExportProviderMetrics is set.
 func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, duration time.Duration) {
@@ -874,6 +974,9 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Active.Entries)),
 		metrics.MeteringTotalSlots.M(int64(report.Totals.Active.Slots)),
 		metrics.MeteringTotalDeleted.M(int64(report.Totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(report.Totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(report.Totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(report.Totals.Deleted.ValueBytes)),
 		metrics.MeteringScanCompletedAt.M(float64(report.MeasuredAt.Unix())),
 		metrics.MeteringScanDurationMs.M(float64(duration.Milliseconds())),
 	)
