@@ -55,7 +55,7 @@ var (
 	// Cleanup counters count what this process has merge-deleted. They start at
 	// zero when the process starts and are not restored from a previous scan.
 	MeteringCleanupSlots       = stats.Int64("core/metering/cleanup_slots", "Value-key slots merge-deleted by metering cleanup in this process", stats.UnitDimensionless)
-	MeteringCleanupMultihashes = stats.Int64("core/metering/cleanup_multihashes", "Multihash keys whose slots were all merge-deleted by metering cleanup in this process", stats.UnitDimensionless)
+	MeteringCleanupMultihashes = stats.Int64("core/metering/cleanup_multihashes", "Multihash keys removed by metering cleanup in this process", stats.UnitDimensionless)
 	MeteringCleanupKeyBytes    = stats.Int64("core/metering/cleanup_key_bytes", "Key bytes of multihash keys fully removed by metering cleanup in this process", stats.UnitBytes)
 	MeteringCleanupValueBytes  = stats.Int64("core/metering/cleanup_value_bytes", "Packed value bytes of slots merge-deleted by metering cleanup in this process", stats.UnitBytes)
 

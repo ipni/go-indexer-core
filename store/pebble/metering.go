@@ -433,6 +433,15 @@ func (r *meteringRunner) countMultihashScanRecord(
 	}
 	defer vks.Close()
 
+	// An empty value is a key still stored after its slots are gone. Pebble
+	// returns it only while deleteEmptyKeys is false; otherwise compaction
+	// drops it. Deleted counts that leftover key, including its bytes.
+	if len(vks.keys) == 0 {
+		counters.totals.Deleted.Entries++
+		counters.totals.Deleted.KeyBytes += uint64(len(key))
+		return nil
+	}
+
 	liveSlots := 0
 	removedSlots := 0
 	providersInMultihash := make(map[string]struct{}, len(vks.keys))
@@ -490,11 +499,12 @@ func (r *meteringRunner) countMultihashScanRecord(
 	}
 
 	if r.cfg.Cleanup {
-		// A key whose slots were all removed is gone. Count only what remains.
+		// Slots removed this pass are left out of the totals. The multihash key
+		// itself is counted only when deleteEmptyKeys removes it.
 		if removedSlots > 0 {
 			cleaned.slots += uint64(removedSlots)
 			cleaned.valueBytes += uint64(removedSlots * marshalledValueKeyLength)
-			if liveSlots == 0 {
+			if liveSlots == 0 && deleteEmptyKeys {
 				cleaned.multihashes++
 				cleaned.keyBytes += uint64(len(key))
 			}

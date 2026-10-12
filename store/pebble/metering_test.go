@@ -75,6 +75,22 @@ func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *i
 	return nil
 }
 
+// triggerWhenIdle starts a scan. Status can show done while the runner is still
+// leaving the previous scan, and trigger then returns ErrScanInProgress.
+func triggerWhenIdle(t *testing.T, pm indexer.StatsMeter) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := pm.MeteringTriggerScan(context.Background())
+		if err == nil {
+			return
+		}
+		require.ErrorIs(t, err, indexer.ErrScanInProgress)
+		require.False(t, time.Now().After(deadline), "timed out waiting to trigger: %v", err)
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func putValue(t *testing.T, s indexer.Interface, pid peer.ID, ctxID, meta []byte, mhs ...multihash.Multihash) {
 	t.Helper()
 	err := s.Put(indexer.Value{
@@ -267,14 +283,45 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	require.Zero(t, report.Totals.Deleted.Entries)
 	require.Empty(t, report.Providers)
 	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_slots"))
-	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_multihashes"))
 	require.EqualValues(t, 2*marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
-	require.Greater(t, meteringSum(t, "core/metering/cleanup_key_bytes"), float64(0))
+	if deleteEmptyKeys {
+		require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_multihashes"))
+		require.Greater(t, meteringSum(t, "core/metering/cleanup_key_bytes"), float64(0))
+	} else {
+		require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
+		require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
+	}
 	for _, mh := range mhs {
 		_, found, err := s.Get(mh)
 		require.NoError(t, err)
 		require.False(t, found)
 	}
+
+	// The merge result is an empty value. The next scan counts those keys as
+	// deleted multihashes.
+	first, err := pm.MeteringScanStatus(context.Background(), nil)
+	require.NoError(t, err)
+	// Scan IDs are microseconds. Wait so the next scan gets a new one.
+	time.Sleep(2 * time.Millisecond)
+	triggerWhenIdle(t, pm)
+	deadline := time.Now().Add(5 * time.Second)
+	var second *indexer.AllStatsReport
+	for time.Now().Before(deadline) {
+		st, err := pm.MeteringScanStatus(context.Background(), nil)
+		require.NoError(t, err)
+		require.Empty(t, st.Error)
+		if st.ScanID != first.ScanID && st.State == indexer.ScanStateDone {
+			second, err = pm.MeteringAllStats(context.Background(), nil)
+			require.NoError(t, err)
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.NotNil(t, second)
+	require.EqualValues(t, 2, second.Totals.Deleted.Entries)
+	require.Zero(t, second.Totals.Deleted.Slots)
+	require.Zero(t, second.Totals.Active.Entries)
+	require.Greater(t, second.Totals.Deleted.KeyBytes, uint64(0))
 }
 
 func TestMeteringResume(t *testing.T) {
@@ -424,20 +471,10 @@ func TestMeteringRetentionOnlyCurrent(t *testing.T) {
 	require.NotNil(t, cur1)
 	firstScanID := cur1.ScanID
 
-	// Second scan after a distinct microsecond. The runner may still be
-	// leaving the previous scan, so wait out ErrScanInProgress.
+	// Second scan after a distinct microsecond.
 	time.Sleep(2 * time.Millisecond)
+	triggerWhenIdle(t, pm)
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := pm.MeteringTriggerScan(context.Background())
-		if err == nil {
-			break
-		}
-		require.ErrorIs(t, err, indexer.ErrScanInProgress)
-		require.False(t, time.Now().After(deadline), "timed out waiting to trigger: %v", err)
-		time.Sleep(5 * time.Millisecond)
-	}
-	deadline = time.Now().Add(5 * time.Second)
 	var r2 *indexer.AllStatsReport
 	for time.Now().Before(deadline) {
 		st, err := pm.MeteringScanStatus(context.Background(), nil)

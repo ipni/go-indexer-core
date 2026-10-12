@@ -11,6 +11,16 @@ import (
 
 const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
 
+// deleteEmptyKeys controls whether an empty multihash merge result asks Pebble
+// to delete the key. When this is false the key stays in the store, and a later
+// scan counts it in the deleted totals. Cleanup multihash and key-byte counters
+// are recorded only when this is set.
+//
+// Disabled because Pebble's needDelete path corrupts the compaction iterator
+// when an empty result requests deletion:
+// https://github.com/cockroachdb/pebble/issues/6168
+const deleteEmptyKeys = false
+
 var (
 	_ pebble.ValueMerger          = (*valueKeysValueMerger)(nil)
 	_ pebble.DeletableValueMerger = (*valueKeysValueMerger)(nil)
@@ -160,7 +170,7 @@ func (v *valueKeysValueMerger) Finish(includesBase bool) ([]byte, io.Closer, err
 
 func (v *valueKeysValueMerger) DeletableFinish(includesBase bool) ([]byte, bool, io.Closer, error) {
 	b, c, err := v.Finish(includesBase)
-	return b, len(b) == 0, c, err
+	return b, deleteEmptyKeys && len(b) == 0, c, err
 }
 
 func (v *valueKeysValueMerger) mergeNewerAdd(value string) {

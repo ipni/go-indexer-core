@@ -18,7 +18,7 @@ import (
 // retain delete marks so later merges still see them.
 func FuzzValueKeysMergerAssociativity(f *testing.F) {
 	// Seeds that exercise add / remove / re-add and multi-step reduction.
-	f.Add([]byte{0, 1})                                              // add0, del0 — empty live set, DeletableFinish must request delete
+	f.Add([]byte{0, 1})                                              // add0, del0 — empty live set
 	f.Add([]byte{0, 1, 0, 2, 1, 1, 0, 1})                            // add0, add1, add0, add2, del1, add1, add0, add1
 	f.Add([]byte{0, 1, 0, 1, 0})                                     // add, del, add (re-add after remove)
 	f.Add([]byte{1, 0})                                              // remove missing, then add
@@ -93,7 +93,7 @@ func FuzzValueKeysMergerAssociativity(f *testing.F) {
 		}
 
 		require.Len(t, ops, 1)
-		require.Equal(t, len(want) == 0, needDelete, "DeletableFinish delete flag")
+		require.Equal(t, deleteEmptyKeys && len(ops[0]) == 0, needDelete)
 		var gotKeys [][]byte
 		if got := ops[0]; len(got) > 0 {
 			kl, err := cdc.unmarshalValueKeys(got)
