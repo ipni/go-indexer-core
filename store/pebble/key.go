@@ -46,18 +46,18 @@ type (
 
 const (
 	// unknownKeyPrefix signals an unknown key prefix.
-	unknownKeyPrefix keyPrefix = iota
+	unknownKeyPrefix keyPrefix = 0
 	// multihashKeyPrefix represents the prefix of a key that represent a multihash.
-	multihashKeyPrefix
+	multihashKeyPrefix keyPrefix = 1
 	// valueKeyPrefix represents the prefix of a key that is associated to indexer.Value
 	// records.
-	valueKeyPrefix
+	valueKeyPrefix keyPrefix = 2
 	// mergeDeleteKeyPrefix represents the in-memory prefix added to a key in order to signal that
 	// it should be removed during merge. See: valueKeysValueMerger.
-	mergeDeleteKeyPrefix
+	mergeDeleteKeyPrefix keyPrefix = 3
 	// contextMapKeyPrefix represents the prefix of a key that maps a provider ID and
 	// context ID to the opaque token used as the context half of a value key.
-	contextMapKeyPrefix
+	contextMapKeyPrefix keyPrefix = 4
 )
 
 // contextTokenLength is the length of the opaque token stored in a context map entry
