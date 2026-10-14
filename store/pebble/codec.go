@@ -87,7 +87,7 @@ func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 		offset := marshalledValueKeyLength * i
 		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
 		prefix := vk.prefix()
-		if prefix != valueKeyPrefix {
+		if prefix != valueKeyPrefix && prefix != mergeDeleteValueKeyPrefix {
 			log.Debugf("unexpected key prefix for key: %v", vk)
 			_ = vk.Close()
 			continue

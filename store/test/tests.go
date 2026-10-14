@@ -104,8 +104,7 @@ func (c *conformanceTestSuite) TestPutGetAndRemove() {
 	vals, found, err = s.Get(single)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Len(t, vals, 2)
-	require.Equal(t, value2, vals[1])
+	require.ElementsMatch(t, []indexer.Value{value1, value2}, vals)
 
 	// Get a key that is not set
 	t.Log("Get non-existing key")
@@ -139,7 +138,7 @@ func (c *conformanceTestSuite) TestPutGetAndRemove() {
 	vals, found, err = s.Get(single)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, value1a, vals[0])
+	require.ElementsMatch(t, []indexer.Value{value1a, value2}, vals)
 
 	// Remove a key
 	t.Log("Remove key")
