@@ -41,6 +41,7 @@ type store struct {
 	// unmarshal every time.
 	vcodec        *codec
 	p             *pool
+	provLock      *providersLock
 	closed        bool
 	comparer      *pebble.Comparer
 	cancelMetrics context.CancelFunc
@@ -71,6 +72,7 @@ func New(path string, opts *pebble.Options) (indexer.Interface, error) {
 		db:            db,
 		p:             p,
 		vcodec:        c,
+		provLock:      newProvidersLock(),
 		comparer:      opts.Comparer,
 		cancelMetrics: cancelFunc,
 	}
@@ -130,6 +132,8 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 
 // Put implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
+	ctx := context.TODO()
+
 	if len(v.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
 	}
@@ -141,6 +145,15 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 		// Make a copy to reorder.
 		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
+
+	// The provider lock is held from the context lookup until the batch
+	// commits. A removal for the same provider runs entirely before or
+	// entirely after this Put.
+	unlock, err := s.provLock.lock(ctx, v.ProviderID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	keygen := s.p.leaseBlake3Keyer()
 	defer keygen.Close()
@@ -187,12 +200,22 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 
 // Remove implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
+	ctx := context.TODO()
+
 	// Sort multihashes before insertion to reduce cursor churn. Since a
 	// multihash key is a prefix plus the multihash itself, sorting the
 	// multihashes means their resulting keys will also be sorted.
 	if len(mhs) > 1 {
 		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
+
+	// The provider lock is held until the batch commits, so the delete
+	// markers name the token that the context maps to at commit time.
+	unlock, err := s.provLock.lock(ctx, v.ProviderID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	keygen := s.p.leaseBlake3Keyer()
 	defer keygen.Close()
@@ -229,7 +252,13 @@ func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 	return b.Commit(pebble.NoSync)
 }
 
-func (s *store) RemoveProvider(_ context.Context, pid peer.ID) error {
+func (s *store) RemoveProvider(ctx context.Context, pid peer.ID) error {
+	unlock, err := s.provLock.lock(ctx, pid)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	keygen := s.p.leaseBlake3Keyer()
 	defer keygen.Close()
 
@@ -263,6 +292,14 @@ func (s *store) RemoveProvider(_ context.Context, pid peer.ID) error {
 }
 
 func (s *store) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
+	ctx := context.TODO()
+
+	unlock, err := s.provLock.lock(ctx, pid)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	keygen := s.p.leaseBlake3Keyer()
 	defer keygen.Close()
 
@@ -286,6 +323,7 @@ func (s *store) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
 
 // findContextValueKey returns the value key for a provider and context.
 // If mapping does not exist, a legacy value key is returned.
+// The caller holds the provider lock.
 func (s *store) findContextValueKey(keygen *blake3Keyer, pid peer.ID, ctxID []byte) (*key, error) {
 	vk, mapKey, _, err := s.lookupContext(keygen, pid, ctxID)
 	if err != nil {
@@ -298,7 +336,8 @@ func (s *store) findContextValueKey(keygen *blake3Keyer, pid peer.ID, ctxID []by
 
 // findOrCreateContextValueKey returns the value key for a provider and context.
 // An existing context-map entry or a live legacy value key is reused. Otherwise
-// a new token is stored in b and used as the context half of the returned key.
+// a new token is generated and its context-map entry is added to b. The caller
+// holds the provider lock until b commits.
 func (s *store) findOrCreateContextValueKey(
 	b *pebble.Batch,
 	keygen *blake3Keyer,

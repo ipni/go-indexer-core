@@ -3,6 +3,7 @@ package pebble
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -10,6 +11,7 @@ import (
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -311,4 +313,89 @@ func TestContextMap_SameContextDifferentProviders(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.ElementsMatch(t, []indexer.Value{first, second}, vals)
+}
+
+func TestConcurrentPutSameContextOneToken(t *testing.T) {
+	const n = 8
+
+	s := openPebbleStore(t)
+	pid := random.Peers(1)[0]
+	contextID := []byte("ctx")
+	mhs := random.Multihashes(n)
+	value := indexer.Value{
+		ProviderID:    pid,
+		ContextID:     contextID,
+		MetadataBytes: []byte("meta"),
+	}
+
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			assert.NoError(t, s.Put(value, mhs[i]))
+		})
+	}
+	wg.Wait()
+	require.False(t, t.Failed())
+
+	token, found := contextMapBytes(t, s, pid, contextID)
+	require.True(t, found)
+	require.Len(t, token, contextTokenLength)
+	for _, mh := range mhs {
+		requireOnly(t, s, mh, value)
+	}
+}
+
+func TestConcurrentPutAndRemoveContextLeavesNoOrphan(t *testing.T) {
+	const rounds = 200
+
+	s := openPebbleStore(t)
+	contextID := []byte("ctx")
+	for _, pid := range random.Peers(rounds) {
+		value := indexer.Value{
+			ProviderID:    pid,
+			ContextID:     contextID,
+			MetadataBytes: []byte("meta"),
+		}
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			assert.NoError(t, s.Put(value, random.Multihashes(16)...))
+		})
+		wg.Go(func() {
+			assert.NoError(t, s.RemoveProviderContext(pid, contextID))
+		})
+		wg.Wait()
+		require.False(t, t.Failed())
+
+		// Either the context is mapped and its token holds the only value
+		// record, or both the mapping and the value record are gone.
+		got := testProviderValueKeys(t, s, pid)
+		if _, found := contextMapBytes(t, s, pid, contextID); found {
+			require.Equal(t, [][]byte{valueKeyForContext(t, s, pid, contextID)}, got)
+		} else {
+			require.Empty(t, got)
+		}
+	}
+}
+
+// testProviderValueKeys returns the keys of all value records stored for pid.
+func testProviderValueKeys(t *testing.T, s *store, pid peer.ID) [][]byte {
+	t.Helper()
+	keygen := s.p.leaseBlake3Keyer()
+	defer keygen.Close()
+	start, end, err := keygen.valuesByProviderKeyRange(pid)
+	require.NoError(t, err)
+	defer start.Close()
+	defer end.Close()
+
+	iter, err := s.db.NewIter(&pebble.IterOptions{LowerBound: start.buf, UpperBound: end.buf})
+	require.NoError(t, err)
+	defer iter.Close()
+
+	var keys [][]byte
+	for iter.First(); iter.Valid(); iter.Next() {
+		keys = append(keys, bytes.Clone(iter.Key()))
+	}
+	require.NoError(t, iter.Error())
+	return keys
 }
