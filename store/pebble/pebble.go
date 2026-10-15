@@ -3,7 +3,9 @@ package pebble
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -37,6 +39,7 @@ type store struct {
 	// unmarshal every time.
 	vcodec        *codec
 	p             *pool
+	provLock      *providersLock
 	closed        bool
 	comparer      *pebble.Comparer
 	cancelMetrics context.CancelFunc
@@ -73,6 +76,7 @@ func New(path string, opts *pebble.Options, o ...Option) (indexer.Interface, err
 		db:            db,
 		p:             p,
 		vcodec:        c,
+		provLock:      newProvidersLock(),
 		comparer:      opts.Comparer,
 		cancelMetrics: cancelFunc,
 	}
@@ -136,6 +140,8 @@ func (s *store) Get(mh multihash.Multihash) ([]indexer.Value, bool, error) {
 
 // Put implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
+	ctx := context.TODO()
+
 	if len(v.MetadataBytes) == 0 {
 		return errors.New("value missing metadata")
 	}
@@ -148,16 +154,26 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
 
+	// The provider lock is held from the context lookup until the batch
+	// commits. A removal for the same provider runs entirely before or
+	// entirely after this Put.
+	unlock, err := s.provLock.lock(ctx, v.ProviderID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	keygen := s.p.leaseBlake3Keyer()
 	defer keygen.Close()
-	vk, err := keygen.valueKey(&v, false)
+
+	b := s.db.NewBatch()
+	defer b.Close()
+
+	vk, err := s.findOrCreateContextValueKey(b, keygen, v.ProviderID, v.ContextID)
 	if err != nil {
 		return err
 	}
 	defer vk.Close()
-
-	b := s.db.NewBatch()
-	defer b.Close()
 
 	for _, mh := range mhs {
 		mhk, err := keygen.multihashKey(mh)
@@ -192,6 +208,8 @@ func (s *store) Put(v indexer.Value, mhs ...multihash.Multihash) error {
 
 // Remove implemeents indexer.Interface. This implementation reorders the given multihashes.
 func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
+	ctx := context.TODO()
+
 	// Sort multihashes before insertion to reduce cursor churn. Since a
 	// multihash key is a prefix plus the multihash itself, sorting the
 	// multihashes means their resulting keys will also be sorted.
@@ -199,16 +217,28 @@ func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 		slices.SortFunc(mhs, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
 	}
 
-	keygen := s.p.leaseBlake3Keyer()
-	defer keygen.Close()
-	dvk, err := keygen.valueKey(&v, true)
+	// The provider lock is held until the batch commits, so the delete
+	// markers name the token that the context maps to at commit time.
+	unlock, err := s.provLock.lock(ctx, v.ProviderID)
 	if err != nil {
 		return err
 	}
-	defer dvk.Close()
+	defer unlock()
+
+	keygen := s.p.leaseBlake3Keyer()
+	defer keygen.Close()
+
+	vk, err := s.findContextValueKey(keygen, v.ProviderID, v.ContextID)
+	if err != nil {
+		return err
+	}
+	defer vk.Close()
 
 	b := s.db.NewBatch()
 	defer b.Close()
+
+	dvk := vk.replacePrefix(mergeDeleteValueKeyPrefix)
+	defer dvk.Close()
 
 	for _, mh := range mhs {
 		mhk, err := keygen.multihashKey(mh)
@@ -227,33 +257,197 @@ func (s *store) Remove(v indexer.Value, mhs ...multihash.Multihash) error {
 	return b.Commit(pebble.NoSync)
 }
 
-func (s *store) RemoveProvider(_ context.Context, pid peer.ID) error {
+func (s *store) RemoveProvider(ctx context.Context, pid peer.ID) error {
+	// Provider lock is held for the whole method call.
+	// Each DeleteRange below is one range tombstone, a [start, end) marker
+	// at this sequence number. Pebble does not walk the provider's keys here;
+	// reads hide covered keys, and compaction drops them later.
+	unlock, err := s.provLock.lock(ctx, pid)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	keygen := s.p.leaseBlake3Keyer()
-	start, end, err := keygen.valuesByProviderKeyRange(pid)
-	_ = keygen.Close()
+	defer keygen.Close()
+
+	vStart, vEnd, err := keygen.valuesByProviderKeyRange(pid)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = start.Close()
-		_ = end.Close()
+		_ = vStart.Close()
+		_ = vEnd.Close()
 	}()
-	return s.db.DeleteRange(start.buf, end.buf, pebble.NoSync)
+
+	mStart, mEnd, err := keygen.contextMapsByProviderKeyRange(pid)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = mStart.Close()
+		_ = mEnd.Close()
+	}()
+
+	b := s.db.NewBatch()
+	defer b.Close()
+	if err = b.DeleteRange(vStart.buf, vEnd.buf, pebble.NoSync); err != nil {
+		return err
+	}
+	if err = b.DeleteRange(mStart.buf, mEnd.buf, pebble.NoSync); err != nil {
+		return err
+	}
+	return b.Commit(pebble.NoSync)
 }
 
 func (s *store) RemoveProviderContext(pid peer.ID, ctxID []byte) error {
+	ctx := context.TODO()
+
+	unlock, err := s.provLock.lock(ctx, pid)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	keygen := s.p.leaseBlake3Keyer()
-	vk, err := keygen.valueKey(
-		&indexer.Value{
-			ProviderID: pid,
-			ContextID:  ctxID,
-		}, false)
-	_ = keygen.Close()
+	defer keygen.Close()
+
+	vk, mapKey, _, err := s.lookupContext(keygen, pid, ctxID)
 	if err != nil {
 		return err
 	}
 	defer vk.Close()
-	return s.db.Delete(vk.buf, pebble.NoSync)
+	defer mapKey.Close()
+
+	b := s.db.NewBatch()
+	defer b.Close()
+	if err = b.Delete(vk.buf, pebble.NoSync); err != nil {
+		return err
+	}
+	if err = b.Delete(mapKey.buf, pebble.NoSync); err != nil {
+		return err
+	}
+	return b.Commit(pebble.NoSync)
+}
+
+// findContextValueKey returns the value key for a provider and context.
+// If mapping does not exist, a legacy value key is returned.
+// The caller holds the provider lock.
+func (s *store) findContextValueKey(keygen *blake3Keyer, pid peer.ID, ctxID []byte) (*key, error) {
+	vk, mapKey, _, err := s.lookupContext(keygen, pid, ctxID)
+	if err != nil {
+		return nil, err
+	}
+	defer mapKey.Close()
+
+	return vk, nil
+}
+
+// findOrCreateContextValueKey returns the value key for a provider and context.
+// An existing context-map entry or a live legacy value key is reused. Otherwise
+// a new token is generated and its context-map entry is added to b. The caller
+// holds the provider lock until b commits.
+func (s *store) findOrCreateContextValueKey(
+	b *pebble.Batch,
+	keygen *blake3Keyer,
+	pid peer.ID,
+	ctxID []byte,
+) (
+	*key,
+	error,
+) {
+	vk, mapKey, mapped, err := s.lookupContext(keygen, pid, ctxID)
+	if err != nil {
+		return nil, err
+	}
+	defer mapKey.Close()
+
+	if mapped {
+		return vk, nil
+	}
+
+	switch _, closer, err := s.db.Get(vk.buf); {
+	case err == pebble.ErrNotFound:
+		// No context value data yet, create new mapping
+		_ = vk.Close()
+		return s.createNewContextMapping(b, mapKey, keygen, pid)
+
+	case err != nil:
+		// Some internal error
+		_ = vk.Close()
+		return nil, err
+
+	default: // err == nil
+		_ = closer.Close()
+		// Context value at the legacy key already exists, return it
+		return vk, nil
+	}
+}
+
+// createNewContextMapping generates a random token, adds the context-map entry
+// for it to b, and returns the value key built from the token.
+func (s *store) createNewContextMapping(b *pebble.Batch, mapKey *key, keygen *blake3Keyer, pid peer.ID) (*key, error) {
+	token := make([]byte, contextTokenLength)
+	if _, err := rand.Read(token); err != nil {
+		return nil, err
+	}
+	vk, err := keygen.valueKeyWithToken(pid, token, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.Set(mapKey.buf, token, pebble.NoSync); err != nil {
+		_ = vk.Close()
+		return nil, err
+	}
+	return vk, nil
+}
+
+// lookupContext returns the value key and context-map key for a provider and context.
+// mapped is true when vk was built from a stored token. On success both keys are non-nil
+// and the caller must close the keys.
+func (s *store) lookupContext(
+	keygen *blake3Keyer,
+	pid peer.ID,
+	ctxID []byte,
+) (
+	vk *key,
+	mapKey *key,
+	mapped bool,
+	err error,
+) {
+	mapKey, err = keygen.contextMapKey(pid, ctxID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	switch tokenBytes, closer, err := s.db.Get(mapKey.buf); {
+	case err == pebble.ErrNotFound:
+		// No mapping found, fall back to the legacy value key, which holds
+		// the same provider and context hashes as the map key.
+		return mapKey.replacePrefix(valueKeyPrefix), mapKey, false, nil
+
+	case err != nil:
+		// Some internal error
+		_ = mapKey.Close()
+		return nil, nil, false, err
+
+	default: // err == nil
+		// Found existing mapping
+		defer closer.Close()
+
+		if len(tokenBytes) != contextTokenLength {
+			_ = mapKey.Close()
+			return nil, nil, false, fmt.Errorf("invalid context token length: %d", len(tokenBytes))
+		}
+
+		vk, err = keygen.valueKeyWithToken(pid, tokenBytes, false)
+		if err != nil {
+			_ = mapKey.Close()
+			return nil, nil, false, err
+		}
+
+		return vk, mapKey, true, nil
+	}
 }
 
 func (s *store) Size() (int64, error) {
