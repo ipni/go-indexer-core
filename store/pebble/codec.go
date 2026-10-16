@@ -74,11 +74,14 @@ func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
 func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 	l := len(b)
 	if l == 0 {
-		return nil, nil
+		return c.p.leaseKeyList(), nil
 	}
 	vkl := l / marshalledValueKeyLength
 	if vkl < 1 {
 		return nil, fmt.Errorf("marshalled value-key length %d is shorter than expected minimum %d", l, marshalledValueKeyLength)
+	}
+	if l%marshalledValueKeyLength != 0 {
+		return nil, indexer.ErrCodecOverflow
 	}
 	vks := c.p.leaseKeyList()
 	vks.maybeGrow(vkl)
@@ -93,9 +96,6 @@ func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 			continue
 		}
 		vks.append(vk)
-	}
-	if l%marshalledValueKeyLength != 0 {
-		return vks, indexer.ErrCodecOverflow
 	}
 	return vks, nil
 }
