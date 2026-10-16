@@ -494,6 +494,84 @@ func TestMeteringResume(t *testing.T) {
 	require.EqualValues(t, 20, report.Totals.Active.Slots)
 }
 
+// cancelAfterCtx reports cancellation once Err has returned nil n times.
+// context.Cause falls back to Err for this type, so a scan batch, which checks
+// before each key, stops after reading n keys.
+type cancelAfterCtx struct {
+	context.Context
+	n int
+}
+
+func (c *cancelAfterCtx) Err() error {
+	if c.n == 0 {
+		return context.Canceled
+	}
+	c.n--
+	return nil
+}
+
+// A cleanup scan stops part way through a batch, after it has added
+// merge-deletes and counted keys that are never committed. On reopen the scan
+// resumes from the last committed cursor and removes every dead slot exactly
+// once.
+func TestMeteringCleanupResumeAfterPartialBatch(t *testing.T) {
+	registerMeteringViews(t)
+	dir := t.TempDir()
+	cfg := MeteringConfig{BatchSize: 4, Interval: 0, TimeFill: 1, Cleanup: true}
+	// Interval zero keeps the runner idle, so the test drives the first scan
+	s1, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s1.Close() })
+	r := s1.(*store).metering
+
+	pid := random.Peers(1)[0]
+	mhs := random.Multihashes(8)
+	live := indexer.Value{ProviderID: pid, ContextID: []byte("ctxA"), MetadataBytes: []byte("metaA")}
+	require.NoError(t, s1.Put(live, mhs...))
+	putValue(t, s1, pid, []byte("ctxB"), []byte("metaB"), mhs...)
+	require.NoError(t, s1.RemoveProviderContext(pid, []byte("ctxB")))
+
+	cleaned := func() float64 { return meteringSum(t, "core/metering/cleanup_slots") }
+	cleanedBefore := cleaned()
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	providerIDByHash := make(map[string]peer.ID)
+
+	done, err := r.runMultihashScanBatch(t.Context(), progress, counters, providerIDByHash)
+	require.NoError(t, err)
+	require.False(t, done)
+	require.EqualValues(t, cfg.BatchSize, cleaned()-cleanedBefore)
+
+	// The batch reads two keys and stops before it commits
+	ctx := &cancelAfterCtx{Context: t.Context(), n: 2}
+	_, err = r.runMultihashScanBatch(ctx, progress, counters, providerIDByHash)
+	require.ErrorIs(t, err, context.Canceled)
+	require.EqualValues(t, cfg.BatchSize, cleaned()-cleanedBefore)
+	require.NoError(t, s1.Close())
+
+	// The runner resumes the stored scan on open
+	s2, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s2.Close() })
+	report := waitScanDone(t, s2.(indexer.StatsMeter), 5*time.Second)
+
+	require.EqualValues(t, len(mhs), report.Totals.Active.Entries)
+	require.EqualValues(t, len(mhs), report.Totals.Active.Slots)
+	require.Zero(t, report.Totals.Deleted.Entries)
+	require.Len(t, report.Providers, 1)
+	require.EqualValues(t, len(mhs), report.Providers[0].Multihashes)
+	require.Zero(t, report.Providers[0].DeletedContexts)
+	require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+	for _, mh := range mhs {
+		values, found, err := s2.Get(mh)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, []indexer.Value{live}, values)
+	}
+}
+
 func TestMeteringTriggerWhileInProgress(t *testing.T) {
 	s, pm := openMetered(t, MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 0.05})
 	p1 := random.Peers(1)[0]
