@@ -599,6 +599,31 @@ func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
 	}, report.Totals.Deleted)
 }
 
+// With ExportProviderMetrics, each provider of the latest completed scan has
+// a multihash gauge tagged with its base58 peer ID.
+func TestMeteringProviderGauge(t *testing.T) {
+	registerMeteringViews(t)
+	view.Unregister(metrics.MeteringProviderViews...)
+	require.NoError(t, view.Register(metrics.MeteringProviderViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringProviderViews...) })
+
+	// Interval zero keeps the runner idle, so the test drives the scan
+	s, _ := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1, ExportProviderMetrics: true})
+	peers := random.Peers(2)
+	putValue(t, s, peers[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	putValue(t, s, peers[1], []byte("ctx"), []byte("meta"), random.Multihashes(3)...)
+	require.NoError(t, s.(*store).metering.runMultihashScan(t.Context(), nil))
+
+	rows, err := view.RetrieveData("core/metering/provider_multihashes")
+	require.NoError(t, err)
+	got := make(map[string]float64, len(rows))
+	for _, row := range rows {
+		require.Len(t, row.Tags, 1)
+		got[row.Tags[0].Value] = row.Data.(*view.LastValueData).Value
+	}
+	require.Equal(t, map[string]float64{peers[0].String(): 2, peers[1].String(): 3}, got)
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}

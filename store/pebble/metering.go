@@ -1040,8 +1040,10 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 		if ps.ProviderID == "" {
 			continue
 		}
-		mctx, err := tag.New(ctx, tag.Upsert(metrics.Provider, string(ps.ProviderID)))
+		// Tag values must be ASCII, so the provider is tagged with its base58 ID
+		mctx, err := tag.New(ctx, tag.Upsert(metrics.Provider, ps.ProviderID.String()))
 		if err != nil {
+			log.Warnw("metering: failed to tag provider gauge", "provider", ps.ProviderID, "err", err)
 			continue
 		}
 		stats.Record(mctx,
