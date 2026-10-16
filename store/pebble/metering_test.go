@@ -67,6 +67,22 @@ func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.S
 	return s, pm
 }
 
+// openStoppedMetered opens a metered store in dir and stops its runner, so the
+// test drives every scan. A running runner resumes on startup any scan it
+// finds unfinished, which races with a scan the test creates.
+func openStoppedMetered(t *testing.T, dir string, cfg MeteringConfig) *store {
+	t.Helper()
+	// With an interval the runner could start a scheduled scan before stop,
+	// and stopping it part way leaves an unfinished scan behind
+	cfg.Interval = 0
+	s, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	st := s.(*store)
+	st.metering.stop()
+	return st
+}
+
 func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *indexer.AllStatsReport {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -310,11 +326,8 @@ func TestMeteringCleanupReAddMidScan(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			registerMeteringViews(t)
 			dir := t.TempDir()
-			// Interval zero keeps the runner idle, so the test drives the scan
-			s, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1, Cleanup: true}))
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = s.Close() })
-			r := s.(*store).metering
+			s := openStoppedMetered(t, dir, MeteringConfig{BatchSize: 1, TimeFill: 1, Cleanup: true})
+			r := s.metering
 
 			// The scan reads multihash keys in byte order. The first key holds
 			// only another provider's value, so the first batch does not look
@@ -378,14 +391,14 @@ func TestMeteringCleanupReAddMidScan(t *testing.T) {
 
 			// A second cleanup scan finds only live slots
 			require.NoError(t, r.runMultihashScan(t.Context(), nil))
-			report, err := s.(indexer.StatsMeter).MeteringAllStats(t.Context(), nil)
+			report, err := s.MeteringAllStats(t.Context(), nil)
 			require.NoError(t, err)
 			require.EqualValues(t, len(all), report.Totals.Active.Entries)
 			require.EqualValues(t, len(all), report.Totals.Active.Slots)
 			require.Zero(t, report.Totals.Deleted.Entries)
 			require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
 
-			require.NoError(t, s.(*store).db.Compact(t.Context(), []byte{0}, []byte{0xff}, false))
+			require.NoError(t, s.db.Compact(t.Context(), []byte{0}, []byte{0xff}, false))
 			requireWant(s)
 			require.NoError(t, s.Close())
 
@@ -465,9 +478,8 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 // and read zero once it finishes.
 func TestMeteringDeletedGauges(t *testing.T) {
 	registerMeteringViews(t)
-	// Interval zero keeps the runner idle, so the test drives the scans
-	s, _ := openMetered(t, MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1})
-	r := s.(*store).metering
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 1, TimeFill: 1})
+	r := s.metering
 	pid := random.Peers(1)[0]
 	putValue(t, s, pid, []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
 	require.NoError(t, s.RemoveProvider(context.Background(), pid))
@@ -492,11 +504,8 @@ func TestMeteringDeletedGauges(t *testing.T) {
 func TestMeteringResumePublishesCompletedScan(t *testing.T) {
 	registerMeteringViews(t)
 	dir := t.TempDir()
-	// Interval zero keeps the runner idle, so the test drives the first scans
-	s1, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1}))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = s1.Close() })
-	r := s1.(*store).metering
+	s1 := openStoppedMetered(t, dir, MeteringConfig{BatchSize: 1, TimeFill: 1})
+	r := s1.metering
 	pid := random.Peers(1)[0]
 	putValue(t, s1, pid, []byte("ctxA"), []byte("meta"), random.Multihashes(2)...)
 	require.NoError(t, r.runMultihashScan(t.Context(), nil))
@@ -540,13 +549,12 @@ func TestMeteringResumePublishesCompletedScan(t *testing.T) {
 // and as counted so far while a scan runs.
 func TestMeteringActiveAndInvalidGauges(t *testing.T) {
 	registerMeteringViews(t)
-	// Interval zero keeps the runner idle, so the test drives the scans
-	s, _ := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1})
-	r := s.(*store).metering
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	r := s.metering
 	putValue(t, s, random.Peers(1)[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
 	invalidKey := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
 	invalidValue := []byte{1, 2, 3}
-	require.NoError(t, s.(*store).db.Set(invalidKey, invalidValue, pebble.Sync))
+	require.NoError(t, s.db.Set(invalidKey, invalidValue, pebble.Sync))
 
 	require.NoError(t, r.runMultihashScan(t.Context(), nil))
 	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_multihashes"))
@@ -570,9 +578,7 @@ func TestMeteringActiveAndInvalidGauges(t *testing.T) {
 // A value whose packed keys all have an unexpected prefix decodes to no value
 // keys. The scan counts it as deleted, with its key and value bytes.
 func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
-	// Interval zero keeps the runner idle, so the test drives the scan
-	s, pm := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1})
-	st := s.(*store)
+	st := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
 	keygen := st.p.leaseBlake3Keyer()
 	vk, err := keygen.valueKey(value1, false)
 	require.NoError(t, err)
@@ -588,7 +594,7 @@ func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
 	require.NoError(t, closer.Close())
 
 	require.NoError(t, st.metering.runMultihashScan(t.Context(), nil))
-	report, err := pm.MeteringAllStats(t.Context(), nil)
+	report, err := st.MeteringAllStats(t.Context(), nil)
 	require.NoError(t, err)
 	require.Zero(t, report.Totals.Active.Entries)
 	require.Zero(t, report.Totals.Invalid.Entries)
@@ -607,12 +613,11 @@ func TestMeteringProviderGauge(t *testing.T) {
 	require.NoError(t, view.Register(metrics.MeteringProviderViews...))
 	t.Cleanup(func() { view.Unregister(metrics.MeteringProviderViews...) })
 
-	// Interval zero keeps the runner idle, so the test drives the scan
-	s, _ := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1, ExportProviderMetrics: true})
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1, ExportProviderMetrics: true})
 	peers := random.Peers(2)
 	putValue(t, s, peers[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
 	putValue(t, s, peers[1], []byte("ctx"), []byte("meta"), random.Multihashes(3)...)
-	require.NoError(t, s.(*store).metering.runMultihashScan(t.Context(), nil))
+	require.NoError(t, s.metering.runMultihashScan(t.Context(), nil))
 
 	rows, err := view.RetrieveData("core/metering/provider_multihashes")
 	require.NoError(t, err)
@@ -682,11 +687,8 @@ func TestMeteringCleanupResumeAfterPartialBatch(t *testing.T) {
 	registerMeteringViews(t)
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 4, Interval: 0, TimeFill: 1, Cleanup: true}
-	// Interval zero keeps the runner idle, so the test drives the first scan
-	s1, err := New(dir, nil, WithMetering(cfg))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = s1.Close() })
-	r := s1.(*store).metering
+	s1 := openStoppedMetered(t, dir, cfg)
+	r := s1.metering
 
 	pid := random.Peers(1)[0]
 	mhs := random.Multihashes(8)
