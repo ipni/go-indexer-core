@@ -500,38 +500,35 @@ func (r *meteringRunner) countMultihashScanRecord(
 		}
 	}
 
-	if r.cfg.Cleanup {
-		// Slots removed this pass are left out of the totals. The multihash key
-		// itself is counted only when deleteEmptyKeys removes it.
-		if removedSlots > 0 {
-			cleaned.slots += uint64(removedSlots)
-			cleaned.valueBytes += uint64(removedSlots * marshalledValueKeyLength)
-			if liveSlots == 0 && deleteEmptyKeys {
-				cleaned.multihashes++
-				cleaned.keyBytes += uint64(len(key))
-			}
-		}
-		if liveSlots == 0 {
-			return nil
-		}
+	// Slots removed this pass count as cleaned, not in the totals. The
+	// multihash key counts as cleaned when the merge deletes it, and as
+	// deleted when it stays in the store without live slots. Without Cleanup
+	// nothing is removed, so every slot is kept.
+	removedBytes := removedSlots * marshalledValueKeyLength
+	cleaned.slots += uint64(removedSlots)
+	cleaned.valueBytes += uint64(removedBytes)
 
-		counters.totals.Active.Entries++
-		counters.totals.Active.KeyBytes += uint64(len(key))
-		counters.totals.Active.ValueBytes += uint64(liveSlots * marshalledValueKeyLength)
-		counters.totals.Active.Slots += uint64(liveSlots)
+	keptSlots := len(vks.keys) - removedSlots
+	var bucket *indexer.EntryMeters
+
+	switch {
+	case keptSlots == 0 && deleteEmptyKeys:
+		// Multihash entry will be removed from the store by compaction
+		cleaned.multihashes++
+		cleaned.keyBytes += uint64(len(key))
 		return nil
-	}
 
-	bucket := &counters.totals.Active
-	if liveSlots == 0 && len(vks.keys) > 0 {
+	case liveSlots > 0:
+		bucket = &counters.totals.Active
+
+	default:
 		bucket = &counters.totals.Deleted
 	}
 
 	bucket.Entries++
 	bucket.KeyBytes += uint64(len(key))
-	bucket.ValueBytes += uint64(len(value))
-	bucket.Slots += uint64(len(vks.keys))
-
+	bucket.ValueBytes += uint64(len(value) - removedBytes)
+	bucket.Slots += uint64(keptSlots)
 	return nil
 }
 

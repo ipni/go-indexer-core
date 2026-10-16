@@ -409,14 +409,20 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	report := waitScanDone(t, pm, 5*time.Second)
 
 	require.Zero(t, report.Totals.Active.Entries)
-	require.Zero(t, report.Totals.Deleted.Entries)
 	require.Empty(t, report.Providers)
 	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_slots"))
 	require.EqualValues(t, 2*marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
+	// Removed slots count as cleaned. Each multihash counts as cleaned when the
+	// merge deletes its key, and as deleted when the emptied key stays.
+	require.Zero(t, report.Totals.Deleted.Slots)
+	require.Zero(t, report.Totals.Deleted.ValueBytes)
 	if deleteEmptyKeys {
+		require.Zero(t, report.Totals.Deleted.Entries)
 		require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_multihashes"))
 		require.Greater(t, meteringSum(t, "core/metering/cleanup_key_bytes"), float64(0))
 	} else {
+		require.EqualValues(t, 2, report.Totals.Deleted.Entries)
+		require.Greater(t, report.Totals.Deleted.KeyBytes, uint64(0))
 		require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
 		require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
 	}
@@ -450,6 +456,8 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	require.Zero(t, second.Totals.Deleted.Slots)
 	require.Zero(t, second.Totals.Active.Entries)
 	require.Greater(t, second.Totals.Deleted.KeyBytes, uint64(0))
+	// The scan that emptied the keys already counted them as deleted
+	require.Equal(t, report.Totals, second.Totals)
 }
 
 func TestMeteringResume(t *testing.T) {
