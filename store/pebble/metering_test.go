@@ -1,8 +1,10 @@
 package pebble
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -278,6 +280,112 @@ func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.ElementsMatch(t, [][]byte{[]byte("ctxA"), []byte("ctxC")}, contextIDs(values))
+}
+
+// A provider removes a context while a cleanup scan is part way through, and
+// advertises it again after the scan has cached the old value record as gone.
+// The new advertisement must survive this scan, the next one, compaction, and
+// a reopen.
+func TestMeteringCleanupReAddMidScan(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remove func(s indexer.Interface, pid peer.ID, ctxID []byte) error
+	}{
+		{"RemoveProviderContext", func(s indexer.Interface, pid peer.ID, ctxID []byte) error {
+			return s.RemoveProviderContext(pid, ctxID)
+		}},
+		{"RemoveProvider", func(s indexer.Interface, pid peer.ID, _ []byte) error {
+			return s.RemoveProvider(context.Background(), pid)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registerMeteringViews(t)
+			dir := t.TempDir()
+			// Interval zero keeps the runner idle, so the test drives the scan
+			s, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1, Cleanup: true}))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+			r := s.(*store).metering
+
+			// The scan reads multihash keys in byte order. The first key holds
+			// only another provider's value, so the first batch does not look
+			// up the context under test
+			all := random.Multihashes(5)
+			slices.SortFunc(all, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
+			first, mhs := all[0], all[1:]
+
+			peers := random.Peers(2)
+			pid := peers[0]
+			ctxID := []byte("ctx")
+			putValue(t, s, peers[1], []byte("other"), []byte("other"), first)
+			putValue(t, s, pid, ctxID, []byte("old"), mhs...)
+
+			progress, err := r.createMultihashScanProgress()
+			require.NoError(t, err)
+			counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+			providerIDByHash := make(map[string]peer.ID)
+			cleaned := func() float64 { return meteringSum(t, "core/metering/cleanup_slots") }
+			cleanedBefore := cleaned()
+			runBatch := func() bool {
+				done, err := r.runMultihashScanBatch(t.Context(), progress, counters, providerIDByHash)
+				require.NoError(t, err)
+				return done
+			}
+
+			require.False(t, runBatch())
+			require.Zero(t, cleaned()-cleanedBefore)
+
+			// The context is removed while the scan is part way through
+			require.NoError(t, tc.remove(s, pid, ctxID))
+
+			// The next batch removes one dead slot and caches its value record
+			// as gone
+			require.False(t, runBatch())
+			require.EqualValues(t, 1, cleaned()-cleanedBefore)
+
+			want := indexer.Value{ProviderID: pid, ContextID: ctxID, MetadataBytes: []byte("new")}
+			require.NoError(t, s.Put(want, mhs...))
+
+			for i := 0; !runBatch(); i++ {
+				// Each batch reads one key, so the rest of the scan needs at most
+				// one batch per key
+				require.Less(t, i, len(all), "scan did not finish after %d batches", i+1)
+			}
+
+			require.NoError(t, r.finishMultihashScan(progress, counters))
+			// Each multihash had one dead slot; the new slots are kept
+			require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+
+			requireWant := func(s indexer.Interface) {
+				t.Helper()
+				for _, mh := range mhs {
+					values, found, err := s.Get(mh)
+					require.NoError(t, err)
+					require.True(t, found)
+					require.Equal(t, []indexer.Value{want}, values)
+				}
+			}
+			requireWant(s)
+
+			// A second cleanup scan finds only live slots
+			require.NoError(t, r.runMultihashScan(t.Context(), nil))
+			report, err := s.(indexer.StatsMeter).MeteringAllStats(t.Context(), nil)
+			require.NoError(t, err)
+			require.EqualValues(t, len(all), report.Totals.Active.Entries)
+			require.EqualValues(t, len(all), report.Totals.Active.Slots)
+			require.Zero(t, report.Totals.Deleted.Entries)
+			require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+
+			require.NoError(t, s.(*store).db.Compact(t.Context(), []byte{0}, []byte{0xff}, false))
+			requireWant(s)
+			require.NoError(t, s.Close())
+
+			reopened, err := New(dir, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = reopened.Close() })
+			requireWant(reopened)
+		})
+	}
 }
 
 func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
