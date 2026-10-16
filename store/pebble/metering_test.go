@@ -45,6 +45,16 @@ func meteringSum(t *testing.T, name string) float64 {
 	return sum.Value
 }
 
+func meteringLastValue(t *testing.T, name string) float64 {
+	t.Helper()
+	rows, err := view.RetrieveData(name)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	last, ok := rows[0].Data.(*view.LastValueData)
+	require.True(t, ok)
+	return last.Value
+}
+
 func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.StatsMeter) {
 	t.Helper()
 	s, err := New(t.TempDir(), nil, WithMetering(cfg))
@@ -248,6 +258,8 @@ func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
 	require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
 	require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
 	require.EqualValues(t, marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
+	// The last batch has committed, so no batch is running.
+	require.Zero(t, meteringLastValue(t, "core/metering/batch_started_at"))
 
 	contextIDs := func(values []indexer.Value) [][]byte {
 		out := make([][]byte, len(values))

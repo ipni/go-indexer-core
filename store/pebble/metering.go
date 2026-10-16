@@ -300,6 +300,8 @@ func (r *meteringRunner) runMultihashScanBatch(
 		metrics.MeteringBatchesStarted.M(1),
 		metrics.MeteringBatchStartedAt.M(float64(batchStart.Unix())),
 	)
+	// The gauge reads zero again once this batch commits or fails.
+	defer stats.Record(context.Background(), metrics.MeteringBatchStartedAt.M(0))
 
 	lower, upper := multihashScanBounds(progress.Cursor)
 
@@ -684,6 +686,9 @@ func (r *meteringRunner) cancelScan(reason string) error {
 // and is not stored; the unfinished scan resumes on the next start. A user
 // cancel carries ErrScanCancelled as the cause and is stored. An already-
 // recorded Error is left as-is.
+//
+// A stored scan error means the walk is no longer running, so the in-progress
+// gauges are cleared even when the error cannot be written.
 func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord, scanErr error) {
 	if progress == nil ||
 		scanErr == nil ||
@@ -691,6 +696,7 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 		progress.Error != "" {
 		return
 	}
+	defer clearInProgressScanMetrics()
 
 	progress.Error = scanErr.Error()
 	progressBytes, err := encodeMultihashScanProgress(progress)
@@ -701,11 +707,7 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 
 	if err := r.db.Set(meteringProgressKey, progressBytes, pebble.Sync); err != nil {
 		log.Errorw("metering: failed to persist scan error", "err", err)
-		return
 	}
-	// The walk is no longer running. A context cancel that only pauses for
-	// resume never reaches here.
-	clearInProgressScanMetrics()
 }
 
 // loadAllStats returns the latest completed scan.
@@ -973,6 +975,7 @@ func clearInProgressScanMetrics() {
 		metrics.MeteringScanPercentDone.M(0),
 		metrics.MeteringScanElapsedSeconds.M(0),
 		metrics.MeteringScanRemainingSeconds.M(0),
+		metrics.MeteringBatchStartedAt.M(0),
 	)
 }
 
