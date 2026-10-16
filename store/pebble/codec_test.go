@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-indexer-core"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCodec_MarshalledValueKeyLength(t *testing.T) {
@@ -122,4 +123,20 @@ func TestCodec_ValueMarshalling(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A packed value whose length is not a whole number of value keys is
+// rejected without returning a key list.
+func TestCodec_UnmarshalValueKeysOverflow(t *testing.T) {
+	p := newPool()
+	bk := p.leaseBlake3Keyer()
+	subject := codec{p: p}
+	vk, err := bk.valueKey(value1, false)
+	require.NoError(t, err)
+	packed, _, err := subject.marshalValueKeys([][]byte{vk.buf, vk.buf})
+	require.NoError(t, err)
+
+	kl, err := subject.unmarshalValueKeys(append(packed, 0))
+	require.ErrorIs(t, err, indexer.ErrCodecOverflow)
+	require.Nil(t, kl)
 }
