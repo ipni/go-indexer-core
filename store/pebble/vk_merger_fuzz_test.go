@@ -47,35 +47,39 @@ func FuzzValueKeysMergerAssociativity(f *testing.F) {
 		}
 		rng := raw[nOps:]
 
-		var want [][]byte
+		// Compute the expected live set by doing merges manually
+		var expectedKeys [][]byte
 		for _, op := range ops {
 			if op[0] == byte(valueKeyPrefix) {
 				if !slices.ContainsFunc(
-					want,
+					expectedKeys,
 					func(vk []byte) bool { return bytes.Equal(vk, op) },
 				) {
-					want = append(want, op)
+					expectedKeys = append(expectedKeys, op)
 				}
 			} else {
-				want = slices.DeleteFunc(
-					want,
+				expectedKeys = slices.DeleteFunc(
+					expectedKeys,
 					func(vk []byte) bool { return bytes.Equal(vk[1:], op[1:]) },
 				)
 			}
 		}
+		expectedNeedDelete := len(expectedKeys) == 0 && deleteEmptyKeys
 
-		var needDelete bool
+		// Apply range-merges operations through merger
 
+		needDelete := false
 		if len(ops) == 1 {
+			// There could be a single delete operand in the merge set - in such case
+			// it is needed to run the merging at least once.
 			ops[0], needDelete = testRangeMerge(t, merger, mhKey, ops, true, true)
 		}
 
 		for len(ops) > 1 {
 			if len(rng) < 4 {
 				// Deterministically finish: merge everything left-to-right.
-				var merged []byte
-				merged, needDelete = testRangeMerge(t, merger, mhKey, ops, true, true)
-				ops = [][]byte{merged}
+				ops[0], needDelete = testRangeMerge(t, merger, mhKey, ops, true, true)
+				ops = ops[:1]
 				break
 			}
 
@@ -92,21 +96,24 @@ func FuzzValueKeysMergerAssociativity(f *testing.F) {
 			rng = rng[4:]
 		}
 
+		// Verify the final result
+
 		require.Len(t, ops, 1)
-		require.Equal(t, deleteEmptyKeys && len(ops[0]) == 0, needDelete)
+		require.Equal(t, expectedNeedDelete, needDelete)
+
 		var gotKeys [][]byte
 		if got := ops[0]; len(got) > 0 {
 			kl, err := cdc.unmarshalValueKeys(got)
 			require.NoError(t, err)
-			if kl != nil {
-				defer kl.Close()
-				for _, k := range kl.keys {
-					require.Equal(t, valueKeyPrefix, k.prefix(), "delete marks must not survive includesBase finish")
-					gotKeys = append(gotKeys, bytes.Clone(k.buf))
-				}
+			require.NotNil(t, kl)
+			for _, k := range kl.keys {
+				require.Equal(t, valueKeyPrefix, k.prefix(), "delete marks must not survive includesBase finish")
+				gotKeys = append(gotKeys, bytes.Clone(k.buf))
 			}
+			require.NoError(t, kl.Close())
 		}
-		require.ElementsMatch(t, want, gotKeys)
+
+		require.ElementsMatch(t, expectedKeys, gotKeys)
 	})
 }
 
