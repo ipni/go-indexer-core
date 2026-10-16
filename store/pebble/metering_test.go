@@ -567,6 +567,38 @@ func TestMeteringActiveAndInvalidGauges(t *testing.T) {
 	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_invalid"))
 }
 
+// A value whose packed keys all have an unexpected prefix decodes to no value
+// keys. The scan counts it as deleted, with its key and value bytes.
+func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
+	// Interval zero keeps the runner idle, so the test drives the scan
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1})
+	st := s.(*store)
+	keygen := st.p.leaseBlake3Keyer()
+	vk, err := keygen.valueKey(value1, false)
+	require.NoError(t, err)
+	unknown := bytes.Clone(vk.buf)
+	unknown[0] = 0xee
+	require.NoError(t, vk.Close())
+	require.NoError(t, keygen.Close())
+	value, closer, err := st.vcodec.marshalValueKeys([][]byte{unknown})
+	require.NoError(t, err)
+	key := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
+	require.NoError(t, st.db.Set(key, value, pebble.Sync))
+	// Set copies the value, so its pooled buffer can go back
+	require.NoError(t, closer.Close())
+
+	require.NoError(t, st.metering.runMultihashScan(t.Context(), nil))
+	report, err := pm.MeteringAllStats(t.Context(), nil)
+	require.NoError(t, err)
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Invalid.Entries)
+	require.Equal(t, indexer.EntryMeters{
+		Entries:    1,
+		KeyBytes:   uint64(len(key)),
+		ValueBytes: marshalledValueKeyLength,
+	}, report.Totals.Deleted)
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}
