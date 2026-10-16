@@ -54,31 +54,19 @@ func (r *meteringRunner) stop() {
 	r.wg.Wait()
 }
 
-// run resumes an unfinished scan, then starts a new one when the interval
-// elapses or a manual trigger arrives. A manual trigger restarts the interval.
-// DoneAt is written in the same batch as the completed-scan header, so a scan
-// with DoneAt set is finished and is left as-is.
+// run publishes the latest completed scan, resumes an unfinished scan, then
+// starts a new one when the interval elapses or a manual trigger arrives. A
+// manual trigger restarts the interval. DoneAt is written in the same batch as
+// the completed-scan header, so a scan with DoneAt set is finished and is left
+// as-is.
 func (r *meteringRunner) run(ctx context.Context) {
+	r.publishCompletedScan()
+
 	if progress, err := r.loadMultihashScanProgress(r.db); err != nil {
 		log.Errorw("metering: failed to load progress on startup", "err", err)
 	} else if r.scanNeedsResume(progress) {
 		if err := r.runMultihashScan(ctx, progress); err != nil {
 			logScanErr("metering: resumed scan failed", err)
-		}
-	} else if cur, err := r.loadCompletedScan(r.db); err != nil {
-		log.Errorw("metering: failed to load completed scan on startup", "err", err)
-	} else if cur != nil {
-		providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
-		if err != nil {
-			log.Errorw("metering: failed to load completed providers on startup", "err", err)
-		} else {
-			r.publishMeteringGauges(&indexer.AllStatsReport{
-				CompletedScanStats: indexer.CompletedScanStats{
-					MeasuredAt: cur.CompletedAt,
-					Totals:     cur.Totals,
-				},
-				Providers: providers,
-			}, cur.CompletedAt.Sub(cur.StartedAt))
 		}
 	}
 
@@ -108,6 +96,32 @@ func (r *meteringRunner) run(ctx context.Context) {
 			timer.Reset(r.cfg.Interval)
 		}
 	}
+}
+
+// publishCompletedScan restores the gauges of the latest completed scan. That
+// scan stays stored until the next one finishes, so its gauges are published
+// before an unfinished scan resumes.
+func (r *meteringRunner) publishCompletedScan() {
+	cur, err := r.loadCompletedScan(r.db)
+	if err != nil {
+		log.Errorw("metering: failed to load completed scan on startup", "err", err)
+		return
+	}
+	if cur == nil {
+		return
+	}
+	providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
+	if err != nil {
+		log.Errorw("metering: failed to load completed providers on startup", "err", err)
+		return
+	}
+	r.publishMeteringGauges(&indexer.AllStatsReport{
+		CompletedScanStats: indexer.CompletedScanStats{
+			MeasuredAt: cur.CompletedAt,
+			Totals:     cur.Totals,
+		},
+		Providers: providers,
+	}, cur.CompletedAt.Sub(cur.StartedAt))
 }
 
 // scanNeedsResume reports whether startup should continue this progress record.

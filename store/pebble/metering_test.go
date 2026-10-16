@@ -487,6 +487,55 @@ func TestMeteringDeletedGauges(t *testing.T) {
 	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_deleted_slots"))
 }
 
+// A store reopened in the middle of a scan publishes the gauges of the latest
+// completed scan before it resumes the unfinished one.
+func TestMeteringResumePublishesCompletedScan(t *testing.T) {
+	registerMeteringViews(t)
+	dir := t.TempDir()
+	// Interval zero keeps the runner idle, so the test drives the first scans
+	s1, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s1.Close() })
+	r := s1.(*store).metering
+	pid := random.Peers(1)[0]
+	putValue(t, s1, pid, []byte("ctxA"), []byte("meta"), random.Multihashes(2)...)
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+
+	putValue(t, s1, pid, []byte("ctxB"), []byte("meta"), random.Multihashes(3)...)
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.NoError(t, s1.Close())
+
+	// A new process starts without gauge values
+	registerMeteringViews(t)
+	totalMultihashes := func() (float64, bool) {
+		rows, err := view.RetrieveData("core/metering/total_multihashes")
+		require.NoError(t, err)
+		if len(rows) == 0 {
+			return 0, false
+		}
+		return rows[0].Data.(*view.LastValueData).Value, true
+	}
+	_, ok := totalMultihashes()
+	require.False(t, ok)
+
+	// The resumed scan pauses for about a second after each batch, so it
+	// cannot finish and republish the gauges before the check below
+	s2, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 0.001}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s2.Close() })
+	require.Eventually(t, func() bool {
+		v, ok := totalMultihashes()
+		return ok && v == 2
+	}, 500*time.Millisecond, time.Millisecond)
+	st, err := s2.(indexer.StatsMeter).MeteringScanStatus(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, indexer.ScanStateInProgress, st.State)
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}
