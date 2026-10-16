@@ -54,10 +54,12 @@ var (
 
 	// Cleanup counters count what this process has merge-deleted. They start at
 	// zero when the process starts and are not restored from a previous scan.
+	// Byte counters are logical sizes of committed merge-deletes, not disk space
+	// reclaimed: Pebble frees space when compaction applies the deletes.
 	MeteringCleanupSlots       = stats.Int64("core/metering/cleanup_slots", "Value-key slots merge-deleted by metering cleanup in this process", stats.UnitDimensionless)
-	MeteringCleanupMultihashes = stats.Int64("core/metering/cleanup_multihashes", "Multihash keys removed by metering cleanup in this process", stats.UnitDimensionless)
-	MeteringCleanupKeyBytes    = stats.Int64("core/metering/cleanup_key_bytes", "Key bytes of multihash keys fully removed by metering cleanup in this process", stats.UnitBytes)
-	MeteringCleanupValueBytes  = stats.Int64("core/metering/cleanup_value_bytes", "Packed value bytes of slots merge-deleted by metering cleanup in this process", stats.UnitBytes)
+	MeteringCleanupMultihashes = stats.Int64("core/metering/cleanup_multihashes", "Multihash keys removed by metering cleanup in this process. Zero while emptied keys are kept in the store", stats.UnitDimensionless)
+	MeteringCleanupKeyBytes    = stats.Int64("core/metering/cleanup_key_bytes", "Key bytes of multihash keys removed by metering cleanup in this process. Zero while emptied keys are kept in the store", stats.UnitBytes)
+	MeteringCleanupValueBytes  = stats.Int64("core/metering/cleanup_value_bytes", "Packed value bytes of slots merge-deleted by metering cleanup in this process. A logical size, not disk space reclaimed; compaction frees space later", stats.UnitBytes)
 
 	MeteringProviderMultihashes = stats.Int64("core/metering/provider_multihashes", "Distinct multihashes per provider from the latest metering scan", stats.UnitDimensionless)
 )
