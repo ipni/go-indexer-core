@@ -460,6 +460,33 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	require.Equal(t, report.Totals, second.Totals)
 }
 
+// The deleted gauges keep the latest completed scan while the next scan
+// runs. The scan_deleted gauges show what the running scan has counted so far
+// and read zero once it finishes.
+func TestMeteringDeletedGauges(t *testing.T) {
+	registerMeteringViews(t)
+	// Interval zero keeps the runner idle, so the test drives the scans
+	s, _ := openMetered(t, MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 1})
+	r := s.(*store).metering
+	pid := random.Peers(1)[0]
+	putValue(t, s, pid, []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	require.NoError(t, s.RemoveProvider(context.Background(), pid))
+
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_deleted"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_deleted"))
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	done, err := r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.False(t, done)
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_deleted"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_deleted"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_deleted_slots"))
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}

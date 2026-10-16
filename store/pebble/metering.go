@@ -210,11 +210,10 @@ func (r *meteringRunner) runMultihashScan(
 		)
 
 		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
 			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
-			metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
-			metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
 		)
-		r.recordScanEstimate(progress, time.Now())
+		r.recordScanProgress(progress, counters, time.Now())
 	}
 
 	if r.cfg.Cleanup {
@@ -383,18 +382,12 @@ func (r *meteringRunner) runMultihashScanBatch(
 	stats.Record(context.Background(),
 		metrics.MeteringBatchesFinished.M(1),
 		metrics.MeteringBatchDurationMs.M(float64(now.Sub(batchStart).Milliseconds())),
-		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
-		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
-		metrics.MeteringTotalDeleted.M(int64(counters.totals.Deleted.Entries)),
-		metrics.MeteringDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
-		metrics.MeteringDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
-		metrics.MeteringDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
 		metrics.MeteringCleanupSlots.M(int64(cleaned.slots)),
 		metrics.MeteringCleanupMultihashes.M(int64(cleaned.multihashes)),
 		metrics.MeteringCleanupKeyBytes.M(int64(cleaned.keyBytes)),
 		metrics.MeteringCleanupValueBytes.M(int64(cleaned.valueBytes)),
 	)
-	r.recordScanEstimate(progress, now)
+	r.recordScanProgress(progress, counters, now)
 
 	// DoneAt stays unset here. The finish batch writes it together with the
 	// completed-scan header, so a crash cannot observe one without the other.
@@ -940,6 +933,25 @@ func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *ti
 	return percent, &finish
 }
 
+// recordScanProgress publishes the in-progress scan gauges from the committed
+// progress and counters, the same values MeteringScanStatus reports. A resumed
+// scan calls it with the state it loaded, so the gauges continue from there.
+func (r *meteringRunner) recordScanProgress(
+	progress *multihashScanProgressRecord,
+	counters *multihashScanCounters,
+	now time.Time,
+) {
+	stats.Record(context.Background(),
+		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
+		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringScanDeleted.M(int64(counters.totals.Deleted.Entries)),
+		metrics.MeteringScanDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
+		metrics.MeteringScanDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
+		metrics.MeteringScanDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
+	)
+	r.recordScanEstimate(progress, now)
+}
+
 // recordScanEstimate publishes in-progress percent-done, elapsed, and
 // remaining-time gauges.
 func (r *meteringRunner) recordScanEstimate(progress *multihashScanProgressRecord, now time.Time) {
@@ -969,6 +981,10 @@ func clearInProgressScanMetrics() {
 		metrics.MeteringScanStartedAt.M(0),
 		metrics.MeteringScanKeysRead.M(0),
 		metrics.MeteringScanBytesRead.M(0),
+		metrics.MeteringScanDeleted.M(0),
+		metrics.MeteringScanDeletedSlots.M(0),
+		metrics.MeteringScanDeletedKeyBytes.M(0),
+		metrics.MeteringScanDeletedValueBytes.M(0),
 		metrics.MeteringScanPercentDone.M(0),
 		metrics.MeteringScanElapsedSeconds.M(0),
 		metrics.MeteringScanRemainingSeconds.M(0),

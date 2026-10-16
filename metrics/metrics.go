@@ -31,26 +31,30 @@ var (
 	DHMultihashLatency = stats.Float64("core/dh_multihash_latency", "Time that the indexer spends on sending encrypted multihashes to dhstore", stats.UnitMilliseconds)
 	DHMetadataLatency  = stats.Float64("core/dh_metadata_latency", "Time that the indexer spends on sending encrypted metadata to dhstore", stats.UnitMilliseconds)
 
-	MeteringTotalMultihashes     = stats.Int64("core/metering/total_multihashes", "Active multihashes from the latest metering scan", stats.UnitDimensionless)
-	MeteringTotalSlots           = stats.Int64("core/metering/total_slots", "Value-key slots in active multihashes from the latest metering scan", stats.UnitDimensionless)
-	MeteringTotalDeleted         = stats.Int64("core/metering/total_deleted", "Multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
-	MeteringDeletedSlots         = stats.Int64("core/metering/deleted_slots", "Value-key slots in multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
-	MeteringDeletedKeyBytes      = stats.Int64("core/metering/deleted_key_bytes", "Key bytes of multihashes whose value records are all gone, from the latest metering scan", stats.UnitBytes)
-	MeteringDeletedValueBytes    = stats.Int64("core/metering/deleted_value_bytes", "Value bytes of multihashes whose value records are all gone, from the latest metering scan", stats.UnitBytes)
-	MeteringScanCompletedAt      = stats.Float64("core/metering/scan_completed_at", "Unix timestamp of the latest completed metering scan", stats.UnitDimensionless)
-	MeteringScanDurationMs       = stats.Float64("core/metering/scan_duration_ms", "Duration of the latest completed metering scan in milliseconds", stats.UnitMilliseconds)
-	MeteringScanStartedAt        = stats.Float64("core/metering/scan_started_at", "Unix timestamp when the current metering scan started. Zero when no scan is running", stats.UnitDimensionless)
-	MeteringScanKeysRead         = stats.Int64("core/metering/scan_keys_read", "Keys read so far in the in-progress metering scan", stats.UnitDimensionless)
-	MeteringScanBytesRead        = stats.Int64("core/metering/scan_bytes_read", "Bytes read so far in the in-progress metering scan", stats.UnitBytes)
-	MeteringScanPercentDone      = stats.Float64("core/metering/scan_percent_done", "Estimated percent done for the in-progress metering scan, from cursor position in the sha2-256 multihash keyspace. Zero when no scan is running", stats.UnitDimensionless)
-	MeteringScanElapsedSeconds   = stats.Float64("core/metering/scan_elapsed_seconds", "Seconds since the in-progress metering scan started. Zero when no scan is running", stats.UnitSeconds)
-	MeteringScanRemainingSeconds = stats.Float64("core/metering/scan_remaining_seconds", "Estimated seconds remaining for the in-progress metering scan. Zero when no scan is running or the estimate is not yet available", stats.UnitSeconds)
-	MeteringScansStarted         = stats.Int64("core/metering/scans_started", "Metering scans started", stats.UnitDimensionless)
-	MeteringScansFinished        = stats.Int64("core/metering/scans_finished", "Metering scans that finished counting", stats.UnitDimensionless)
-	MeteringBatchesStarted       = stats.Int64("core/metering/batches_started", "Metering scan batches started", stats.UnitDimensionless)
-	MeteringBatchesFinished      = stats.Int64("core/metering/batches_finished", "Metering scan batches committed", stats.UnitDimensionless)
-	MeteringBatchStartedAt       = stats.Float64("core/metering/batch_started_at", "Unix timestamp when the current metering batch started. Zero when no batch is running", stats.UnitDimensionless)
-	MeteringBatchDurationMs      = stats.Float64("core/metering/batch_duration_ms", "Duration of a committed metering batch in milliseconds, excluding the pause before the next batch", stats.UnitMilliseconds)
+	MeteringTotalMultihashes      = stats.Int64("core/metering/total_multihashes", "Active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalSlots            = stats.Int64("core/metering/total_slots", "Value-key slots in active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringTotalDeleted          = stats.Int64("core/metering/total_deleted", "Multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
+	MeteringDeletedSlots          = stats.Int64("core/metering/deleted_slots", "Value-key slots in multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
+	MeteringDeletedKeyBytes       = stats.Int64("core/metering/deleted_key_bytes", "Key bytes of multihashes whose value records are all gone, from the latest metering scan", stats.UnitBytes)
+	MeteringDeletedValueBytes     = stats.Int64("core/metering/deleted_value_bytes", "Value bytes of multihashes whose value records are all gone, from the latest metering scan", stats.UnitBytes)
+	MeteringScanCompletedAt       = stats.Float64("core/metering/scan_completed_at", "Unix timestamp of the latest completed metering scan", stats.UnitDimensionless)
+	MeteringScanDurationMs        = stats.Float64("core/metering/scan_duration_ms", "Duration of the latest completed metering scan in milliseconds", stats.UnitMilliseconds)
+	MeteringScanStartedAt         = stats.Float64("core/metering/scan_started_at", "Unix timestamp when the current metering scan started. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanKeysRead          = stats.Int64("core/metering/scan_keys_read", "Keys read so far in the in-progress metering scan", stats.UnitDimensionless)
+	MeteringScanBytesRead         = stats.Int64("core/metering/scan_bytes_read", "Bytes read so far in the in-progress metering scan", stats.UnitBytes)
+	MeteringScanDeleted           = stats.Int64("core/metering/scan_deleted", "Multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanDeletedSlots      = stats.Int64("core/metering/scan_deleted_slots", "Value-key slots in multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanDeletedKeyBytes   = stats.Int64("core/metering/scan_deleted_key_bytes", "Key bytes of multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitBytes)
+	MeteringScanDeletedValueBytes = stats.Int64("core/metering/scan_deleted_value_bytes", "Value bytes of multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitBytes)
+	MeteringScanPercentDone       = stats.Float64("core/metering/scan_percent_done", "Estimated percent done for the in-progress metering scan, from cursor position in the sha2-256 multihash keyspace. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanElapsedSeconds    = stats.Float64("core/metering/scan_elapsed_seconds", "Seconds since the in-progress metering scan started. Zero when no scan is running", stats.UnitSeconds)
+	MeteringScanRemainingSeconds  = stats.Float64("core/metering/scan_remaining_seconds", "Estimated seconds remaining for the in-progress metering scan. Zero when no scan is running or the estimate is not yet available", stats.UnitSeconds)
+	MeteringScansStarted          = stats.Int64("core/metering/scans_started", "Metering scans started or resumed by this process", stats.UnitDimensionless)
+	MeteringScansFinished         = stats.Int64("core/metering/scans_finished", "Metering scans that finished counting", stats.UnitDimensionless)
+	MeteringBatchesStarted        = stats.Int64("core/metering/batches_started", "Metering scan batches started", stats.UnitDimensionless)
+	MeteringBatchesFinished       = stats.Int64("core/metering/batches_finished", "Metering scan batches committed", stats.UnitDimensionless)
+	MeteringBatchStartedAt        = stats.Float64("core/metering/batch_started_at", "Unix timestamp when the current metering batch started. Zero when no batch is running", stats.UnitDimensionless)
+	MeteringBatchDurationMs       = stats.Float64("core/metering/batch_duration_ms", "Duration of a committed metering batch in milliseconds, excluding the pause before the next batch", stats.UnitMilliseconds)
 
 	// Cleanup counters count what this process has merge-deleted. They start at
 	// zero when the process starts and are not restored from a previous scan.
@@ -165,6 +169,22 @@ var (
 		Measure:     MeteringScanBytesRead,
 		Aggregation: view.LastValue(),
 	}
+	meteringScanDeletedView = &view.View{
+		Measure:     MeteringScanDeleted,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanDeletedSlotsView = &view.View{
+		Measure:     MeteringScanDeletedSlots,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanDeletedKeyBytesView = &view.View{
+		Measure:     MeteringScanDeletedKeyBytes,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanDeletedValueBytesView = &view.View{
+		Measure:     MeteringScanDeletedValueBytes,
+		Aggregation: view.LastValue(),
+	}
 	meteringScanPercentDoneView = &view.View{
 		Measure:     MeteringScanPercentDone,
 		Aggregation: view.LastValue(),
@@ -263,6 +283,10 @@ var MeteringViews = []*view.View{
 	meteringScanStartedAtView,
 	meteringScanKeysReadView,
 	meteringScanBytesReadView,
+	meteringScanDeletedView,
+	meteringScanDeletedSlotsView,
+	meteringScanDeletedKeyBytesView,
+	meteringScanDeletedValueBytesView,
 	meteringScanPercentDoneView,
 	meteringScanElapsedSecondsView,
 	meteringScanRemainingSecondsView,
