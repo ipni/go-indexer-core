@@ -536,6 +536,37 @@ func TestMeteringResumePublishesCompletedScan(t *testing.T) {
 	require.Equal(t, indexer.ScanStateInProgress, st.State)
 }
 
+// Active and undecodable entries are exported for the latest completed scan,
+// and as counted so far while a scan runs.
+func TestMeteringActiveAndInvalidGauges(t *testing.T) {
+	registerMeteringViews(t)
+	// Interval zero keeps the runner idle, so the test drives the scans
+	s, _ := openMetered(t, MeteringConfig{BatchSize: 100, Interval: 0, TimeFill: 1})
+	r := s.(*store).metering
+	putValue(t, s, random.Peers(1)[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	invalidKey := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
+	invalidValue := []byte{1, 2, 3}
+	require.NoError(t, s.(*store).db.Set(invalidKey, invalidValue, pebble.Sync))
+
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_multihashes"))
+	require.Positive(t, meteringLastValue(t, "core/metering/active_key_bytes"))
+	require.EqualValues(t, 2*marshalledValueKeyLength, meteringLastValue(t, "core/metering/active_value_bytes"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/total_invalid"))
+	require.EqualValues(t, len(invalidKey)+len(invalidValue), meteringLastValue(t, "core/metering/invalid_bytes"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_active"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_invalid"))
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/scan_active"))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/scan_active_slots"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_invalid"))
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}

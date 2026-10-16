@@ -33,6 +33,10 @@ var (
 
 	MeteringTotalMultihashes      = stats.Int64("core/metering/total_multihashes", "Active multihashes from the latest metering scan", stats.UnitDimensionless)
 	MeteringTotalSlots            = stats.Int64("core/metering/total_slots", "Value-key slots in active multihashes from the latest metering scan", stats.UnitDimensionless)
+	MeteringActiveKeyBytes        = stats.Int64("core/metering/active_key_bytes", "Key bytes of active multihashes from the latest metering scan", stats.UnitBytes)
+	MeteringActiveValueBytes      = stats.Int64("core/metering/active_value_bytes", "Value bytes of active multihashes from the latest metering scan", stats.UnitBytes)
+	MeteringTotalInvalid          = stats.Int64("core/metering/total_invalid", "Multihash keys whose value could not be decoded, from the latest metering scan", stats.UnitDimensionless)
+	MeteringInvalidBytes          = stats.Int64("core/metering/invalid_bytes", "Key and value bytes of multihash keys whose value could not be decoded, from the latest metering scan", stats.UnitBytes)
 	MeteringTotalDeleted          = stats.Int64("core/metering/total_deleted", "Multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
 	MeteringDeletedSlots          = stats.Int64("core/metering/deleted_slots", "Value-key slots in multihashes whose value records are all gone, from the latest metering scan", stats.UnitDimensionless)
 	MeteringDeletedKeyBytes       = stats.Int64("core/metering/deleted_key_bytes", "Key bytes of multihashes whose value records are all gone, from the latest metering scan", stats.UnitBytes)
@@ -42,6 +46,9 @@ var (
 	MeteringScanStartedAt         = stats.Float64("core/metering/scan_started_at", "Unix timestamp when the current metering scan started. Zero when no scan is running", stats.UnitDimensionless)
 	MeteringScanKeysRead          = stats.Int64("core/metering/scan_keys_read", "Keys read so far in the in-progress metering scan", stats.UnitDimensionless)
 	MeteringScanBytesRead         = stats.Int64("core/metering/scan_bytes_read", "Bytes read so far in the in-progress metering scan", stats.UnitBytes)
+	MeteringScanActive            = stats.Int64("core/metering/scan_active", "Active multihashes counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanActiveSlots       = stats.Int64("core/metering/scan_active_slots", "Value-key slots in active multihashes counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
+	MeteringScanInvalid           = stats.Int64("core/metering/scan_invalid", "Multihash keys whose value could not be decoded, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
 	MeteringScanDeleted           = stats.Int64("core/metering/scan_deleted", "Multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
 	MeteringScanDeletedSlots      = stats.Int64("core/metering/scan_deleted_slots", "Value-key slots in multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
 	MeteringScanDeletedKeyBytes   = stats.Int64("core/metering/scan_deleted_key_bytes", "Key bytes of multihashes whose value records are all gone, counted so far in the in-progress metering scan. Zero when no scan is running", stats.UnitBytes)
@@ -133,6 +140,22 @@ var (
 		Measure:     MeteringTotalSlots,
 		Aggregation: view.LastValue(),
 	}
+	meteringActiveKeyBytesView = &view.View{
+		Measure:     MeteringActiveKeyBytes,
+		Aggregation: view.LastValue(),
+	}
+	meteringActiveValueBytesView = &view.View{
+		Measure:     MeteringActiveValueBytes,
+		Aggregation: view.LastValue(),
+	}
+	meteringTotalInvalidView = &view.View{
+		Measure:     MeteringTotalInvalid,
+		Aggregation: view.LastValue(),
+	}
+	meteringInvalidBytesView = &view.View{
+		Measure:     MeteringInvalidBytes,
+		Aggregation: view.LastValue(),
+	}
 	meteringTotalDeletedView = &view.View{
 		Measure:     MeteringTotalDeleted,
 		Aggregation: view.LastValue(),
@@ -167,6 +190,18 @@ var (
 	}
 	meteringScanBytesReadView = &view.View{
 		Measure:     MeteringScanBytesRead,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanActiveView = &view.View{
+		Measure:     MeteringScanActive,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanActiveSlotsView = &view.View{
+		Measure:     MeteringScanActiveSlots,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanInvalidView = &view.View{
+		Measure:     MeteringScanInvalid,
 		Aggregation: view.LastValue(),
 	}
 	meteringScanDeletedView = &view.View{
@@ -274,6 +309,10 @@ var DefaultViews = []*view.View{
 var MeteringViews = []*view.View{
 	meteringTotalMultihashesView,
 	meteringTotalSlotsView,
+	meteringActiveKeyBytesView,
+	meteringActiveValueBytesView,
+	meteringTotalInvalidView,
+	meteringInvalidBytesView,
 	meteringTotalDeletedView,
 	meteringDeletedSlotsView,
 	meteringDeletedKeyBytesView,
@@ -283,6 +322,9 @@ var MeteringViews = []*view.View{
 	meteringScanStartedAtView,
 	meteringScanKeysReadView,
 	meteringScanBytesReadView,
+	meteringScanActiveView,
+	meteringScanActiveSlotsView,
+	meteringScanInvalidView,
 	meteringScanDeletedView,
 	meteringScanDeletedSlotsView,
 	meteringScanDeletedKeyBytesView,
