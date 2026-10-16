@@ -87,6 +87,15 @@ func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *i
 	return nil
 }
 
+// waitPastScanID waits until the wall clock is past scanID, so a scan started
+// afterwards gets a new ID. Scan IDs are the start time in Unix microseconds.
+func waitPastScanID(t *testing.T, scanID uint64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return uint64(time.Now().UnixMicro()) > scanID
+	}, time.Second, 10*time.Microsecond)
+}
+
 // triggerWhenIdle starts a scan. Status can show done while the runner is still
 // leaving the previous scan, and trigger then returns ErrScanInProgress.
 func triggerWhenIdle(t *testing.T, pm indexer.StatsMeter) {
@@ -421,8 +430,7 @@ func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
 	// deleted multihashes.
 	first, err := pm.MeteringScanStatus(context.Background(), nil)
 	require.NoError(t, err)
-	// Scan IDs are microseconds. Wait so the next scan gets a new one.
-	time.Sleep(2 * time.Millisecond)
+	waitPastScanID(t, first.ScanID)
 	triggerWhenIdle(t, pm)
 	deadline := time.Now().Add(5 * time.Second)
 	var second *indexer.AllStatsReport
@@ -591,8 +599,7 @@ func TestMeteringRetentionOnlyCurrent(t *testing.T) {
 	require.NotNil(t, cur1)
 	firstScanID := cur1.ScanID
 
-	// Second scan after a distinct microsecond.
-	time.Sleep(2 * time.Millisecond)
+	waitPastScanID(t, firstScanID)
 	triggerWhenIdle(t, pm)
 	deadline := time.Now().Add(5 * time.Second)
 	var r2 *indexer.AllStatsReport
