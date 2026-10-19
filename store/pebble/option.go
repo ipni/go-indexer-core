@@ -27,6 +27,17 @@ type MeteringConfig struct {
 	// Prometheus series per provider. Leave false unless the provider set is
 	// known to be small; the HTTP stats API still returns every provider.
 	ExportProviderMetrics bool
+	// Cleanup removes multihash slots whose value record is already gone. Each
+	// removal is a merge-delete committed with the batch that read the slot.
+	// Defaults to false.
+	//
+	// A slot the scan removes counts in the cleanup metrics, not in the scan
+	// totals or the provider's DeletedContexts. A multihash whose key the scan
+	// removes also counts in the cleanup metrics. A multihash that stays in the
+	// store without live slots counts as deleted, including one whose slots
+	// were all removed while emptied keys are kept in the store. Without
+	// Cleanup, every slot stays and is counted in the totals.
+	Cleanup bool
 }
 
 func (c *MeteringConfig) withDefaults() MeteringConfig {

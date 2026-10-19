@@ -63,6 +63,15 @@ var (
 	MeteringBatchStartedAt        = stats.Float64("core/metering/batch_started_at", "Unix timestamp when the current metering batch started. Zero when no batch is running", stats.UnitDimensionless)
 	MeteringBatchDurationMs       = stats.Float64("core/metering/batch_duration_ms", "Duration of a committed metering batch in milliseconds, excluding the pause before the next batch", stats.UnitMilliseconds)
 
+	// Cleanup counters count what this process has merge-deleted. They start at
+	// zero when the process starts and are not restored from a previous scan.
+	// Byte counters are logical sizes of committed merge-deletes, not disk space
+	// reclaimed: Pebble frees space when compaction applies the deletes.
+	MeteringCleanupSlots       = stats.Int64("core/metering/cleanup_slots", "Value-key slots merge-deleted by metering cleanup in this process", stats.UnitDimensionless)
+	MeteringCleanupMultihashes = stats.Int64("core/metering/cleanup_multihashes", "Multihash keys removed by metering cleanup in this process. Zero while emptied keys are kept in the store", stats.UnitDimensionless)
+	MeteringCleanupKeyBytes    = stats.Int64("core/metering/cleanup_key_bytes", "Key bytes of multihash keys removed by metering cleanup in this process. Zero while emptied keys are kept in the store", stats.UnitBytes)
+	MeteringCleanupValueBytes  = stats.Int64("core/metering/cleanup_value_bytes", "Packed value bytes of slots merge-deleted by metering cleanup in this process. A logical size, not disk space reclaimed; compaction frees space later", stats.UnitBytes)
+
 	MeteringProviderMultihashes = stats.Int64("core/metering/provider_multihashes", "Distinct multihashes per provider from the latest metering scan", stats.UnitDimensionless)
 )
 
@@ -253,6 +262,22 @@ var (
 			25_000, 50_000, 100_000, 250_000, 600_000,
 		),
 	}
+	meteringCleanupSlotsView = &view.View{
+		Measure:     MeteringCleanupSlots,
+		Aggregation: view.Sum(),
+	}
+	meteringCleanupMultihashesView = &view.View{
+		Measure:     MeteringCleanupMultihashes,
+		Aggregation: view.Sum(),
+	}
+	meteringCleanupKeyBytesView = &view.View{
+		Measure:     MeteringCleanupKeyBytes,
+		Aggregation: view.Sum(),
+	}
+	meteringCleanupValueBytesView = &view.View{
+		Measure:     MeteringCleanupValueBytes,
+		Aggregation: view.Sum(),
+	}
 
 	// Per-provider series. One time series per provider for each view. Do not
 	// register these unless the operator has a bounded provider set.
@@ -313,6 +338,10 @@ var MeteringViews = []*view.View{
 	meteringBatchesFinishedView,
 	meteringBatchStartedAtView,
 	meteringBatchDurationMsView,
+	meteringCleanupSlotsView,
+	meteringCleanupMultihashesView,
+	meteringCleanupKeyBytesView,
+	meteringCleanupValueBytesView,
 }
 
 // MeteringProviderViews are OpenCensus views labeled by provider. Registering

@@ -13,9 +13,11 @@ const valueKeysMergerName = "indexer.v1.binary.valueKeysMerger"
 
 // deleteEmptyKeys controls whether an empty multihash merge result asks Pebble
 // to delete the key. Empty multihash result can be caused by a Remove that drops
-// the last slot of a multihash. When deleteEmptyKeys is false, the key stays in
-// the store with an empty value, Get reports it as not found, and every later
-// metering scan counts it in the deleted totals.
+// the last slot of a multihash or a metering cleanup that does the same. When
+// deleteEmptyKeys is false, the key stays in the store with an empty value, Get
+// reports it as not found, and every later metering scan counts it in the deleted
+// totals. The metering cleanup multihash and key-byte counters stay zero while
+// it is false.
 //
 // Disabled because Pebble's needDelete path corrupts the compaction iterator
 // when an empty result requests deletion:

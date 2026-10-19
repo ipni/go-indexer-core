@@ -230,6 +230,17 @@ func (r *meteringRunner) runMultihashScan(
 		r.recordScanProgress(progress, counters, time.Now())
 	}
 
+	if r.cfg.Cleanup {
+		// A zero sample publishes the counters before the first removal.
+		// Summing zero does not change a counter that has already climbed.
+		stats.Record(context.Background(),
+			metrics.MeteringCleanupSlots.M(0),
+			metrics.MeteringCleanupMultihashes.M(0),
+			metrics.MeteringCleanupKeyBytes.M(0),
+			metrics.MeteringCleanupValueBytes.M(0),
+		)
+	}
+
 	// providerIDByHash remembers value-record lookups for this scan. A value key maps
 	// to the provider ID in that record. A provider hash maps to an ID read
 	// from any remaining record for that provider. An empty ID means the
@@ -316,10 +327,16 @@ func (r *meteringRunner) runMultihashScanBatch(
 	}
 	defer iter.Close()
 
+	// An uncommitted batch holds only its own byte buffer. Merge copies each
+	// key as it is called, so the iterator buffer can be reused on Next.
+	b := r.db.NewBatch()
+	defer b.Close()
+
 	// Provider hashes whose counters changed in this batch.
 	// Only those rows are written later.
 	modifiedProviderContext := make(map[string]struct{})
 
+	var cleaned cleanupTally
 	keysRead := 0
 	var bytesRead uint64
 	var lastKey []byte
@@ -340,6 +357,8 @@ func (r *meteringRunner) runMultihashScanBatch(
 			key, value,
 			modifiedProviderContext,
 			providerIDByHash,
+			b,
+			&cleaned,
 		); err != nil {
 			return false, err
 		}
@@ -356,8 +375,6 @@ func (r *meteringRunner) runMultihashScanBatch(
 		progress.Cursor = slices.Clone(lastKey)
 	}
 
-	b := r.db.NewBatch()
-	defer b.Close()
 	if err := counters.writeModifiedCounters(b, progress.ScanID, modifiedProviderContext); err != nil {
 		return false, err
 	}
@@ -379,6 +396,10 @@ func (r *meteringRunner) runMultihashScanBatch(
 	stats.Record(context.Background(),
 		metrics.MeteringBatchesFinished.M(1),
 		metrics.MeteringBatchDurationMs.M(float64(now.Sub(batchStart).Milliseconds())),
+		metrics.MeteringCleanupSlots.M(int64(cleaned.slots)),
+		metrics.MeteringCleanupMultihashes.M(int64(cleaned.multihashes)),
+		metrics.MeteringCleanupKeyBytes.M(int64(cleaned.keyBytes)),
+		metrics.MeteringCleanupValueBytes.M(int64(cleaned.valueBytes)),
 	)
 	r.recordScanProgress(progress, counters, now)
 
@@ -387,12 +408,25 @@ func (r *meteringRunner) runMultihashScanBatch(
 	return exhausted, nil
 }
 
-// countMultihashScanRecord adds one multihash key to the scan counters.
+// countMultihashScanRecord adds one multihash key to the scan counters:
+// one multihash, its key and value sizes, and one slot for each remaining
+// value record.
+//
+// A provider's multihash count increases once per key, even when that key
+// has several of its contexts. Slots whose value record is gone are deleted
+// contexts when the provider remains, or part of a deleted entry when no
+// provider on the key remains.
+//
+// With Cleanup set, a slot whose value record is gone is merge-deleted into
+// the batch and is not counted. The value-key buffer is switched to the delete
+// prefix for that merge and restored before this call returns.
 func (r *meteringRunner) countMultihashScanRecord(
 	counters *multihashScanCounters,
 	key, value []byte,
 	modifiedProviderContext map[string]struct{},
 	providerIDByHash map[string]peer.ID,
+	cleanupBatch *pebble.Batch,
+	cleaned *cleanupTally,
 ) error {
 	if len(key) == 0 || keyPrefix(key[0]) != multihashKeyPrefix {
 		return nil
@@ -420,7 +454,118 @@ func (r *meteringRunner) countMultihashScanRecord(
 		return nil
 	}
 
-	return r.countMultihashScanKey(counters, key, value, vks, modifiedProviderContext, providerIDByHash)
+	liveSlots := 0
+	removedSlots := 0
+	providersInMultihash := make(map[string]struct{}, len(vks.keys))
+	for _, valueKey := range vks.keys {
+		providerHash := providerHashFromValueKey(valueKey.buf)
+		if providerHash == nil {
+			// Invalid value key?
+			continue
+		}
+
+		// Check if the providerID can be detected from provider+context hash
+		providerID, err := r.providerIDForValueKey(providerIDByHash, valueKey.buf)
+		if err != nil {
+			return err
+		}
+		deletedContext := providerID == ""
+
+		// Removing a slot without the provider lock, and from a lookup cached
+		// for the whole scan, is safe only because a value key is never
+		// written again once its record is gone. Removals delete the record
+		// and its context mapping together, and a later Put of the same
+		// context gets a new token and so a new value key. The merge-delete
+		// names only the old key, so it cannot remove a re-added slot.
+		if r.cfg.Cleanup && deletedContext {
+			if err = mergeDeleteSlot(cleanupBatch, key, valueKey.buf); err != nil {
+				return err
+			}
+			removedSlots++
+			continue
+		}
+
+		if deletedContext {
+			// Try to detect the providerID from the provider hash itself
+			providerID = r.providerIDForHash(providerIDByHash, providerHash)
+		}
+		deletedProvider := providerID == ""
+
+		if deletedProvider {
+			continue
+		}
+
+		providerKey, provider := counters.providerStats(providerHash)
+		if provider.ProviderID == "" {
+			provider.ProviderID = providerID
+		}
+
+		if deletedContext {
+			provider.DeletedContexts++
+			modifiedProviderContext[providerKey] = struct{}{}
+			continue
+		}
+
+		liveSlots++
+		provider.Slots++
+		modifiedProviderContext[providerKey] = struct{}{}
+
+		if _, notThereYet := providersInMultihash[providerKey]; !notThereYet {
+			providersInMultihash[providerKey] = struct{}{}
+			provider.Multihashes++
+		}
+	}
+
+	// Slots removed this pass count as cleaned, not in the totals. The
+	// multihash key counts as cleaned when the merge deletes it, and as
+	// deleted when it stays in the store without live slots. Without Cleanup
+	// nothing is removed, so every slot is kept.
+	removedBytes := removedSlots * marshalledValueKeyLength
+	cleaned.slots += uint64(removedSlots)
+	cleaned.valueBytes += uint64(removedBytes)
+
+	keptSlots := len(vks.keys) - removedSlots
+	var bucket *indexer.EntryMeters
+
+	switch {
+	case keptSlots == 0 && deleteEmptyKeys:
+		// Multihash entry will be removed from the store by compaction
+		cleaned.multihashes++
+		cleaned.keyBytes += uint64(len(key))
+		return nil
+
+	case liveSlots > 0:
+		bucket = &counters.totals.Active
+
+	default:
+		bucket = &counters.totals.Deleted
+	}
+
+	bucket.Entries++
+	bucket.KeyBytes += uint64(len(key))
+	bucket.ValueBytes += uint64(len(value) - removedBytes)
+	bucket.Slots += uint64(keptSlots)
+	return nil
+}
+
+// cleanupTally is how much of one batch was merge-deleted. These amounts are
+// added to the process cleanup counters after the batch commits.
+type cleanupTally struct {
+	slots       uint64
+	multihashes uint64
+	keyBytes    uint64
+	valueBytes  uint64
+}
+
+// mergeDeleteSlot records a merge-delete of valueKey from multihashKey.
+// The valueKey prefix is switched for the merge and restored before return.
+// The batch copies both buffers before returning.
+func mergeDeleteSlot(batch *pebble.Batch, multihashKey, valueKey []byte) error {
+	prefix := valueKey[0]
+	valueKey[0] = byte(mergeDeleteValueKeyPrefix)
+	err := batch.Merge(multihashKey, valueKey, nil)
+	valueKey[0] = prefix
+	return err
 }
 
 // finishMultihashScan stores this scan as the latest completed result and deletes older scan rows.
@@ -978,78 +1123,6 @@ func (r *meteringRunner) readProviderID(providerHash []byte) peer.ID {
 		return ""
 	}
 	return peer.ID(slices.Clone([]byte(v.ProviderID)))
-}
-
-// countMultihashScanKey adds one multihash key: one multihash, its key and
-// value sizes, and one slot for each remaining value record. A provider's
-// multihash count increases once per key, even when that key has several of
-// its contexts. Slots whose value record is gone are deleted contexts when
-// the provider remains, or part of a deleted entry when no provider on the
-// key remains.
-func (r *meteringRunner) countMultihashScanKey(
-	counters *multihashScanCounters,
-	key, value []byte,
-	valueKeys *keyList,
-	modifiedProviderContext map[string]struct{},
-	providerIDByHash map[string]peer.ID,
-) error {
-	anyLive := false
-	providersInMultihash := make(map[string]struct{}, len(valueKeys.keys))
-	for _, valueKey := range valueKeys.keys {
-		providerHash := providerHashFromValueKey(valueKey.buf)
-		if providerHash == nil {
-			// Invalid value key?
-			continue
-		}
-
-		// Check if the providerID can be detected from provider+context hash
-		providerID, err := r.providerIDForValueKey(providerIDByHash, valueKey.buf)
-		if err != nil {
-			return err
-		}
-		deletedContext := providerID == ""
-
-		if deletedContext {
-			// Try to detect the providerID from the provider hash itself
-			providerID = r.providerIDForHash(providerIDByHash, providerHash)
-		}
-		deletedProvider := providerID == ""
-
-		if deletedProvider {
-			continue
-		}
-
-		providerKey, provider := counters.providerStats(providerHash)
-		if provider.ProviderID == "" {
-			provider.ProviderID = providerID
-		}
-
-		if deletedContext {
-			provider.DeletedContexts++
-			modifiedProviderContext[providerKey] = struct{}{}
-			continue
-		}
-
-		anyLive = true
-		provider.Slots++
-		modifiedProviderContext[providerKey] = struct{}{}
-
-		if _, notThereYet := providersInMultihash[providerKey]; !notThereYet {
-			providersInMultihash[providerKey] = struct{}{}
-			provider.Multihashes++
-		}
-	}
-
-	bucket := &counters.totals.Active
-	if !anyLive && len(valueKeys.keys) > 0 {
-		bucket = &counters.totals.Deleted
-	}
-
-	bucket.Entries++
-	bucket.KeyBytes += uint64(len(key))
-	bucket.ValueBytes += uint64(len(value))
-	bucket.Slots += uint64(len(valueKeys.keys))
-	return nil
 }
 
 // providerIDForValueKey returns the provider ID stored in the value record for
