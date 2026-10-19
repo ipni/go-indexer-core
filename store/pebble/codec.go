@@ -74,7 +74,7 @@ func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
 func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 	l := len(b)
 	if l == 0 {
-		return nil, nil
+		return c.p.leaseKeyList(), nil
 	}
 	vkl := l / marshalledValueKeyLength
 	if vkl < 1 {

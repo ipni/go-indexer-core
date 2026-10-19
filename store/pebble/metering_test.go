@@ -1,6 +1,7 @@
 package pebble
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -31,6 +32,22 @@ func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.S
 	pm, ok := s.(indexer.StatsMeter)
 	require.True(t, ok, "store does not implement StatsMeter")
 	return s, pm
+}
+
+// openStoppedMetered opens a metered store in dir and stops its runner, so the
+// test drives every scan. A running runner resumes on startup any scan it
+// finds unfinished, which races with a scan the test creates.
+func openStoppedMetered(t *testing.T, dir string, cfg MeteringConfig) *store {
+	t.Helper()
+	// With an interval the runner could start a scheduled scan before stop,
+	// and stopping it part way leaves an unfinished scan behind
+	cfg.Interval = 0
+	s, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	st := s.(*store)
+	st.metering.stop()
+	return st
 }
 
 func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *indexer.AllStatsReport {
@@ -183,6 +200,36 @@ func TestMeteringDeletedContextKeptProvider(t *testing.T) {
 	require.EqualValues(t, 2, report.Providers[0].Multihashes)
 	require.EqualValues(t, 2, report.Providers[0].Slots)
 	require.EqualValues(t, 2, report.Providers[0].DeletedContexts)
+}
+
+// A value whose packed keys all have an unexpected prefix decodes to no value
+// keys. The scan counts it as deleted, with its key and value bytes.
+func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
+	st := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	keygen := st.p.leaseBlake3Keyer()
+	vk, err := keygen.valueKey(value1, false)
+	require.NoError(t, err)
+	unknown := bytes.Clone(vk.buf)
+	unknown[0] = 0xee
+	require.NoError(t, vk.Close())
+	require.NoError(t, keygen.Close())
+	value, closer, err := st.vcodec.marshalValueKeys([][]byte{unknown})
+	require.NoError(t, err)
+	key := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
+	require.NoError(t, st.db.Set(key, value, pebble.Sync))
+	// Set copies the value, so its pooled buffer can go back
+	require.NoError(t, closer.Close())
+
+	require.NoError(t, st.metering.runMultihashScan(t.Context(), nil))
+	report, err := st.MeteringAllStats(t.Context(), nil)
+	require.NoError(t, err)
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Invalid.Entries)
+	require.Equal(t, indexer.EntryMeters{
+		Entries:    1,
+		KeyBytes:   uint64(len(key)),
+		ValueBytes: marshalledValueKeyLength,
+	}, report.Totals.Deleted)
 }
 
 func TestMeteringResume(t *testing.T) {
