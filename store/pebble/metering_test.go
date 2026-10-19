@@ -11,9 +11,11 @@ import (
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"go.opencensus.io/stats/view"
 )
 
 func TestBatchSleep(t *testing.T) {
@@ -22,6 +24,13 @@ func TestBatchSleep(t *testing.T) {
 	require.EqualValues(t, 0, batchSleep(time.Second, 1))
 	require.Equal(t, minBatchElapsed, batchSleep(0, 0.5))
 	require.Equal(t, maxBatchSleep, batchSleep(maxBatchSleep, 0.01))
+}
+
+func registerMeteringViews(t *testing.T) {
+	t.Helper()
+	view.Unregister(metrics.MeteringViews...)
+	require.NoError(t, view.Register(metrics.MeteringViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringViews...) })
 }
 
 func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.StatsMeter) {
@@ -230,6 +239,30 @@ func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
 		KeyBytes:   uint64(len(key)),
 		ValueBytes: marshalledValueKeyLength,
 	}, report.Totals.Deleted)
+}
+
+// With ExportProviderMetrics, each provider of the latest completed scan has
+// a multihash gauge tagged with its base58 peer ID.
+func TestMeteringProviderGauge(t *testing.T) {
+	registerMeteringViews(t)
+	view.Unregister(metrics.MeteringProviderViews...)
+	require.NoError(t, view.Register(metrics.MeteringProviderViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringProviderViews...) })
+
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1, ExportProviderMetrics: true})
+	peers := random.Peers(2)
+	putValue(t, s, peers[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	putValue(t, s, peers[1], []byte("ctx"), []byte("meta"), random.Multihashes(3)...)
+	require.NoError(t, s.metering.runMultihashScan(t.Context(), nil))
+
+	rows, err := view.RetrieveData("core/metering/provider_multihashes")
+	require.NoError(t, err)
+	got := make(map[string]float64, len(rows))
+	for _, row := range rows {
+		require.Len(t, row.Tags, 1)
+		got[row.Tags[0].Value] = row.Data.(*view.LastValueData).Value
+	}
+	require.Equal(t, map[string]float64{peers[0].String(): 2, peers[1].String(): 3}, got)
 }
 
 func TestMeteringResume(t *testing.T) {
