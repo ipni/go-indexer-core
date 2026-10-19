@@ -54,31 +54,19 @@ func (r *meteringRunner) stop() {
 	r.wg.Wait()
 }
 
-// run resumes an unfinished scan, then starts a new one when the interval
-// elapses or a manual trigger arrives. A manual trigger restarts the interval.
-// DoneAt is written in the same batch as the completed-scan header, so a scan
-// with DoneAt set is finished and is left as-is.
+// run publishes the latest completed scan, resumes an unfinished scan, then
+// starts a new one when the interval elapses or a manual trigger arrives. A
+// manual trigger restarts the interval. DoneAt is written in the same batch as
+// the completed-scan header, so a scan with DoneAt set is finished and is left
+// as-is.
 func (r *meteringRunner) run(ctx context.Context) {
+	r.publishCompletedScan()
+
 	if progress, err := r.loadMultihashScanProgress(r.db); err != nil {
 		log.Errorw("metering: failed to load progress on startup", "err", err)
 	} else if r.scanNeedsResume(progress) {
 		if err := r.runMultihashScan(ctx, progress); err != nil {
 			logScanErr("metering: resumed scan failed", err)
-		}
-	} else if cur, err := r.loadCompletedScan(r.db); err != nil {
-		log.Errorw("metering: failed to load completed scan on startup", "err", err)
-	} else if cur != nil {
-		providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
-		if err != nil {
-			log.Errorw("metering: failed to load completed providers on startup", "err", err)
-		} else {
-			r.publishMeteringGauges(&indexer.AllStatsReport{
-				CompletedScanStats: indexer.CompletedScanStats{
-					MeasuredAt: cur.CompletedAt,
-					Totals:     cur.Totals,
-				},
-				Providers: providers,
-			}, cur.CompletedAt.Sub(cur.StartedAt))
 		}
 	}
 
@@ -108,6 +96,32 @@ func (r *meteringRunner) run(ctx context.Context) {
 			timer.Reset(r.cfg.Interval)
 		}
 	}
+}
+
+// publishCompletedScan restores the gauges of the latest completed scan. That
+// scan stays stored until the next one finishes, so its gauges are published
+// before an unfinished scan resumes.
+func (r *meteringRunner) publishCompletedScan() {
+	cur, err := r.loadCompletedScan(r.db)
+	if err != nil {
+		log.Errorw("metering: failed to load completed scan on startup", "err", err)
+		return
+	}
+	if cur == nil {
+		return
+	}
+	providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
+	if err != nil {
+		log.Errorw("metering: failed to load completed providers on startup", "err", err)
+		return
+	}
+	r.publishMeteringGauges(&indexer.AllStatsReport{
+		CompletedScanStats: indexer.CompletedScanStats{
+			MeasuredAt: cur.CompletedAt,
+			Totals:     cur.Totals,
+		},
+		Providers: providers,
+	}, cur.CompletedAt.Sub(cur.StartedAt))
 }
 
 // scanNeedsResume reports whether startup should continue this progress record.
@@ -192,6 +206,11 @@ func (r *meteringRunner) runMultihashScan(
 		}
 
 		log.Infow("metering: running scan", "scanID", progress.ScanID)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
 	} else {
 		counters, err = r.loadMultihashScanCounters(r.db, progress.ScanID)
 		if err != nil {
@@ -203,6 +222,12 @@ func (r *meteringRunner) runMultihashScan(
 			"keysRead", progress.KeysRead,
 			"startedAt", progress.StartedAt,
 		)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
+		r.recordScanProgress(progress, counters, time.Now())
 	}
 
 	// providerIDByHash remembers value-record lookups for this scan. A value key maps
@@ -272,6 +297,14 @@ func (r *meteringRunner) runMultihashScanBatch(
 	if !progress.DoneAt.IsZero() {
 		return true, nil
 	}
+	batchStart := time.Now()
+	stats.Record(context.Background(),
+		metrics.MeteringBatchesStarted.M(1),
+		metrics.MeteringBatchStartedAt.M(float64(batchStart.Unix())),
+	)
+	// The gauge reads zero again once this batch commits or fails.
+	defer stats.Record(context.Background(), metrics.MeteringBatchStartedAt.M(0))
+
 	lower, upper := multihashScanBounds(progress.Cursor)
 
 	iter, err := r.db.NewIter(&pebble.IterOptions{
@@ -342,10 +375,12 @@ func (r *meteringRunner) runMultihashScanBatch(
 		return false, err
 	}
 
+	now := time.Now()
 	stats.Record(context.Background(),
-		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
-		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringBatchesFinished.M(1),
+		metrics.MeteringBatchDurationMs.M(float64(now.Sub(batchStart).Milliseconds())),
 	)
+	r.recordScanProgress(progress, counters, now)
 
 	// DoneAt stays unset here. The finish batch writes it together with the
 	// completed-scan header, so a crash cannot observe one without the other.
@@ -460,10 +495,8 @@ func (r *meteringRunner) finishMultihashScan(
 		},
 		completedAt.Sub(progress.StartedAt),
 	)
-	stats.Record(context.Background(),
-		metrics.MeteringScanKeysRead.M(0),
-		metrics.MeteringScanBytesRead.M(0),
-	)
+	stats.Record(context.Background(), metrics.MeteringScansFinished.M(1))
+	clearInProgressScanMetrics()
 	return nil
 }
 
@@ -521,6 +554,9 @@ func (r *meteringRunner) cancelScan(reason string) error {
 // and is not stored; the unfinished scan resumes on the next start. A user
 // cancel carries ErrScanCancelled as the cause and is stored. An already-
 // recorded Error is left as-is.
+//
+// A stored scan error means the walk is no longer running, so the in-progress
+// gauges are cleared even when the error cannot be written.
 func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord, scanErr error) {
 	if progress == nil ||
 		scanErr == nil ||
@@ -528,6 +564,7 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 		progress.Error != "" {
 		return
 	}
+	defer clearInProgressScanMetrics()
 
 	progress.Error = scanErr.Error()
 	progressBytes, err := encodeMultihashScanProgress(progress)
@@ -774,6 +811,71 @@ func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *ti
 	return percent, &finish
 }
 
+// recordScanProgress publishes the in-progress scan gauges from the committed
+// progress and counters, the same values MeteringScanStatus reports. A resumed
+// scan calls it with the state it loaded, so the gauges continue from there.
+func (r *meteringRunner) recordScanProgress(
+	progress *multihashScanProgressRecord,
+	counters *multihashScanCounters,
+	now time.Time,
+) {
+	stats.Record(context.Background(),
+		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
+		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringScanActive.M(int64(counters.totals.Active.Entries)),
+		metrics.MeteringScanActiveSlots.M(int64(counters.totals.Active.Slots)),
+		metrics.MeteringScanInvalid.M(int64(counters.totals.Invalid.Entries)),
+		metrics.MeteringScanDeleted.M(int64(counters.totals.Deleted.Entries)),
+		metrics.MeteringScanDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
+		metrics.MeteringScanDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
+		metrics.MeteringScanDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
+	)
+	r.recordScanEstimate(progress, now)
+}
+
+// recordScanEstimate publishes in-progress percent-done, elapsed, and
+// remaining-time gauges.
+func (r *meteringRunner) recordScanEstimate(progress *multihashScanProgressRecord, now time.Time) {
+	percent, finish := scanEstimate(progress.StartedAt, progress.Cursor, now)
+	elapsed := 0.0
+	if !progress.StartedAt.IsZero() && now.After(progress.StartedAt) {
+		elapsed = now.Sub(progress.StartedAt).Seconds()
+	}
+	remaining := 0.0
+	if finish != nil {
+		remaining = finish.Sub(now).Seconds()
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+	stats.Record(context.Background(),
+		metrics.MeteringScanPercentDone.M(percent),
+		metrics.MeteringScanElapsedSeconds.M(elapsed),
+		metrics.MeteringScanRemainingSeconds.M(remaining),
+	)
+}
+
+// clearInProgressScanMetrics zeros gauges that describe a live walk so idle
+// scrapes do not look like a scan still running.
+func clearInProgressScanMetrics() {
+	stats.Record(context.Background(),
+		metrics.MeteringScanStartedAt.M(0),
+		metrics.MeteringScanKeysRead.M(0),
+		metrics.MeteringScanBytesRead.M(0),
+		metrics.MeteringScanActive.M(0),
+		metrics.MeteringScanActiveSlots.M(0),
+		metrics.MeteringScanInvalid.M(0),
+		metrics.MeteringScanDeleted.M(0),
+		metrics.MeteringScanDeletedSlots.M(0),
+		metrics.MeteringScanDeletedKeyBytes.M(0),
+		metrics.MeteringScanDeletedValueBytes.M(0),
+		metrics.MeteringScanPercentDone.M(0),
+		metrics.MeteringScanElapsedSeconds.M(0),
+		metrics.MeteringScanRemainingSeconds.M(0),
+		metrics.MeteringBatchStartedAt.M(0),
+	)
+}
+
 // publishMeteringGauges records whole-store gauges from a completed scan.
 // Per-provider gauges are recorded only when ExportProviderMetrics is set.
 func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, duration time.Duration) {
@@ -781,7 +883,14 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 	stats.Record(ctx,
 		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Active.Entries)),
 		metrics.MeteringTotalSlots.M(int64(report.Totals.Active.Slots)),
+		metrics.MeteringActiveKeyBytes.M(int64(report.Totals.Active.KeyBytes)),
+		metrics.MeteringActiveValueBytes.M(int64(report.Totals.Active.ValueBytes)),
+		metrics.MeteringTotalInvalid.M(int64(report.Totals.Invalid.Entries)),
+		metrics.MeteringInvalidBytes.M(int64(report.Totals.Invalid.KeyBytes+report.Totals.Invalid.ValueBytes)),
 		metrics.MeteringTotalDeleted.M(int64(report.Totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(report.Totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(report.Totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(report.Totals.Deleted.ValueBytes)),
 		metrics.MeteringScanCompletedAt.M(float64(report.MeasuredAt.Unix())),
 		metrics.MeteringScanDurationMs.M(float64(duration.Milliseconds())),
 	)
