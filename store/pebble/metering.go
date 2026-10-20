@@ -54,31 +54,19 @@ func (r *meteringRunner) stop() {
 	r.wg.Wait()
 }
 
-// run resumes an unfinished scan, then starts a new one when the interval
-// elapses or a manual trigger arrives. A manual trigger restarts the interval.
-// DoneAt is written in the same batch as the completed-scan header, so a scan
-// with DoneAt set is finished and is left as-is.
+// run publishes the latest completed scan, resumes an unfinished scan, then
+// starts a new one when the interval elapses or a manual trigger arrives. A
+// manual trigger restarts the interval. DoneAt is written in the same batch as
+// the completed-scan header, so a scan with DoneAt set is finished and is left
+// as-is.
 func (r *meteringRunner) run(ctx context.Context) {
+	r.publishCompletedScan()
+
 	if progress, err := r.loadMultihashScanProgress(r.db); err != nil {
 		log.Errorw("metering: failed to load progress on startup", "err", err)
 	} else if r.scanNeedsResume(progress) {
 		if err := r.runMultihashScan(ctx, progress); err != nil {
 			logScanErr("metering: resumed scan failed", err)
-		}
-	} else if cur, err := r.loadCompletedScan(r.db); err != nil {
-		log.Errorw("metering: failed to load completed scan on startup", "err", err)
-	} else if cur != nil {
-		providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
-		if err != nil {
-			log.Errorw("metering: failed to load completed providers on startup", "err", err)
-		} else {
-			r.publishMeteringGauges(&indexer.AllStatsReport{
-				CompletedScanStats: indexer.CompletedScanStats{
-					MeasuredAt: cur.CompletedAt,
-					Totals:     cur.Totals,
-				},
-				Providers: providers,
-			}, cur.CompletedAt.Sub(cur.StartedAt))
 		}
 	}
 
@@ -108,6 +96,32 @@ func (r *meteringRunner) run(ctx context.Context) {
 			timer.Reset(r.cfg.Interval)
 		}
 	}
+}
+
+// publishCompletedScan restores the gauges of the latest completed scan. That
+// scan stays stored until the next one finishes, so its gauges are published
+// before an unfinished scan resumes.
+func (r *meteringRunner) publishCompletedScan() {
+	cur, err := r.loadCompletedScan(r.db)
+	if err != nil {
+		log.Errorw("metering: failed to load completed scan on startup", "err", err)
+		return
+	}
+	if cur == nil {
+		return
+	}
+	providers, err := r.loadProviderStats(r.db, cur.ScanID, nil)
+	if err != nil {
+		log.Errorw("metering: failed to load completed providers on startup", "err", err)
+		return
+	}
+	r.publishMeteringGauges(&indexer.AllStatsReport{
+		CompletedScanStats: indexer.CompletedScanStats{
+			MeasuredAt: cur.CompletedAt,
+			Totals:     cur.Totals,
+		},
+		Providers: providers,
+	}, cur.CompletedAt.Sub(cur.StartedAt))
 }
 
 // scanNeedsResume reports whether startup should continue this progress record.
@@ -192,6 +206,11 @@ func (r *meteringRunner) runMultihashScan(
 		}
 
 		log.Infow("metering: running scan", "scanID", progress.ScanID)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
 	} else {
 		counters, err = r.loadMultihashScanCounters(r.db, progress.ScanID)
 		if err != nil {
@@ -202,6 +221,23 @@ func (r *meteringRunner) runMultihashScan(
 			"scanID", progress.ScanID,
 			"keysRead", progress.KeysRead,
 			"startedAt", progress.StartedAt,
+		)
+
+		stats.Record(context.Background(),
+			metrics.MeteringScansStarted.M(1),
+			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
+		)
+		r.recordScanProgress(progress, counters, time.Now())
+	}
+
+	if r.cfg.Cleanup {
+		// A zero sample publishes the counters before the first removal.
+		// Summing zero does not change a counter that has already climbed.
+		stats.Record(context.Background(),
+			metrics.MeteringCleanupSlots.M(0),
+			metrics.MeteringCleanupMultihashes.M(0),
+			metrics.MeteringCleanupKeyBytes.M(0),
+			metrics.MeteringCleanupValueBytes.M(0),
 		)
 	}
 
@@ -272,6 +308,14 @@ func (r *meteringRunner) runMultihashScanBatch(
 	if !progress.DoneAt.IsZero() {
 		return true, nil
 	}
+	batchStart := time.Now()
+	stats.Record(context.Background(),
+		metrics.MeteringBatchesStarted.M(1),
+		metrics.MeteringBatchStartedAt.M(float64(batchStart.Unix())),
+	)
+	// The gauge reads zero again once this batch commits or fails.
+	defer stats.Record(context.Background(), metrics.MeteringBatchStartedAt.M(0))
+
 	lower, upper := multihashScanBounds(progress.Cursor)
 
 	iter, err := r.db.NewIter(&pebble.IterOptions{
@@ -283,10 +327,16 @@ func (r *meteringRunner) runMultihashScanBatch(
 	}
 	defer iter.Close()
 
+	// An uncommitted batch holds only its own byte buffer. Merge copies each
+	// key as it is called, so the iterator buffer can be reused on Next.
+	b := r.db.NewBatch()
+	defer b.Close()
+
 	// Provider hashes whose counters changed in this batch.
 	// Only those rows are written later.
 	modifiedProviderContext := make(map[string]struct{})
 
+	var cleaned cleanupTally
 	keysRead := 0
 	var bytesRead uint64
 	var lastKey []byte
@@ -307,6 +357,8 @@ func (r *meteringRunner) runMultihashScanBatch(
 			key, value,
 			modifiedProviderContext,
 			providerIDByHash,
+			b,
+			&cleaned,
 		); err != nil {
 			return false, err
 		}
@@ -323,8 +375,6 @@ func (r *meteringRunner) runMultihashScanBatch(
 		progress.Cursor = slices.Clone(lastKey)
 	}
 
-	b := r.db.NewBatch()
-	defer b.Close()
 	if err := counters.writeModifiedCounters(b, progress.ScanID, modifiedProviderContext); err != nil {
 		return false, err
 	}
@@ -342,22 +392,41 @@ func (r *meteringRunner) runMultihashScanBatch(
 		return false, err
 	}
 
+	now := time.Now()
 	stats.Record(context.Background(),
-		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
-		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringBatchesFinished.M(1),
+		metrics.MeteringBatchDurationMs.M(float64(now.Sub(batchStart).Milliseconds())),
+		metrics.MeteringCleanupSlots.M(int64(cleaned.slots)),
+		metrics.MeteringCleanupMultihashes.M(int64(cleaned.multihashes)),
+		metrics.MeteringCleanupKeyBytes.M(int64(cleaned.keyBytes)),
+		metrics.MeteringCleanupValueBytes.M(int64(cleaned.valueBytes)),
 	)
+	r.recordScanProgress(progress, counters, now)
 
 	// DoneAt stays unset here. The finish batch writes it together with the
 	// completed-scan header, so a crash cannot observe one without the other.
 	return exhausted, nil
 }
 
-// countMultihashScanRecord adds one multihash key to the scan counters.
+// countMultihashScanRecord adds one multihash key to the scan counters:
+// one multihash, its key and value sizes, and one slot for each remaining
+// value record.
+//
+// A provider's multihash count increases once per key, even when that key
+// has several of its contexts. Slots whose value record is gone are deleted
+// contexts when the provider remains, or part of a deleted entry when no
+// provider on the key remains.
+//
+// With Cleanup set, a slot whose value record is gone is merge-deleted into
+// the batch and is not counted. The value-key buffer is switched to the delete
+// prefix for that merge and restored before this call returns.
 func (r *meteringRunner) countMultihashScanRecord(
 	counters *multihashScanCounters,
 	key, value []byte,
 	modifiedProviderContext map[string]struct{},
 	providerIDByHash map[string]peer.ID,
+	cleanupBatch *pebble.Batch,
+	cleaned *cleanupTally,
 ) error {
 	if len(key) == 0 || keyPrefix(key[0]) != multihashKeyPrefix {
 		return nil
@@ -373,7 +442,130 @@ func (r *meteringRunner) countMultihashScanRecord(
 	}
 	defer vks.Close()
 
-	return r.countMultihashScanKey(counters, key, value, vks, modifiedProviderContext, providerIDByHash)
+	// A key without value keys is still stored after its slots are gone. Pebble
+	// returns an empty value only while deleteEmptyKeys is false; otherwise
+	// compaction drops it. A non-empty value lands here too when every packed
+	// key has an unexpected prefix. Deleted counts that leftover key, including
+	// its key and value bytes.
+	if len(vks.keys) == 0 {
+		counters.totals.Deleted.Entries++
+		counters.totals.Deleted.KeyBytes += uint64(len(key))
+		counters.totals.Deleted.ValueBytes += uint64(len(value))
+		return nil
+	}
+
+	liveSlots := 0
+	removedSlots := 0
+	providersInMultihash := make(map[string]struct{}, len(vks.keys))
+	for _, valueKey := range vks.keys {
+		providerHash := providerHashFromValueKey(valueKey.buf)
+		if providerHash == nil {
+			// Invalid value key?
+			continue
+		}
+
+		// Check if the providerID can be detected from provider+context hash
+		providerID, err := r.providerIDForValueKey(providerIDByHash, valueKey.buf)
+		if err != nil {
+			return err
+		}
+		deletedContext := providerID == ""
+
+		// Removing a slot without the provider lock, and from a lookup cached
+		// for the whole scan, is safe only because a value key is never
+		// written again once its record is gone. Removals delete the record
+		// and its context mapping together, and a later Put of the same
+		// context gets a new token and so a new value key. The merge-delete
+		// names only the old key, so it cannot remove a re-added slot.
+		if r.cfg.Cleanup && deletedContext {
+			if err = mergeDeleteSlot(cleanupBatch, key, valueKey.buf); err != nil {
+				return err
+			}
+			removedSlots++
+			continue
+		}
+
+		if deletedContext {
+			// Try to detect the providerID from the provider hash itself
+			providerID = r.providerIDForHash(providerIDByHash, providerHash)
+		}
+		deletedProvider := providerID == ""
+
+		if deletedProvider {
+			continue
+		}
+
+		providerKey, provider := counters.providerStats(providerHash)
+		if provider.ProviderID == "" {
+			provider.ProviderID = providerID
+		}
+
+		if deletedContext {
+			provider.DeletedContexts++
+			modifiedProviderContext[providerKey] = struct{}{}
+			continue
+		}
+
+		liveSlots++
+		provider.Slots++
+		modifiedProviderContext[providerKey] = struct{}{}
+
+		if _, notThereYet := providersInMultihash[providerKey]; !notThereYet {
+			providersInMultihash[providerKey] = struct{}{}
+			provider.Multihashes++
+		}
+	}
+
+	// Slots removed this pass count as cleaned, not in the totals. The
+	// multihash key counts as cleaned when the merge deletes it, and as
+	// deleted when it stays in the store without live slots. Without Cleanup
+	// nothing is removed, so every slot is kept.
+	removedBytes := removedSlots * marshalledValueKeyLength
+	cleaned.slots += uint64(removedSlots)
+	cleaned.valueBytes += uint64(removedBytes)
+
+	keptSlots := len(vks.keys) - removedSlots
+	var bucket *indexer.EntryMeters
+
+	switch {
+	case keptSlots == 0 && deleteEmptyKeys:
+		// Multihash entry will be removed from the store by compaction
+		cleaned.multihashes++
+		cleaned.keyBytes += uint64(len(key))
+		return nil
+
+	case liveSlots > 0:
+		bucket = &counters.totals.Active
+
+	default:
+		bucket = &counters.totals.Deleted
+	}
+
+	bucket.Entries++
+	bucket.KeyBytes += uint64(len(key))
+	bucket.ValueBytes += uint64(len(value) - removedBytes)
+	bucket.Slots += uint64(keptSlots)
+	return nil
+}
+
+// cleanupTally is how much of one batch was merge-deleted. These amounts are
+// added to the process cleanup counters after the batch commits.
+type cleanupTally struct {
+	slots       uint64
+	multihashes uint64
+	keyBytes    uint64
+	valueBytes  uint64
+}
+
+// mergeDeleteSlot records a merge-delete of valueKey from multihashKey.
+// The valueKey prefix is switched for the merge and restored before return.
+// The batch copies both buffers before returning.
+func mergeDeleteSlot(batch *pebble.Batch, multihashKey, valueKey []byte) error {
+	prefix := valueKey[0]
+	valueKey[0] = byte(mergeDeleteValueKeyPrefix)
+	err := batch.Merge(multihashKey, valueKey, nil)
+	valueKey[0] = prefix
+	return err
 }
 
 // finishMultihashScan stores this scan as the latest completed result and deletes older scan rows.
@@ -448,10 +640,8 @@ func (r *meteringRunner) finishMultihashScan(
 		},
 		completedAt.Sub(progress.StartedAt),
 	)
-	stats.Record(context.Background(),
-		metrics.MeteringScanKeysRead.M(0),
-		metrics.MeteringScanBytesRead.M(0),
-	)
+	stats.Record(context.Background(), metrics.MeteringScansFinished.M(1))
+	clearInProgressScanMetrics()
 	return nil
 }
 
@@ -509,6 +699,9 @@ func (r *meteringRunner) cancelScan(reason string) error {
 // and is not stored; the unfinished scan resumes on the next start. A user
 // cancel carries ErrScanCancelled as the cause and is stored. An already-
 // recorded Error is left as-is.
+//
+// A stored scan error means the walk is no longer running, so the in-progress
+// gauges are cleared even when the error cannot be written.
 func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord, scanErr error) {
 	if progress == nil ||
 		scanErr == nil ||
@@ -516,6 +709,7 @@ func (r *meteringRunner) persistScanError(progress *multihashScanProgressRecord,
 		progress.Error != "" {
 		return
 	}
+	defer clearInProgressScanMetrics()
 
 	progress.Error = scanErr.Error()
 	progressBytes, err := encodeMultihashScanProgress(progress)
@@ -762,6 +956,71 @@ func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *ti
 	return percent, &finish
 }
 
+// recordScanProgress publishes the in-progress scan gauges from the committed
+// progress and counters, the same values MeteringScanStatus reports. A resumed
+// scan calls it with the state it loaded, so the gauges continue from there.
+func (r *meteringRunner) recordScanProgress(
+	progress *multihashScanProgressRecord,
+	counters *multihashScanCounters,
+	now time.Time,
+) {
+	stats.Record(context.Background(),
+		metrics.MeteringScanKeysRead.M(int64(progress.KeysRead)),
+		metrics.MeteringScanBytesRead.M(int64(progress.BytesRead)),
+		metrics.MeteringScanActive.M(int64(counters.totals.Active.Entries)),
+		metrics.MeteringScanActiveSlots.M(int64(counters.totals.Active.Slots)),
+		metrics.MeteringScanInvalid.M(int64(counters.totals.Invalid.Entries)),
+		metrics.MeteringScanDeleted.M(int64(counters.totals.Deleted.Entries)),
+		metrics.MeteringScanDeletedSlots.M(int64(counters.totals.Deleted.Slots)),
+		metrics.MeteringScanDeletedKeyBytes.M(int64(counters.totals.Deleted.KeyBytes)),
+		metrics.MeteringScanDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
+	)
+	r.recordScanEstimate(progress, now)
+}
+
+// recordScanEstimate publishes in-progress percent-done, elapsed, and
+// remaining-time gauges.
+func (r *meteringRunner) recordScanEstimate(progress *multihashScanProgressRecord, now time.Time) {
+	percent, finish := scanEstimate(progress.StartedAt, progress.Cursor, now)
+	elapsed := 0.0
+	if !progress.StartedAt.IsZero() && now.After(progress.StartedAt) {
+		elapsed = now.Sub(progress.StartedAt).Seconds()
+	}
+	remaining := 0.0
+	if finish != nil {
+		remaining = finish.Sub(now).Seconds()
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+	stats.Record(context.Background(),
+		metrics.MeteringScanPercentDone.M(percent),
+		metrics.MeteringScanElapsedSeconds.M(elapsed),
+		metrics.MeteringScanRemainingSeconds.M(remaining),
+	)
+}
+
+// clearInProgressScanMetrics zeros gauges that describe a live walk so idle
+// scrapes do not look like a scan still running.
+func clearInProgressScanMetrics() {
+	stats.Record(context.Background(),
+		metrics.MeteringScanStartedAt.M(0),
+		metrics.MeteringScanKeysRead.M(0),
+		metrics.MeteringScanBytesRead.M(0),
+		metrics.MeteringScanActive.M(0),
+		metrics.MeteringScanActiveSlots.M(0),
+		metrics.MeteringScanInvalid.M(0),
+		metrics.MeteringScanDeleted.M(0),
+		metrics.MeteringScanDeletedSlots.M(0),
+		metrics.MeteringScanDeletedKeyBytes.M(0),
+		metrics.MeteringScanDeletedValueBytes.M(0),
+		metrics.MeteringScanPercentDone.M(0),
+		metrics.MeteringScanElapsedSeconds.M(0),
+		metrics.MeteringScanRemainingSeconds.M(0),
+		metrics.MeteringBatchStartedAt.M(0),
+	)
+}
+
 // publishMeteringGauges records whole-store gauges from a completed scan.
 // Per-provider gauges are recorded only when ExportProviderMetrics is set.
 func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, duration time.Duration) {
@@ -769,7 +1028,14 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 	stats.Record(ctx,
 		metrics.MeteringTotalMultihashes.M(int64(report.Totals.Active.Entries)),
 		metrics.MeteringTotalSlots.M(int64(report.Totals.Active.Slots)),
+		metrics.MeteringActiveKeyBytes.M(int64(report.Totals.Active.KeyBytes)),
+		metrics.MeteringActiveValueBytes.M(int64(report.Totals.Active.ValueBytes)),
+		metrics.MeteringTotalInvalid.M(int64(report.Totals.Invalid.Entries)),
+		metrics.MeteringInvalidBytes.M(int64(report.Totals.Invalid.KeyBytes+report.Totals.Invalid.ValueBytes)),
 		metrics.MeteringTotalDeleted.M(int64(report.Totals.Deleted.Entries)),
+		metrics.MeteringDeletedSlots.M(int64(report.Totals.Deleted.Slots)),
+		metrics.MeteringDeletedKeyBytes.M(int64(report.Totals.Deleted.KeyBytes)),
+		metrics.MeteringDeletedValueBytes.M(int64(report.Totals.Deleted.ValueBytes)),
 		metrics.MeteringScanCompletedAt.M(float64(report.MeasuredAt.Unix())),
 		metrics.MeteringScanDurationMs.M(float64(duration.Milliseconds())),
 	)
@@ -780,8 +1046,10 @@ func (r *meteringRunner) publishMeteringGauges(report *indexer.AllStatsReport, d
 		if ps.ProviderID == "" {
 			continue
 		}
-		mctx, err := tag.New(ctx, tag.Upsert(metrics.Provider, string(ps.ProviderID)))
+		// Tag values must be ASCII, so the provider is tagged with its base58 ID
+		mctx, err := tag.New(ctx, tag.Upsert(metrics.Provider, ps.ProviderID.String()))
 		if err != nil {
+			log.Warnw("metering: failed to tag provider gauge", "provider", ps.ProviderID, "err", err)
 			continue
 		}
 		stats.Record(mctx,
@@ -855,78 +1123,6 @@ func (r *meteringRunner) readProviderID(providerHash []byte) peer.ID {
 		return ""
 	}
 	return peer.ID(slices.Clone([]byte(v.ProviderID)))
-}
-
-// countMultihashScanKey adds one multihash key: one multihash, its key and
-// value sizes, and one slot for each remaining value record. A provider's
-// multihash count increases once per key, even when that key has several of
-// its contexts. Slots whose value record is gone are deleted contexts when
-// the provider remains, or part of a deleted entry when no provider on the
-// key remains.
-func (r *meteringRunner) countMultihashScanKey(
-	counters *multihashScanCounters,
-	key, value []byte,
-	valueKeys *keyList,
-	modifiedProviderContext map[string]struct{},
-	providerIDByHash map[string]peer.ID,
-) error {
-	anyLive := false
-	providersInMultihash := make(map[string]struct{}, len(valueKeys.keys))
-	for _, valueKey := range valueKeys.keys {
-		providerHash := providerHashFromValueKey(valueKey.buf)
-		if providerHash == nil {
-			// Invalid value key?
-			continue
-		}
-
-		// Check if the providerID can be detected from provider+context hash
-		providerID, err := r.providerIDForValueKey(providerIDByHash, valueKey.buf)
-		if err != nil {
-			return err
-		}
-		deletedContext := providerID == ""
-
-		if deletedContext {
-			// Try to detect the providerID from the provider hash itself
-			providerID = r.providerIDForHash(providerIDByHash, providerHash)
-		}
-		deletedProvider := providerID == ""
-
-		if deletedProvider {
-			continue
-		}
-
-		providerKey, provider := counters.providerStats(providerHash)
-		if provider.ProviderID == "" {
-			provider.ProviderID = providerID
-		}
-
-		if deletedContext {
-			provider.DeletedContexts++
-			modifiedProviderContext[providerKey] = struct{}{}
-			continue
-		}
-
-		anyLive = true
-		provider.Slots++
-		modifiedProviderContext[providerKey] = struct{}{}
-
-		if _, notThereYet := providersInMultihash[providerKey]; !notThereYet {
-			providersInMultihash[providerKey] = struct{}{}
-			provider.Multihashes++
-		}
-	}
-
-	bucket := &counters.totals.Active
-	if !anyLive && len(valueKeys.keys) > 0 {
-		bucket = &counters.totals.Deleted
-	}
-
-	bucket.Entries++
-	bucket.KeyBytes += uint64(len(key))
-	bucket.ValueBytes += uint64(len(value))
-	bucket.Slots += uint64(len(valueKeys.keys))
-	return nil
 }
 
 // providerIDForValueKey returns the provider ID stored in the value record for

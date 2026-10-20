@@ -1,8 +1,10 @@
 package pebble
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -10,9 +12,11 @@ import (
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
+	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"go.opencensus.io/stats/view"
 )
 
 func TestBatchSleep(t *testing.T) {
@@ -23,6 +27,36 @@ func TestBatchSleep(t *testing.T) {
 	require.Equal(t, maxBatchSleep, batchSleep(maxBatchSleep, 0.01))
 }
 
+func registerMeteringViews(t *testing.T) {
+	t.Helper()
+	view.Unregister(metrics.MeteringViews...)
+	require.NoError(t, view.Register(metrics.MeteringViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringViews...) })
+}
+
+func meteringSum(t *testing.T, name string) float64 {
+	t.Helper()
+	rows, err := view.RetrieveData(name)
+	require.NoError(t, err)
+	if len(rows) == 0 {
+		return 0
+	}
+	require.Len(t, rows, 1)
+	sum, ok := rows[0].Data.(*view.SumData)
+	require.True(t, ok)
+	return sum.Value
+}
+
+func meteringLastValue(t *testing.T, name string) float64 {
+	t.Helper()
+	rows, err := view.RetrieveData(name)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	last, ok := rows[0].Data.(*view.LastValueData)
+	require.True(t, ok)
+	return last.Value
+}
+
 func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.StatsMeter) {
 	t.Helper()
 	s, err := New(t.TempDir(), nil, WithMetering(cfg))
@@ -31,6 +65,22 @@ func openMetered(t *testing.T, cfg MeteringConfig) (indexer.Interface, indexer.S
 	pm, ok := s.(indexer.StatsMeter)
 	require.True(t, ok, "store does not implement StatsMeter")
 	return s, pm
+}
+
+// openStoppedMetered opens a metered store in dir and stops its runner, so the
+// test drives every scan. A running runner resumes on startup any scan it
+// finds unfinished, which races with a scan the test creates.
+func openStoppedMetered(t *testing.T, dir string, cfg MeteringConfig) *store {
+	t.Helper()
+	// With an interval the runner could start a scheduled scan before stop,
+	// and stopping it part way leaves an unfinished scan behind
+	cfg.Interval = 0
+	s, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	st := s.(*store)
+	st.metering.stop()
+	return st
 }
 
 func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *indexer.AllStatsReport {
@@ -51,6 +101,31 @@ func waitScanDone(t *testing.T, pm indexer.StatsMeter, timeout time.Duration) *i
 	}
 	require.FailNow(t, "timeout waiting for scan to complete")
 	return nil
+}
+
+// waitPastScanID waits until the wall clock is past scanID, so a scan started
+// afterwards gets a new ID. Scan IDs are the start time in Unix microseconds.
+func waitPastScanID(t *testing.T, scanID uint64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return uint64(time.Now().UnixMicro()) > scanID
+	}, time.Second, 10*time.Microsecond)
+}
+
+// triggerWhenIdle starts a scan. Status can show done while the runner is still
+// leaving the previous scan, and trigger then returns ErrScanInProgress.
+func triggerWhenIdle(t *testing.T, pm indexer.StatsMeter) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := pm.MeteringTriggerScan(context.Background())
+		if err == nil {
+			return
+		}
+		require.ErrorIs(t, err, indexer.ErrScanInProgress)
+		require.False(t, time.Now().After(deadline), "timed out waiting to trigger: %v", err)
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func putValue(t *testing.T, s indexer.Interface, pid peer.ID, ctxID, meta []byte, mhs ...multihash.Multihash) {
@@ -185,6 +260,450 @@ func TestMeteringDeletedContextKeptProvider(t *testing.T) {
 	require.EqualValues(t, 2, report.Providers[0].DeletedContexts)
 }
 
+func TestMeteringCleanupRemovesDeadSlots(t *testing.T) {
+	registerMeteringViews(t)
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	putValue(t, s, p1, []byte("ctxA"), []byte("metaA"), mhs[0], mhs[1])
+	putValue(t, s, p1, []byte("ctxB"), []byte("metaB"), mhs[1])
+	require.NoError(t, s.RemoveProviderContext(p1, []byte("ctxB")))
+	// A later advertisement of a different context must survive the cleanup.
+	putValue(t, s, p1, []byte("ctxC"), []byte("metaC"), mhs[1])
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.EqualValues(t, 2, report.Totals.Active.Entries)
+	require.EqualValues(t, 3, report.Totals.Active.Slots)
+	require.Zero(t, report.Totals.Deleted.Entries)
+	require.Len(t, report.Providers, 1)
+	require.EqualValues(t, 2, report.Providers[0].Multihashes)
+	require.EqualValues(t, 3, report.Providers[0].Slots)
+	require.Zero(t, report.Providers[0].DeletedContexts)
+	require.EqualValues(t, 1, meteringSum(t, "core/metering/cleanup_slots"))
+	require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
+	require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
+	require.EqualValues(t, marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
+	// The last batch has committed, so no batch is running.
+	require.Zero(t, meteringLastValue(t, "core/metering/batch_started_at"))
+
+	contextIDs := func(values []indexer.Value) [][]byte {
+		out := make([][]byte, len(values))
+		for i, v := range values {
+			out[i] = v.ContextID
+		}
+		return out
+	}
+
+	values, found, err := s.Get(mhs[0])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, [][]byte{[]byte("ctxA")}, contextIDs(values))
+
+	values, found, err = s.Get(mhs[1])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.ElementsMatch(t, [][]byte{[]byte("ctxA"), []byte("ctxC")}, contextIDs(values))
+}
+
+// A provider removes a context while a cleanup scan is part way through, and
+// advertises it again after the scan has cached the old value record as gone.
+// The new advertisement must survive this scan, the next one, compaction, and
+// a reopen.
+func TestMeteringCleanupReAddMidScan(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remove func(s indexer.Interface, pid peer.ID, ctxID []byte) error
+	}{
+		{"RemoveProviderContext", func(s indexer.Interface, pid peer.ID, ctxID []byte) error {
+			return s.RemoveProviderContext(pid, ctxID)
+		}},
+		{"RemoveProvider", func(s indexer.Interface, pid peer.ID, _ []byte) error {
+			return s.RemoveProvider(context.Background(), pid)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registerMeteringViews(t)
+			dir := t.TempDir()
+			s := openStoppedMetered(t, dir, MeteringConfig{BatchSize: 1, TimeFill: 1, Cleanup: true})
+			r := s.metering
+
+			// The scan reads multihash keys in byte order. The first key holds
+			// only another provider's value, so the first batch does not look
+			// up the context under test
+			all := random.Multihashes(5)
+			slices.SortFunc(all, func(a, b multihash.Multihash) int { return bytes.Compare(a, b) })
+			first, mhs := all[0], all[1:]
+
+			peers := random.Peers(2)
+			pid := peers[0]
+			ctxID := []byte("ctx")
+			putValue(t, s, peers[1], []byte("other"), []byte("other"), first)
+			putValue(t, s, pid, ctxID, []byte("old"), mhs...)
+
+			progress, err := r.createMultihashScanProgress()
+			require.NoError(t, err)
+			counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+			providerIDByHash := make(map[string]peer.ID)
+			cleaned := func() float64 { return meteringSum(t, "core/metering/cleanup_slots") }
+			cleanedBefore := cleaned()
+			runBatch := func() bool {
+				done, err := r.runMultihashScanBatch(t.Context(), progress, counters, providerIDByHash)
+				require.NoError(t, err)
+				return done
+			}
+
+			require.False(t, runBatch())
+			require.Zero(t, cleaned()-cleanedBefore)
+
+			// The context is removed while the scan is part way through
+			require.NoError(t, tc.remove(s, pid, ctxID))
+
+			// The next batch removes one dead slot and caches its value record
+			// as gone
+			require.False(t, runBatch())
+			require.EqualValues(t, 1, cleaned()-cleanedBefore)
+
+			want := indexer.Value{ProviderID: pid, ContextID: ctxID, MetadataBytes: []byte("new")}
+			require.NoError(t, s.Put(want, mhs...))
+
+			for i := 0; !runBatch(); i++ {
+				// Each batch reads one key, so the rest of the scan needs at most
+				// one batch per key
+				require.Less(t, i, len(all), "scan did not finish after %d batches", i+1)
+			}
+
+			require.NoError(t, r.finishMultihashScan(progress, counters))
+			// Each multihash had one dead slot; the new slots are kept
+			require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+
+			requireWant := func(s indexer.Interface) {
+				t.Helper()
+				for _, mh := range mhs {
+					values, found, err := s.Get(mh)
+					require.NoError(t, err)
+					require.True(t, found)
+					require.Equal(t, []indexer.Value{want}, values)
+				}
+			}
+			requireWant(s)
+
+			// A second cleanup scan finds only live slots
+			require.NoError(t, r.runMultihashScan(t.Context(), nil))
+			report, err := s.MeteringAllStats(t.Context(), nil)
+			require.NoError(t, err)
+			require.EqualValues(t, len(all), report.Totals.Active.Entries)
+			require.EqualValues(t, len(all), report.Totals.Active.Slots)
+			require.Zero(t, report.Totals.Deleted.Entries)
+			require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+
+			require.NoError(t, s.db.Compact(t.Context(), []byte{0}, []byte{0xff}, false))
+			requireWant(s)
+			require.NoError(t, s.Close())
+
+			reopened, err := New(dir, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = reopened.Close() })
+			requireWant(reopened)
+		})
+	}
+}
+
+// A cleanup batch reads a slot, finds its value record gone, and queues a
+// merge-delete. The provider advertises the same context again before that
+// batch commits. The merge-delete is newer than the re-add, so it must name
+// only the removed value key and leave the new slot in place.
+func TestMeteringCleanupPutBeforeBatchCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remove func(s indexer.Interface, pid peer.ID, ctxID []byte) error
+	}{
+		{"RemoveProviderContext", func(s indexer.Interface, pid peer.ID, ctxID []byte) error {
+			return s.RemoveProviderContext(pid, ctxID)
+		}},
+		{"RemoveProvider", func(s indexer.Interface, pid peer.ID, _ []byte) error {
+			return s.RemoveProvider(context.Background(), pid)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registerMeteringViews(t)
+			s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 1, TimeFill: 1, Cleanup: true})
+			r := s.metering
+
+			pid := random.Peers(1)[0]
+			ctxID := []byte("ctx")
+			mh := random.Multihashes(1)[0]
+			putValue(t, s, pid, ctxID, []byte("old"), mh)
+
+			keygen := s.p.leaseBlake3Keyer()
+			mhk, err := keygen.multihashKey(mh)
+			require.NoError(t, err)
+			key := slices.Clone(mhk.buf)
+			require.NoError(t, mhk.Close())
+			require.NoError(t, keygen.Close())
+
+			// The scan iterator reads the slot of the old advertisement
+			raw, closer, err := s.db.Get(key)
+			require.NoError(t, err)
+			value := slices.Clone(raw)
+			require.NoError(t, closer.Close())
+
+			require.NoError(t, tc.remove(s, pid, ctxID))
+
+			// The scan looks up the value record, finds it gone, and queues
+			// the merge-delete in its uncommitted batch
+			b := s.db.NewBatch()
+			t.Cleanup(func() { require.NoError(t, b.Close()) })
+			counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+			var cleaned cleanupTally
+			require.NoError(t, r.countMultihashScanRecord(
+				counters, key, value,
+				make(map[string]struct{}),
+				make(map[string]peer.ID),
+				b, &cleaned,
+			))
+			require.EqualValues(t, 1, cleaned.slots)
+
+			// The provider advertises the context again, then the scan
+			// batch commits
+			want := indexer.Value{ProviderID: pid, ContextID: ctxID, MetadataBytes: []byte("new")}
+			require.NoError(t, s.Put(want, mh))
+			require.NoError(t, b.Commit(pebble.Sync))
+
+			requireWant := func() {
+				t.Helper()
+				values, found, err := s.Get(mh)
+				require.NoError(t, err)
+				require.True(t, found)
+				require.Equal(t, []indexer.Value{want}, values)
+			}
+			requireWant()
+			require.NoError(t, s.db.Compact(t.Context(), []byte{0}, []byte{0xff}, false))
+			requireWant()
+		})
+	}
+}
+
+func TestMeteringCleanupRemovesDeadProvider(t *testing.T) {
+	registerMeteringViews(t)
+	s, pm := openMetered(t, MeteringConfig{BatchSize: 50, Interval: 0, TimeFill: 1, Cleanup: true})
+	p1 := random.Peers(1)[0]
+	mhs := random.Multihashes(2)
+	putValue(t, s, p1, []byte("ctx"), []byte("meta"), mhs...)
+	require.NoError(t, s.RemoveProvider(context.Background(), p1))
+
+	require.NoError(t, pm.MeteringTriggerScan(context.Background()))
+	report := waitScanDone(t, pm, 5*time.Second)
+
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Empty(t, report.Providers)
+	require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_slots"))
+	require.EqualValues(t, 2*marshalledValueKeyLength, meteringSum(t, "core/metering/cleanup_value_bytes"))
+	// Removed slots count as cleaned. Each multihash counts as cleaned when the
+	// merge deletes its key, and as deleted when the emptied key stays.
+	require.Zero(t, report.Totals.Deleted.Slots)
+	require.Zero(t, report.Totals.Deleted.ValueBytes)
+	if deleteEmptyKeys {
+		require.Zero(t, report.Totals.Deleted.Entries)
+		require.EqualValues(t, 2, meteringSum(t, "core/metering/cleanup_multihashes"))
+		require.Greater(t, meteringSum(t, "core/metering/cleanup_key_bytes"), float64(0))
+	} else {
+		require.EqualValues(t, 2, report.Totals.Deleted.Entries)
+		require.Greater(t, report.Totals.Deleted.KeyBytes, uint64(0))
+		require.Zero(t, meteringSum(t, "core/metering/cleanup_multihashes"))
+		require.Zero(t, meteringSum(t, "core/metering/cleanup_key_bytes"))
+	}
+	for _, mh := range mhs {
+		_, found, err := s.Get(mh)
+		require.NoError(t, err)
+		require.False(t, found)
+	}
+
+	// The merge result is an empty value. The next scan counts those keys as
+	// deleted multihashes.
+	first, err := pm.MeteringScanStatus(context.Background(), nil)
+	require.NoError(t, err)
+	waitPastScanID(t, first.ScanID)
+	triggerWhenIdle(t, pm)
+	deadline := time.Now().Add(5 * time.Second)
+	var second *indexer.AllStatsReport
+	for time.Now().Before(deadline) {
+		st, err := pm.MeteringScanStatus(context.Background(), nil)
+		require.NoError(t, err)
+		require.Empty(t, st.Error)
+		if st.ScanID != first.ScanID && st.State == indexer.ScanStateDone {
+			second, err = pm.MeteringAllStats(context.Background(), nil)
+			require.NoError(t, err)
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.NotNil(t, second)
+	require.EqualValues(t, 2, second.Totals.Deleted.Entries)
+	require.Zero(t, second.Totals.Deleted.Slots)
+	require.Zero(t, second.Totals.Active.Entries)
+	require.Greater(t, second.Totals.Deleted.KeyBytes, uint64(0))
+	// The scan that emptied the keys already counted them as deleted
+	require.Equal(t, report.Totals, second.Totals)
+}
+
+// The deleted gauges keep the latest completed scan while the next scan
+// runs. The scan_deleted gauges show what the running scan has counted so far
+// and read zero once it finishes.
+func TestMeteringDeletedGauges(t *testing.T) {
+	registerMeteringViews(t)
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 1, TimeFill: 1})
+	r := s.metering
+	pid := random.Peers(1)[0]
+	putValue(t, s, pid, []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	require.NoError(t, s.RemoveProvider(context.Background(), pid))
+
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_deleted"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_deleted"))
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	done, err := r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.False(t, done)
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_deleted"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_deleted"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_deleted_slots"))
+}
+
+// A store reopened in the middle of a scan publishes the gauges of the latest
+// completed scan before it resumes the unfinished one.
+func TestMeteringResumePublishesCompletedScan(t *testing.T) {
+	registerMeteringViews(t)
+	dir := t.TempDir()
+	s1 := openStoppedMetered(t, dir, MeteringConfig{BatchSize: 1, TimeFill: 1})
+	r := s1.metering
+	pid := random.Peers(1)[0]
+	putValue(t, s1, pid, []byte("ctxA"), []byte("meta"), random.Multihashes(2)...)
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+
+	putValue(t, s1, pid, []byte("ctxB"), []byte("meta"), random.Multihashes(3)...)
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.NoError(t, s1.Close())
+
+	// A new process starts without gauge values
+	registerMeteringViews(t)
+	totalMultihashes := func() (float64, bool) {
+		rows, err := view.RetrieveData("core/metering/total_multihashes")
+		require.NoError(t, err)
+		if len(rows) == 0 {
+			return 0, false
+		}
+		return rows[0].Data.(*view.LastValueData).Value, true
+	}
+	_, ok := totalMultihashes()
+	require.False(t, ok)
+
+	// The resumed scan pauses for about a second after each batch, so it
+	// cannot finish and republish the gauges before the check below
+	s2, err := New(dir, nil, WithMetering(MeteringConfig{BatchSize: 1, Interval: 0, TimeFill: 0.001}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s2.Close() })
+	require.Eventually(t, func() bool {
+		v, ok := totalMultihashes()
+		return ok && v == 2
+	}, 500*time.Millisecond, time.Millisecond)
+	st, err := s2.(indexer.StatsMeter).MeteringScanStatus(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, indexer.ScanStateInProgress, st.State)
+}
+
+// Active and undecodable entries are exported for the latest completed scan,
+// and as counted so far while a scan runs.
+func TestMeteringActiveAndInvalidGauges(t *testing.T) {
+	registerMeteringViews(t)
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	r := s.metering
+	putValue(t, s, random.Peers(1)[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	invalidKey := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
+	invalidValue := []byte{1, 2, 3}
+	require.NoError(t, s.db.Set(invalidKey, invalidValue, pebble.Sync))
+
+	require.NoError(t, r.runMultihashScan(t.Context(), nil))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_multihashes"))
+	require.Positive(t, meteringLastValue(t, "core/metering/active_key_bytes"))
+	require.EqualValues(t, 2*marshalledValueKeyLength, meteringLastValue(t, "core/metering/active_value_bytes"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/total_invalid"))
+	require.EqualValues(t, len(invalidKey)+len(invalidValue), meteringLastValue(t, "core/metering/invalid_bytes"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_active"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_invalid"))
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/scan_active"))
+	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/scan_active_slots"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_invalid"))
+}
+
+// A value whose packed keys all have an unexpected prefix decodes to no value
+// keys. The scan counts it as deleted, with its key and value bytes.
+func TestMeteringUnknownPrefixValueCountedDeleted(t *testing.T) {
+	st := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	keygen := st.p.leaseBlake3Keyer()
+	vk, err := keygen.valueKey(value1, false)
+	require.NoError(t, err)
+	unknown := bytes.Clone(vk.buf)
+	unknown[0] = 0xee
+	require.NoError(t, vk.Close())
+	require.NoError(t, keygen.Close())
+	value, closer, err := st.vcodec.marshalValueKeys([][]byte{unknown})
+	require.NoError(t, err)
+	key := append([]byte{byte(multihashKeyPrefix)}, random.Multihashes(1)[0]...)
+	require.NoError(t, st.db.Set(key, value, pebble.Sync))
+	// Set copies the value, so its pooled buffer can go back
+	require.NoError(t, closer.Close())
+
+	require.NoError(t, st.metering.runMultihashScan(t.Context(), nil))
+	report, err := st.MeteringAllStats(t.Context(), nil)
+	require.NoError(t, err)
+	require.Zero(t, report.Totals.Active.Entries)
+	require.Zero(t, report.Totals.Invalid.Entries)
+	require.Equal(t, indexer.EntryMeters{
+		Entries:    1,
+		KeyBytes:   uint64(len(key)),
+		ValueBytes: marshalledValueKeyLength,
+	}, report.Totals.Deleted)
+}
+
+// With ExportProviderMetrics, each provider of the latest completed scan has
+// a multihash gauge tagged with its base58 peer ID.
+func TestMeteringProviderGauge(t *testing.T) {
+	registerMeteringViews(t)
+	view.Unregister(metrics.MeteringProviderViews...)
+	require.NoError(t, view.Register(metrics.MeteringProviderViews...))
+	t.Cleanup(func() { view.Unregister(metrics.MeteringProviderViews...) })
+
+	s := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1, ExportProviderMetrics: true})
+	peers := random.Peers(2)
+	putValue(t, s, peers[0], []byte("ctx"), []byte("meta"), random.Multihashes(2)...)
+	putValue(t, s, peers[1], []byte("ctx"), []byte("meta"), random.Multihashes(3)...)
+	require.NoError(t, s.metering.runMultihashScan(t.Context(), nil))
+
+	rows, err := view.RetrieveData("core/metering/provider_multihashes")
+	require.NoError(t, err)
+	got := make(map[string]float64, len(rows))
+	for _, row := range rows {
+		require.Len(t, row.Tags, 1)
+		got[row.Tags[0].Value] = row.Data.(*view.LastValueData).Value
+	}
+	require.Equal(t, map[string]float64{peers[0].String(): 2, peers[1].String(): 3}, got)
+}
+
 func TestMeteringResume(t *testing.T) {
 	dir := t.TempDir()
 	cfg := MeteringConfig{BatchSize: 2, Interval: 0, TimeFill: 1}
@@ -217,6 +736,81 @@ func TestMeteringResume(t *testing.T) {
 	report := waitScanDone(t, pm2, 10*time.Second)
 	require.EqualValues(t, 20, report.Totals.Active.Entries)
 	require.EqualValues(t, 20, report.Totals.Active.Slots)
+}
+
+// cancelAfterCtx reports cancellation once Err has returned nil n times.
+// context.Cause falls back to Err for this type, so a scan batch, which checks
+// before each key, stops after reading n keys.
+type cancelAfterCtx struct {
+	context.Context
+	n int
+}
+
+func (c *cancelAfterCtx) Err() error {
+	if c.n == 0 {
+		return context.Canceled
+	}
+	c.n--
+	return nil
+}
+
+// A cleanup scan stops part way through a batch, after it has added
+// merge-deletes and counted keys that are never committed. On reopen the scan
+// resumes from the last committed cursor and removes every dead slot exactly
+// once.
+func TestMeteringCleanupResumeAfterPartialBatch(t *testing.T) {
+	registerMeteringViews(t)
+	dir := t.TempDir()
+	cfg := MeteringConfig{BatchSize: 4, Interval: 0, TimeFill: 1, Cleanup: true}
+	s1 := openStoppedMetered(t, dir, cfg)
+	r := s1.metering
+
+	pid := random.Peers(1)[0]
+	mhs := random.Multihashes(8)
+	live := indexer.Value{ProviderID: pid, ContextID: []byte("ctxA"), MetadataBytes: []byte("metaA")}
+	require.NoError(t, s1.Put(live, mhs...))
+	putValue(t, s1, pid, []byte("ctxB"), []byte("metaB"), mhs...)
+	require.NoError(t, s1.RemoveProviderContext(pid, []byte("ctxB")))
+
+	cleaned := func() float64 { return meteringSum(t, "core/metering/cleanup_slots") }
+	cleanedBefore := cleaned()
+
+	progress, err := r.createMultihashScanProgress()
+	require.NoError(t, err)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	providerIDByHash := make(map[string]peer.ID)
+
+	done, err := r.runMultihashScanBatch(t.Context(), progress, counters, providerIDByHash)
+	require.NoError(t, err)
+	require.False(t, done)
+	require.EqualValues(t, cfg.BatchSize, cleaned()-cleanedBefore)
+
+	// The batch reads two keys and stops before it commits
+	ctx := &cancelAfterCtx{Context: t.Context(), n: 2}
+	_, err = r.runMultihashScanBatch(ctx, progress, counters, providerIDByHash)
+	require.ErrorIs(t, err, context.Canceled)
+	require.EqualValues(t, cfg.BatchSize, cleaned()-cleanedBefore)
+	require.NoError(t, s1.Close())
+
+	// The runner resumes the stored scan on open
+	s2, err := New(dir, nil, WithMetering(cfg))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s2.Close() })
+	report := waitScanDone(t, s2.(indexer.StatsMeter), 5*time.Second)
+
+	require.EqualValues(t, len(mhs), report.Totals.Active.Entries)
+	require.EqualValues(t, len(mhs), report.Totals.Active.Slots)
+	require.Zero(t, report.Totals.Deleted.Entries)
+	require.Len(t, report.Providers, 1)
+	require.EqualValues(t, len(mhs), report.Providers[0].Multihashes)
+	require.Zero(t, report.Providers[0].DeletedContexts)
+	require.EqualValues(t, len(mhs), cleaned()-cleanedBefore)
+	for _, mh := range mhs {
+		values, found, err := s2.Get(mh)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, []indexer.Value{live}, values)
+	}
 }
 
 func TestMeteringTriggerWhileInProgress(t *testing.T) {
@@ -332,20 +926,9 @@ func TestMeteringRetentionOnlyCurrent(t *testing.T) {
 	require.NotNil(t, cur1)
 	firstScanID := cur1.ScanID
 
-	// Second scan after a distinct microsecond. The runner may still be
-	// leaving the previous scan, so wait out ErrScanInProgress.
-	time.Sleep(2 * time.Millisecond)
+	waitPastScanID(t, firstScanID)
+	triggerWhenIdle(t, pm)
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := pm.MeteringTriggerScan(context.Background())
-		if err == nil {
-			break
-		}
-		require.ErrorIs(t, err, indexer.ErrScanInProgress)
-		require.False(t, time.Now().After(deadline), "timed out waiting to trigger: %v", err)
-		time.Sleep(5 * time.Millisecond)
-	}
-	deadline = time.Now().Add(5 * time.Second)
 	var r2 *indexer.AllStatsReport
 	for time.Now().Before(deadline) {
 		st, err := pm.MeteringScanStatus(context.Background(), nil)
