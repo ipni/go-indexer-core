@@ -3,6 +3,7 @@ package pebble
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"slices"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/ipni/go-indexer-core/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
+	"github.com/multiformats/go-varint"
 	"github.com/stretchr/testify/require"
 	"go.opencensus.io/stats/view"
 )
@@ -342,7 +344,7 @@ func TestMeteringCleanupReAddMidScan(t *testing.T) {
 			putValue(t, s, peers[1], []byte("other"), []byte("other"), first)
 			putValue(t, s, pid, ctxID, []byte("old"), mhs...)
 
-			progress, err := r.createMultihashScanProgress()
+			progress, err := r.createMultihashScanProgress(t.Context())
 			require.NoError(t, err)
 			counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
 			providerIDByHash := make(map[string]peer.ID)
@@ -563,7 +565,7 @@ func TestMeteringDeletedGauges(t *testing.T) {
 	require.EqualValues(t, 2, meteringLastValue(t, "core/metering/total_deleted"))
 	require.Zero(t, meteringLastValue(t, "core/metering/scan_deleted"))
 
-	progress, err := r.createMultihashScanProgress()
+	progress, err := r.createMultihashScanProgress(t.Context())
 	require.NoError(t, err)
 	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
 	done, err := r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
@@ -586,7 +588,7 @@ func TestMeteringResumePublishesCompletedScan(t *testing.T) {
 	require.NoError(t, r.runMultihashScan(t.Context(), nil))
 
 	putValue(t, s1, pid, []byte("ctxB"), []byte("meta"), random.Multihashes(3)...)
-	progress, err := r.createMultihashScanProgress()
+	progress, err := r.createMultihashScanProgress(t.Context())
 	require.NoError(t, err)
 	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
 	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
@@ -640,7 +642,7 @@ func TestMeteringActiveAndInvalidGauges(t *testing.T) {
 	require.Zero(t, meteringLastValue(t, "core/metering/scan_active"))
 	require.Zero(t, meteringLastValue(t, "core/metering/scan_invalid"))
 
-	progress, err := r.createMultihashScanProgress()
+	progress, err := r.createMultihashScanProgress(t.Context())
 	require.NoError(t, err)
 	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
 	_, err = r.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
@@ -775,7 +777,7 @@ func TestMeteringCleanupResumeAfterPartialBatch(t *testing.T) {
 	cleaned := func() float64 { return meteringSum(t, "core/metering/cleanup_slots") }
 	cleanedBefore := cleaned()
 
-	progress, err := r.createMultihashScanProgress()
+	progress, err := r.createMultihashScanProgress(t.Context())
 	require.NoError(t, err)
 	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
 	providerIDByHash := make(map[string]peer.ID)
@@ -1028,8 +1030,14 @@ func TestMeteringKeysRoundTrip(t *testing.T) {
 		KeysRead:  99,
 		BytesRead: 1000,
 		Cursor:    []byte{1, 2},
-		DoneAt:    now,
-		Error:     "scan failed",
+		Ranges: []multihashScanRange{{
+			Start:   []byte{1, 0x12, 32},
+			End:     []byte{1, 0x12, 33},
+			Weight:  0.75,
+			Uniform: true,
+		}},
+		DoneAt: now,
+		Error:  "scan failed",
 	}
 	raw, err := encodeMultihashScanProgress(&p)
 	require.NoError(t, err)
@@ -1040,6 +1048,7 @@ func TestMeteringKeysRoundTrip(t *testing.T) {
 	require.Equal(t, p.BytesRead, got.BytesRead)
 	require.True(t, got.DoneAt.Equal(p.DoneAt))
 	require.Equal(t, p.Cursor, got.Cursor)
+	require.Equal(t, p.Ranges, got.Ranges)
 	require.Equal(t, p.Error, got.Error)
 	require.True(t, got.StartedAt.Equal(p.StartedAt))
 
@@ -1174,24 +1183,433 @@ func TestMeteringFailedScanNotResumed(t *testing.T) {
 	require.EqualValues(t, 5, report.Totals.Active.Entries)
 }
 
-func TestSha256ScanEstimate(t *testing.T) {
-	key := make([]byte, 1+2+32)
-	key[0] = byte(multihashKeyPrefix)
-	key[1] = byte(multihash.SHA2_256)
-	key[2] = 32
-	key[3] = 0x80
-	frac := sha256MultihashKeyFraction(key)
-	require.InDelta(t, 0.5, frac, 0.01)
-	require.EqualValues(t, 0, sha256MultihashKeyFraction([]byte{byte(multihashKeyPrefix)}))
-	after := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 33}
-	require.EqualValues(t, 1, sha256MultihashKeyFraction(after))
-	now := time.Now()
-	percent, finish := scanEstimate(now.Add(-time.Hour), key, now)
-	require.InDelta(t, 50, percent, 1)
+func TestScanProgressFraction(t *testing.T) {
+	shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+	blakeHeader := []byte{
+		byte(multihashKeyPrefix), 0xa0, 0xe4, 0x02, 32, // blake2b-256
+	}
+	ranges := []multihashScanRange{
+		{Start: shaHeader, End: incrementBytes(shaHeader), Weight: 400, Uniform: true},
+		{Start: blakeHeader, End: incrementBytes(blakeHeader), Weight: 600, Uniform: true},
+	}
+	midBlake := append(slices.Clone(blakeHeader), 0x80, 0, 0, 0)
+	progress := &multihashScanProgressRecord{
+		StartedAt: time.Now().Add(-time.Hour),
+		Ranges:    ranges,
+		Cursor:    midBlake,
+	}
+	require.InDelta(t, 0.4+0.6*0.5, scanProgressFraction(progress), 0.01)
+
+	percent, finish := scanEstimate(progress, time.Now())
+	require.InDelta(t, 70, percent, 1)
 	require.NotNil(t, finish)
-	require.False(t, finish.Before(now.Add(50*time.Minute)))
-	require.False(t, finish.After(now.Add(70*time.Minute)))
-	percent, finish = scanEstimate(now, []byte{0x01, 0x00}, now)
+
+	progress.Cursor = nil
+	require.EqualValues(t, 0, scanProgressFraction(progress))
+	percent, finish = scanEstimate(progress, time.Now())
 	require.EqualValues(t, 0, percent)
 	require.Nil(t, finish)
+
+	progress.Cursor = incrementBytes(blakeHeader)
+	require.EqualValues(t, 1, scanProgressFraction(progress))
+}
+
+func TestSampleMultihashRangesWeights(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+
+	// 1024 sha2-256 keys whose last digest prefix is ~0.5 → weight ≈ 2048.
+	shaMHs := make([]multihash.Multihash, rangeSampleSize)
+	for i := range shaMHs {
+		digest := make([]byte, 32)
+		binary.BigEndian.PutUint32(digest, uint32(float64(i)/float64(rangeSampleSize-1)*0x80000000))
+		mh, err := multihash.Encode(digest, multihash.SHA2_256)
+		require.NoError(t, err)
+		shaMHs[i] = mh
+	}
+	putValue(t, store, p1, []byte("sha"), []byte("meta"), shaMHs...)
+
+	// Few blake2b-256 keys: prefix ends before the sample size → weight = count.
+	blakeMHs := make([]multihash.Multihash, 100)
+	for i := range blakeMHs {
+		digest := make([]byte, 32)
+		binary.BigEndian.PutUint32(digest, uint32(i)<<24)
+		mh, err := multihash.Encode(digest, multihash.BLAKE2B_MIN+31) // blake2b-256
+		require.NoError(t, err)
+		blakeMHs[i] = mh
+	}
+	putValue(t, store, p1, []byte("blake"), []byte("meta"), blakeMHs...)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 2)
+
+	// sha2-256 sorts before blake2b-256.
+	require.InEpsilon(t, 2048, ranges[0].Weight, 0.01)
+	require.EqualValues(t, 100, ranges[1].Weight)
+
+	mid := append(slices.Clone(ranges[1].Start), 0x80, 0, 0, 0)
+	progress := &multihashScanProgressRecord{Ranges: ranges, Cursor: mid}
+	require.InDelta(t, (2048+100*0.5)/(2048+100.0), scanProgressFraction(progress), 0.01)
+}
+
+func TestSampleMultihashRangesShortPrefix(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+	mhs := make([]multihash.Multihash, 10)
+	for i := range mhs {
+		digest := make([]byte, 32)
+		digest[0] = byte(i)
+		mh, err := multihash.Encode(digest, multihash.SHA2_256)
+		require.NoError(t, err)
+		mhs[i] = mh
+	}
+	putValue(t, store, p1, []byte("ctx"), []byte("meta"), mhs...)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 1)
+	require.EqualValues(t, 10, ranges[0].Weight)
+}
+
+func TestSampleMultihashRangesShortDigestAndIdentity(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+
+	// Identity is not uniform: its weight is capped at the sample size however
+	// many keys it has.
+	idMHs := make([]multihash.Multihash, 2*rangeSampleSize)
+	for i := range idMHs {
+		digest := make([]byte, 8)
+		binary.BigEndian.PutUint64(digest, uint64(i))
+		mh, err := multihash.Encode(digest, multihash.IDENTITY)
+		require.NoError(t, err)
+		idMHs[i] = mh
+	}
+	putValue(t, store, p1, []byte("id"), []byte("meta"), idMHs...)
+
+	// sha2-256 with a 16-byte digest is still uniform. The last sampled key
+	// sits at 1/16 of the digest space, so the weight is 1024*16.
+	shaMHs := make([]multihash.Multihash, rangeSampleSize)
+	for i := range shaMHs {
+		digest := make([]byte, 16)
+		binary.BigEndian.PutUint32(digest, uint32(float64(i)/float64(rangeSampleSize-1)*0x10000000))
+		mh, err := multihash.Encode(digest, multihash.SHA2_256)
+		require.NoError(t, err)
+		shaMHs[i] = mh
+	}
+	putValue(t, store, p1, []byte("sha"), []byte("meta"), shaMHs...)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 2)
+
+	// Identity (code 0) sorts before sha2-256.
+	require.EqualValues(t, rangeSampleSize, ranges[0].Weight)
+	require.InEpsilon(t, rangeSampleSize*16, ranges[1].Weight, 0.01)
+
+	// Inside the identity range the cursor reports no progress until it leaves.
+	progress := &multihashScanProgressRecord{Ranges: ranges, Cursor: append([]byte{byte(multihashKeyPrefix)}, idMHs[len(idMHs)-1]...)}
+	require.EqualValues(t, 0, scanProgressFraction(progress))
+}
+
+func TestDigestPrefixFractionShortDigest(t *testing.T) {
+	require.InDelta(t, 0.5, digestPrefixFraction([]byte{0x80}), 1e-9)
+	require.InDelta(t, 0.75, digestPrefixFraction([]byte{0xc0, 0x00}), 1e-9)
+	require.EqualValues(t, 0, digestPrefixFraction(nil))
+
+	header := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 2}
+	rng := multihashScanRange{Start: header, End: incrementBytes(header), Uniform: true}
+	require.InDelta(t, 0.5, rangeContainsFraction(append(slices.Clone(header), 0x80), rng), 1e-9)
+	rng.Uniform = false
+	require.EqualValues(t, 0, rangeContainsFraction(append(slices.Clone(header), 0x80), rng))
+}
+
+func TestRangesSampledOnlyForNewScan(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+	putValue(t, store, p1, []byte("ctx"), []byte("meta"), random.Multihashes(5)...)
+
+	progress, err := store.metering.createMultihashScanProgress(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, progress.Ranges)
+
+	loaded, err := store.metering.loadMultihashScanProgress(store.db)
+	require.NoError(t, err)
+	require.Equal(t, progress.Ranges, loaded.Ranges)
+
+	require.NoError(t, store.metering.runMultihashScan(t.Context(), loaded))
+	done, err := store.metering.loadMultihashScanProgress(store.db)
+	require.NoError(t, err)
+	require.False(t, done.DoneAt.IsZero())
+	require.Equal(t, progress.Ranges, done.Ranges)
+
+	// A resumed record without ranges is not probed: its estimate stays 0.
+	progress, err = store.metering.createMultihashScanProgress(t.Context())
+	require.NoError(t, err)
+	progress.Ranges = nil
+	require.NoError(t, store.metering.runMultihashScan(t.Context(), progress))
+	done, err = store.metering.loadMultihashScanProgress(store.db)
+	require.NoError(t, err)
+	require.False(t, done.DoneAt.IsZero())
+	require.Empty(t, done.Ranges)
+}
+
+func TestSampleMultihashRangesTail(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	p1 := random.Peers(1)[0]
+
+	// More distinct headers than the cap. Unknown codes are not uniform, so
+	// each recorded range weighs its one key.
+	mhs := make([]multihash.Multihash, rangeSpanCap+10)
+	for i := range mhs {
+		mh, err := multihash.Encode([]byte{1}, uint64(0x300000+i))
+		require.NoError(t, err)
+		mhs[i] = mh
+	}
+	putValue(t, store, p1, []byte("ctx"), []byte("meta"), mhs...)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, rangeSpanCap)
+	for _, rng := range ranges[:rangeSpanCap-1] {
+		require.EqualValues(t, 1, rng.Weight)
+	}
+	tail := ranges[rangeSpanCap-1]
+	require.EqualValues(t, rangeTailWeight, tail.Weight)
+	require.Equal(t, multihashScanUpper, tail.End)
+}
+
+func TestSampleMultihashRangesSampleSizeEdges(t *testing.T) {
+	// Key i sits at digest position i/(2*rangeSampleSize), so a full sample
+	// ends on key rangeSampleSize-1 at a known position.
+	const step = 1 << 32 / (2 * rangeSampleSize)
+	fullWeight := float64(rangeSampleSize) / (float64(rangeSampleSize-1) / (2 * rangeSampleSize))
+
+	for _, tc := range []struct {
+		name   string
+		count  int
+		weight float64
+	}{
+		{"single", 1, 1},
+		{"one less", rangeSampleSize - 1, rangeSampleSize - 1},
+		{"exact", rangeSampleSize, fullWeight},
+		{"one more", rangeSampleSize + 1, fullWeight},
+	} {
+		for _, followed := range []bool{false, true} {
+			name := tc.name
+			if followed {
+				name += " followed by another header"
+			}
+			t.Run(name, func(t *testing.T) {
+				store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+				p1 := random.Peers(1)[0]
+
+				shaMHs := make([]multihash.Multihash, tc.count)
+				for i := range shaMHs {
+					digest := make([]byte, 32)
+					binary.BigEndian.PutUint32(digest, uint32(i*step))
+					mh, err := multihash.Encode(digest, multihash.SHA2_256)
+					require.NoError(t, err)
+					shaMHs[i] = mh
+				}
+				putValue(t, store, p1, []byte("sha"), []byte("meta"), shaMHs...)
+
+				// A following header checks that sampling does not run into it.
+				// Without one, the sample ends at the end of the key space.
+				if followed {
+					blakeMHs := make([]multihash.Multihash, 3)
+					for i := range blakeMHs {
+						digest := make([]byte, 32)
+						digest[0] = byte(i)
+						mh, err := multihash.Encode(digest, multihash.BLAKE2B_MIN+31)
+						require.NoError(t, err)
+						blakeMHs[i] = mh
+					}
+					putValue(t, store, p1, []byte("blake"), []byte("meta"), blakeMHs...)
+				}
+
+				ranges, err := store.metering.sampleMultihashRanges(t.Context())
+				require.NoError(t, err)
+				if followed {
+					require.Len(t, ranges, 2)
+				} else {
+					require.Len(t, ranges, 1)
+				}
+
+				shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+				require.Equal(t, shaHeader, ranges[0].Start)
+				require.Equal(t, incrementBytes(shaHeader), ranges[0].End)
+				require.InDelta(t, tc.weight, ranges[0].Weight, 1e-9)
+				require.True(t, ranges[0].Uniform)
+
+				if followed {
+					blakeHeader := []byte{byte(multihashKeyPrefix), 0xa0, 0xe4, 0x02, 32}
+					require.Equal(t, blakeHeader, ranges[1].Start)
+					require.EqualValues(t, 3, ranges[1].Weight)
+				}
+			})
+		}
+	}
+}
+
+// putShaAtSteps stores n sha2-256 multihashes, key i at digest position
+// i/(2*rangeSampleSize). A full sample then weighs sampleWeightAtSteps.
+func putShaAtSteps(t *testing.T, s *store, n int) {
+	const step = 1 << 32 / (2 * rangeSampleSize)
+	mhs := make([]multihash.Multihash, n)
+	for i := range mhs {
+		digest := make([]byte, 32)
+		binary.BigEndian.PutUint32(digest, uint32(i*step))
+		mh, err := multihash.Encode(digest, multihash.SHA2_256)
+		require.NoError(t, err)
+		mhs[i] = mh
+	}
+	putValue(t, s, random.Peers(1)[0], []byte("sha"), []byte("meta"), mhs...)
+}
+
+const sampleWeightAtSteps = float64(rangeSampleSize) / (float64(rangeSampleSize-1) / (2 * rangeSampleSize))
+
+func TestSampleMultihashRangesUndecodableKey(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+
+	// A key holding only the sha2-256 code byte does not decode, and every
+	// sha2-256 key extends it.
+	bad := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256)}
+	require.NoError(t, store.db.Set(bad, []byte{0}, pebble.Sync))
+	putShaAtSteps(t, store, 2000)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 2)
+
+	require.Equal(t, bad, ranges[0].Start)
+	require.Equal(t, append(bad, 0), ranges[0].End)
+	require.EqualValues(t, 1, ranges[0].Weight)
+	require.False(t, ranges[0].Uniform)
+
+	shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+	require.Equal(t, shaHeader, ranges[1].Start)
+	require.Equal(t, incrementBytes(shaHeader), ranges[1].End)
+	require.InDelta(t, sampleWeightAtSteps, ranges[1].Weight, 1e-9)
+	require.True(t, ranges[1].Uniform)
+}
+
+func TestSampleMultihashRangesUniformTail(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+
+	// sha1 headers with lengths 1 to rangeSpanCap-1 sort before sha2-256 and
+	// fill every slot but the last: sha1 is uniform, so each length is its
+	// own range. The header decodes without a digest.
+	for n := 1; n < rangeSpanCap; n++ {
+		key := append([]byte{byte(multihashKeyPrefix), byte(multihash.SHA1)}, varint.ToUvarint(uint64(n))...)
+		require.NoError(t, store.db.Set(key, []byte{0}, nil))
+	}
+	putShaAtSteps(t, store, 2000)
+	blake := []byte{byte(multihashKeyPrefix), 0xa0, 0xe4, 0x02, 32, 0x10}
+	require.NoError(t, store.db.Set(blake, []byte{0}, pebble.Sync))
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, rangeSpanCap)
+
+	// The last range starts on the sha2-256 header but also holds blake2b.
+	tail := ranges[rangeSpanCap-1]
+	shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+	require.Equal(t, shaHeader, tail.Start)
+	require.Equal(t, multihashScanUpper, tail.End)
+	require.False(t, tail.Uniform)
+
+	// Moving from late in sha2-256 to blake2b inside the tail never lowers
+	// the estimate.
+	progress := &multihashScanProgressRecord{Ranges: ranges}
+	progress.Cursor = append(slices.Clone(shaHeader), 0xf0, 0, 0, 0)
+	inSha := scanProgressFraction(progress)
+	progress.Cursor = blake
+	require.GreaterOrEqual(t, scanProgressFraction(progress), inSha)
+}
+
+func TestSampleMultihashRangesCancelled(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	putShaAtSteps(t, store, 10)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(indexer.ErrScanCancelled)
+	_, err := store.metering.sampleMultihashRanges(ctx)
+	require.ErrorIs(t, err, indexer.ErrScanCancelled)
+
+	// A scan cancelled while sampling writes no progress record.
+	_, err = store.metering.createMultihashScanProgress(ctx)
+	require.ErrorIs(t, err, indexer.ErrScanCancelled)
+	progress, err := store.metering.loadMultihashScanProgress(store.db)
+	require.NoError(t, err)
+	require.Nil(t, progress)
+}
+
+func TestSampleMultihashRangesNonUniformCodeOneRange(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+
+	// Identity keys with 300 digest lengths, plus one with no length at all,
+	// share one range that counts every key.
+	identity := []byte{byte(multihashKeyPrefix), byte(multihash.IDENTITY)}
+	require.NoError(t, store.db.Set(identity, []byte{0}, nil))
+	for n := 1; n <= 300; n++ {
+		key := slices.Concat(identity, varint.ToUvarint(uint64(n)), make([]byte, n))
+		require.NoError(t, store.db.Set(key, []byte{0}, nil))
+	}
+	putShaAtSteps(t, store, 2000)
+
+	// An unknown code with two lengths is one range as well.
+	unknown := append([]byte{byte(multihashKeyPrefix)}, varint.ToUvarint(0x300000)...)
+	require.NoError(t, store.db.Set(slices.Concat(unknown, []byte{1, 0xaa}), []byte{0}, nil))
+	require.NoError(t, store.db.Set(slices.Concat(unknown, []byte{2, 0xaa, 0xbb}), []byte{0}, pebble.Sync))
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 3)
+
+	require.Equal(t, identity, ranges[0].Start)
+	require.Equal(t, incrementBytes(identity), ranges[0].End)
+	require.EqualValues(t, 301, ranges[0].Weight)
+	require.False(t, ranges[0].Uniform)
+
+	shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+	require.Equal(t, shaHeader, ranges[1].Start)
+	require.InDelta(t, sampleWeightAtSteps, ranges[1].Weight, 1e-9)
+	require.True(t, ranges[1].Uniform)
+
+	require.Equal(t, unknown, ranges[2].Start)
+	require.EqualValues(t, 2, ranges[2].Weight)
+	require.False(t, ranges[2].Uniform)
+}
+
+func TestSampleMultihashRangesShortKeys(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+
+	// The prefix alone holds an empty multihash, and 0x80 starts a code
+	// varint that never ends. Neither decodes.
+	prefixOnly := []byte{byte(multihashKeyPrefix)}
+	truncated := []byte{byte(multihashKeyPrefix), 0x80}
+	require.NoError(t, store.db.Set(prefixOnly, []byte{0}, nil))
+	require.NoError(t, store.db.Set(truncated, []byte{0}, nil))
+	putShaAtSteps(t, store, 2000)
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ranges, 3)
+
+	require.Equal(t, multihashScanRange{Start: prefixOnly, End: append(prefixOnly, 0), Weight: 1}, ranges[0])
+
+	shaHeader := []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
+	require.Equal(t, shaHeader, ranges[1].Start)
+	require.InDelta(t, sampleWeightAtSteps, ranges[1].Weight, 1e-9)
+	require.True(t, ranges[1].Uniform)
+
+	require.Equal(t, multihashScanRange{Start: truncated, End: append(truncated, 0), Weight: 1}, ranges[2])
+
+	// The short keys also work as the cursor.
+	progress := &multihashScanProgressRecord{Ranges: ranges, Cursor: prefixOnly}
+	require.EqualValues(t, 0, scanProgressFraction(progress))
+	progress.Cursor = truncated
+	require.InDelta(t, (1+sampleWeightAtSteps)/(2+sampleWeightAtSteps), scanProgressFraction(progress), 1e-9)
 }

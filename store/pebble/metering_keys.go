@@ -1,15 +1,12 @@
 package pebble
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"math"
 	"time"
 
 	"github.com/ipni/go-indexer-core"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multihash"
 	"lukechampine.com/blake3"
 )
 
@@ -29,9 +26,9 @@ const (
 
 // multihashScanProgressRecord is the persisted process view of one scan, at
 // the single progress key. MeteringScanStatus copies it into ScanStatus and
-// computes EstimatedPercentDone and EstimatedFinish from StartedAt and Cursor.
-// Each batch overwrites this record. Success keeps it with DoneAt set, so
-// status can still show the finished scan. The next scan replaces it.
+// computes EstimatedPercentDone and EstimatedFinish from StartedAt, Cursor,
+// and Ranges. Each batch overwrites this record. Success keeps it with DoneAt
+// set, so status can still show the finished scan. The next scan replaces it.
 // Failure keeps it and sets Error, which stops the next startup from
 // resuming the walk.
 //
@@ -46,7 +43,7 @@ type multihashScanProgressRecord struct {
 	// the per-scan totals and provider rows.
 	ScanID uint64
 	// StartedAt is when the walk started. The status estimate uses it with
-	// Cursor to project a finish time.
+	// Cursor and Ranges to project a finish time.
 	StartedAt time.Time
 	// KeysRead is how many keys the iterator has visited, including values
 	// that did not decode. It drives the cursor and the finish estimate.
@@ -58,9 +55,12 @@ type multihashScanProgressRecord struct {
 	// StoreTotals.Active, StoreTotals.Deleted, and StoreTotals.Invalid.
 	BytesRead uint64
 	// Cursor is the last multihash key finished. Empty until the first batch
-	// commits. The next batch starts strictly after it. Copied to
-	// ScanStatus.CursorKey.
+	// commits. The next batch starts strictly after it.
 	Cursor []byte
+	// Ranges is the estimated key count of each multihash header, sampled once
+	// when the scan is created. The status estimate divides the weight before
+	// Cursor by the total weight.
+	Ranges []multihashScanRange `json:",omitempty"`
 	// DoneAt is when the scan finished. It is written in the same batch as the
 	// completed-scan header. Zero while the scan is unfinished. Status reports
 	// this as the finish time once the scan is done.
@@ -256,31 +256,6 @@ func nextProviderValueKey(providerHash []byte) []byte {
 		}
 	}
 	return []byte{byte(valueKeyPrefix) + 1}
-}
-
-// sha256MultihashProgressPrefix is the multihash key header for sha2-256 32-byte digests.
-var sha256MultihashProgressPrefix = []byte{byte(multihashKeyPrefix), byte(multihash.SHA2_256), 32}
-
-// sha256ProgressScale is one past the largest uint32, so a digest prefix maps into [0, 1).
-const sha256ProgressScale = float64(uint64(math.MaxUint32) + 1)
-
-// sha256MultihashKeyFraction is the cursor's position in [0, 1] through the sha2-256
-// 32-byte multihash range. Keys before that header are 0 and keys after it are 1.
-// Inside the range, the first four digest bytes are the position.
-func sha256MultihashKeyFraction(key []byte) float64 {
-	if !bytes.HasPrefix(key, sha256MultihashProgressPrefix) {
-		if bytes.Compare(key, sha256MultihashProgressPrefix) < 0 {
-			return 0
-		}
-		return 1
-	}
-	const digestPrefixLen = 4
-	if len(key) < len(sha256MultihashProgressPrefix)+digestPrefixLen {
-		return 0
-	}
-	off := len(sha256MultihashProgressPrefix)
-	u := binary.BigEndian.Uint32(key[off : off+digestPrefixLen])
-	return float64(u) / sha256ProgressScale
 }
 
 // hashProviderID is the blake3 prefix used to address a provider's stats.
