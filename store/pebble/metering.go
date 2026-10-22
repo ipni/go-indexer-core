@@ -131,12 +131,20 @@ func (r *meteringRunner) scanNeedsResume(progress *multihashScanProgressRecord) 
 	return progress != nil && progress.Error == "" && progress.DoneAt.IsZero()
 }
 
-// createMultihashScanProgress persists a new scan with empty totals and returns its progress record.
-func (r *meteringRunner) createMultihashScanProgress() (*multihashScanProgressRecord, error) {
+// createMultihashScanProgress persists a new scan with empty totals and returns
+// its progress record. It samples the multihash ranges for the progress
+// estimate once here; a resumed scan keeps the ranges stored at its start.
+// When ctx is done during sampling, nothing is written.
+func (r *meteringRunner) createMultihashScanProgress(ctx context.Context) (*multihashScanProgressRecord, error) {
+	ranges, err := r.sampleMultihashRanges(ctx)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	progress := &multihashScanProgressRecord{
 		ScanID:    uint64(now.UnixMicro()),
 		StartedAt: now,
+		Ranges:    ranges,
 	}
 	b := r.db.NewBatch()
 	defer b.Close()
@@ -196,7 +204,7 @@ func (r *meteringRunner) runMultihashScan(
 	var counters *multihashScanCounters
 
 	if progress == nil {
-		progress, err = r.createMultihashScanProgress()
+		progress, err = r.createMultihashScanProgress(scanCtx)
 		if err != nil {
 			return err
 		}
@@ -927,13 +935,10 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 	}
 
 	st.Current = indexer.StatsSnapshot{Totals: *totals, Providers: providers}
-	if len(p.Cursor) > 0 {
-		st.CursorKey = slices.Clone(p.Cursor)
-	}
 
 	switch st.State {
 	case indexer.ScanStateInProgress:
-		st.EstimatedPercentDone, st.EstimatedFinish = scanEstimate(p.StartedAt, st.CursorKey, time.Now())
+		st.EstimatedPercentDone, st.EstimatedFinish = scanEstimate(p, time.Now())
 
 	case indexer.ScanStateDone:
 		st.EstimatedPercentDone, st.EstimatedFinish = 100, &p.DoneAt
@@ -944,13 +949,15 @@ func (r *meteringRunner) loadScanStatus(ctx context.Context, providerIDs []peer.
 
 // scanEstimate reports estimated percent done, from 0 to 100, and a finish time.
 // The finish time is nil when progress is still 0 or the start time is unset.
-func scanEstimate(started time.Time, cursor []byte, now time.Time) (float64, *time.Time) {
-	frac := sha256MultihashKeyFraction(cursor)
+// Percent done is the weight of finished ranges, plus the done part of the
+// range that holds the cursor, as a share of the total weight.
+func scanEstimate(progress *multihashScanProgressRecord, now time.Time) (float64, *time.Time) {
+	frac := scanProgressFraction(progress)
 	percent := frac * 100
-	if frac <= 0 || started.IsZero() || !now.After(started) {
+	if progress == nil || frac <= 0 || progress.StartedAt.IsZero() || !now.After(progress.StartedAt) {
 		return percent, nil
 	}
-	elapsed := now.Sub(started)
+	elapsed := now.Sub(progress.StartedAt)
 	remaining := time.Duration(float64(elapsed) * (1 - frac) / frac)
 	finish := now.Add(remaining)
 	return percent, &finish
@@ -981,7 +988,7 @@ func (r *meteringRunner) recordScanProgress(
 // recordScanEstimate publishes in-progress percent-done, elapsed, and
 // remaining-time gauges.
 func (r *meteringRunner) recordScanEstimate(progress *multihashScanProgressRecord, now time.Time) {
-	percent, finish := scanEstimate(progress.StartedAt, progress.Cursor, now)
+	percent, finish := scanEstimate(progress, now)
 	elapsed := 0.0
 	if !progress.StartedAt.IsZero() && now.After(progress.StartedAt) {
 		elapsed = now.Sub(progress.StartedAt).Seconds()

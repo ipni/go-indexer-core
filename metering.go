@@ -196,13 +196,14 @@ const (
 )
 
 // ScanStatus is the walk, returned by MeteringScanStatus. State, the start
-// time, the cursor, and the estimate describe the walk. Current.Totals is a
+// time, and the estimate describe the walk. Current.Totals is a
 // StoreTotals, the same struct the finished report stores, including after
 // the scan is done or has failed.
 //
 // EstimatedPercentDone and EstimatedFinish are not stored on this struct.
-// While the scan is running they are computed from StartedAt and CursorKey.
-// A done scan reports 100 and the time the scan finished.
+// While the scan is running the store computes them when status is read. They
+// are rough estimates: percent done can stay flat or jump, and the finish
+// time can move. A done scan reports 100 and the time the scan finished.
 type ScanStatus struct {
 	// State is none, in_progress, done, or error.
 	State ScanState
@@ -211,13 +212,9 @@ type ScanStatus struct {
 	ScanID uint64
 	// StartedAt is when this walk started.
 	StartedAt time.Time
-	// CursorKey is the latest key the scan has finished. JSON encodes it as
-	// base64. Empty until the first batch is committed. The estimate treats
-	// its position in the sha2-256 multihash range as the fraction done.
-	CursorKey []byte
-	// EstimatedPercentDone is the cursor's position in the sha2-256 multihash
-	// range, from 0 to 100. It is computed when status is read, not stored.
-	// A done scan reports 100.
+	// EstimatedPercentDone is a rough estimate of how much of the scan is
+	// done, from 0 to 100. It can stay flat or jump while the scan runs.
+	// Computed when status is read, not stored. A done scan reports 100.
 	EstimatedPercentDone float64
 	// EstimatedFinish is when the scan is expected to complete if the rate so
 	// far continues. Nil when the fraction done is still zero or StartedAt is
