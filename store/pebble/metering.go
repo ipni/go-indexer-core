@@ -235,8 +235,8 @@ func (r *meteringRunner) runMultihashScan(
 			metrics.MeteringScansStarted.M(1),
 			metrics.MeteringScanStartedAt.M(float64(progress.StartedAt.Unix())),
 		)
-		r.recordScanProgress(progress, counters, time.Now())
 	}
+	r.recordScanProgress(progress, counters, time.Now())
 
 	if r.cfg.Cleanup {
 		// A zero sample publishes the counters before the first removal.
@@ -964,8 +964,9 @@ func scanEstimate(progress *multihashScanProgressRecord, now time.Time) (float64
 }
 
 // recordScanProgress publishes the in-progress scan gauges from the committed
-// progress and counters, the same values MeteringScanStatus reports. A resumed
-// scan calls it with the state it loaded, so the gauges continue from there.
+// progress and counters, the same values MeteringScanStatus reports. A new or
+// resumed scan calls it once before the first batch, so the gauges start from
+// the state it created or loaded, and every committed batch calls it again.
 func (r *meteringRunner) recordScanProgress(
 	progress *multihashScanProgressRecord,
 	counters *multihashScanCounters,
@@ -983,6 +984,23 @@ func (r *meteringRunner) recordScanProgress(
 		metrics.MeteringScanDeletedValueBytes.M(int64(counters.totals.Deleted.ValueBytes)),
 	)
 	r.recordScanEstimate(progress, now)
+	recordScanRanges(progress.Ranges)
+}
+
+// recordScanRanges publishes the gauges that describe the scan's range table.
+func recordScanRanges(ranges []multihashScanRange) {
+	s := summarizeRanges(ranges)
+	capped := int64(0)
+	if s.capped {
+		capped = 1
+	}
+	stats.Record(context.Background(),
+		metrics.MeteringScanUniformRanges.M(s.uniformRanges),
+		metrics.MeteringScanNonUniformRanges.M(s.nonUniformRanges),
+		metrics.MeteringScanUniformWeight.M(s.uniformWeight),
+		metrics.MeteringScanNonUniformWeight.M(s.nonUniformWeight),
+		metrics.MeteringScanRangesCapped.M(capped),
+	)
 }
 
 // recordScanEstimate publishes in-progress percent-done, elapsed, and
@@ -1024,6 +1042,11 @@ func clearInProgressScanMetrics() {
 		metrics.MeteringScanPercentDone.M(0),
 		metrics.MeteringScanElapsedSeconds.M(0),
 		metrics.MeteringScanRemainingSeconds.M(0),
+		metrics.MeteringScanUniformRanges.M(0),
+		metrics.MeteringScanNonUniformRanges.M(0),
+		metrics.MeteringScanUniformWeight.M(0),
+		metrics.MeteringScanNonUniformWeight.M(0),
+		metrics.MeteringScanRangesCapped.M(0),
 		metrics.MeteringBatchStartedAt.M(0),
 	)
 }

@@ -56,6 +56,11 @@ var (
 	MeteringScanPercentDone       = stats.Float64("core/metering/scan_percent_done", "Rough estimate of percent done for the in-progress metering scan. Zero when no scan is running", stats.UnitDimensionless)
 	MeteringScanElapsedSeconds    = stats.Float64("core/metering/scan_elapsed_seconds", "Seconds since the in-progress metering scan started. Zero when no scan is running", stats.UnitSeconds)
 	MeteringScanRemainingSeconds  = stats.Float64("core/metering/scan_remaining_seconds", "Estimated seconds remaining for the in-progress metering scan. Zero when no scan is running or the estimate is not yet available", stats.UnitSeconds)
+	MeteringScanUniformRanges     = stats.Int64("core/metering/scan_uniform_ranges", "Ranges of one uniform hash header in the in-progress metering scan's progress estimate. The weight of a header with at least 1024 keys is extrapolated from the digest position of its 1024th key, and a smaller header keeps its exact count. Zero when no scan is running, or the scan found no uniform headers", stats.UnitDimensionless)
+	MeteringScanNonUniformRanges  = stats.Int64("core/metering/scan_non_uniform_ranges", "Ranges of other codes, and of keys that do not decode, in the in-progress metering scan's progress estimate. The capped last range is not counted. Zero when no scan is running, or the scan found no such keys", stats.UnitDimensionless)
+	MeteringScanUniformWeight     = stats.Float64("core/metering/scan_uniform_weight", "Estimated multihashes in the uniform ranges of the in-progress metering scan. Zero when no scan is running, or when the running scan has no uniform ranges", stats.UnitDimensionless)
+	MeteringScanNonUniformWeight  = stats.Float64("core/metering/scan_non_uniform_weight", "Multihashes counted in the non-uniform ranges of the in-progress metering scan, at most 1024 per range. The capped last range is not counted. Zero when no scan is running, or when the running scan has no non-uniform ranges", stats.UnitDimensionless)
+	MeteringScanRangesCapped      = stats.Int64("core/metering/scan_ranges_capped", "1 when the in-progress metering scan found more headers than its range cap, so its last range covers the rest of the key space with a guessed weight and the percent-done estimate is unreliable. Zero when the cap was not hit or no scan is running", stats.UnitDimensionless)
 	MeteringScansStarted          = stats.Int64("core/metering/scans_started", "Metering scans started or resumed by this process", stats.UnitDimensionless)
 	MeteringScansFinished         = stats.Int64("core/metering/scans_finished", "Metering scans that finished counting", stats.UnitDimensionless)
 	MeteringBatchesStarted        = stats.Int64("core/metering/batches_started", "Metering scan batches started", stats.UnitDimensionless)
@@ -232,6 +237,26 @@ var (
 		Measure:     MeteringScanRemainingSeconds,
 		Aggregation: view.LastValue(),
 	}
+	meteringScanUniformRangesView = &view.View{
+		Measure:     MeteringScanUniformRanges,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanNonUniformRangesView = &view.View{
+		Measure:     MeteringScanNonUniformRanges,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanUniformWeightView = &view.View{
+		Measure:     MeteringScanUniformWeight,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanNonUniformWeightView = &view.View{
+		Measure:     MeteringScanNonUniformWeight,
+		Aggregation: view.LastValue(),
+	}
+	meteringScanRangesCappedView = &view.View{
+		Measure:     MeteringScanRangesCapped,
+		Aggregation: view.LastValue(),
+	}
 	meteringScansStartedView = &view.View{
 		Measure:     MeteringScansStarted,
 		Aggregation: view.Sum(),
@@ -332,6 +357,11 @@ var MeteringViews = []*view.View{
 	meteringScanPercentDoneView,
 	meteringScanElapsedSecondsView,
 	meteringScanRemainingSecondsView,
+	meteringScanUniformRangesView,
+	meteringScanNonUniformRangesView,
+	meteringScanUniformWeightView,
+	meteringScanNonUniformWeightView,
+	meteringScanRangesCappedView,
 	meteringScansStartedView,
 	meteringScansFinishedView,
 	meteringBatchesStartedView,
