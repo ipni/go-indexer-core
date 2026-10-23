@@ -123,10 +123,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 		stats.WithTags(tag.Insert(metrics.Method, "put")),
 		stats.WithMeasurements(metrics.DHMetadataLatency.M(metrics.MsecSince(start))))
 
-	size := s.batchSize
-	if len(mhs) < size {
-		size = len(mhs)
-	}
+	size := min(len(mhs), s.batchSize)
 	merges := make([]client.Index, 0, size)
 	for _, mh := range mhs {
 		if _, err = multihash.Decode(mh); err != nil {
@@ -161,10 +158,7 @@ func (s *dhStore) Put(value indexer.Value, mhs ...multihash.Multihash) error {
 func (s *dhStore) Remove(value indexer.Value, mhs ...multihash.Multihash) error {
 	ctx := context.Background()
 	valueKey := dhash.CreateValueKey(value.ProviderID, value.ContextID)
-	size := s.batchSize
-	if len(mhs) < size {
-		size = len(mhs)
-	}
+	size := min(len(mhs), s.batchSize)
 	dels := make([]client.Index, 0, size)
 
 	for _, mh := range mhs {
@@ -282,12 +276,24 @@ func (s *dhStore) Flush() error { return nil }
 
 func (s *dhStore) Close() error { return nil }
 
-func (s *dhStore) Iter() (indexer.Iterator, error) {
-	return nil, ErrNotSupported
-}
-
 func (s *dhStore) Stats() (*indexer.Stats, error) {
 	return nil, nil
+}
+
+func (s *dhStore) MeteringAllStats(context.Context, []peer.ID) (*indexer.AllStatsReport, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringScanStatus(context.Context, []peer.ID) (*indexer.ScanStatus, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringTriggerScan(context.Context) error {
+	return indexer.ErrMeteringNotSupported
+}
+
+func (s *dhStore) MeteringCancelScan(context.Context, string) error {
+	return indexer.ErrMeteringNotSupported
 }
 
 func makeDHMerge(mh multihash.Multihash, valueKey []byte) (client.Index, error) {

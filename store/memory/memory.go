@@ -12,8 +12,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
-	"iter"
 	"strings"
 	"sync"
 
@@ -29,11 +27,6 @@ type memoryStore struct {
 	// IndexEntry interning
 	interns *radixtree.Tree[*indexer.Value]
 	mutex   sync.Mutex
-}
-
-type memoryIter struct {
-	iterNext func() (string, []*indexer.Value, bool)
-	iterStop func()
 }
 
 var _ indexer.Interface = (*memoryStore)(nil)
@@ -188,12 +181,20 @@ func (s *memoryStore) Flush() error { return nil }
 
 func (s *memoryStore) Close() error { return nil }
 
-func (s *memoryStore) Iter() (indexer.Iterator, error) {
-	next, stop := iter.Pull2[string, []*indexer.Value](s.rtree.Iter())
-	return &memoryIter{
-		iterNext: next,
-		iterStop: stop,
-	}, nil
+func (s *memoryStore) MeteringAllStats(context.Context, []peer.ID) (*indexer.AllStatsReport, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *memoryStore) MeteringScanStatus(context.Context, []peer.ID) (*indexer.ScanStatus, error) {
+	return nil, indexer.ErrMeteringNotSupported
+}
+
+func (s *memoryStore) MeteringTriggerScan(context.Context) error {
+	return indexer.ErrMeteringNotSupported
+}
+
+func (s *memoryStore) MeteringCancelScan(context.Context, string) error {
+	return indexer.ErrMeteringNotSupported
 }
 
 func (s *memoryStore) Stats() (*indexer.Stats, error) {
@@ -205,23 +206,6 @@ func (s *memoryStore) Stats() (*indexer.Stats, error) {
 	return &indexer.Stats{
 		MultihashCount: count,
 	}, nil
-}
-
-func (it *memoryIter) Next() (multihash.Multihash, []indexer.Value, error) {
-	key, vals, ok := it.iterNext()
-	if !ok {
-		return nil, nil, io.EOF
-	}
-	values := make([]indexer.Value, len(vals))
-	for i, v := range vals {
-		values[i] = *v
-	}
-	return multihash.Multihash(key), values, nil
-}
-
-func (it *memoryIter) Close() error {
-	it.iterStop()
-	return nil
 }
 
 func (s *memoryStore) get(k string) ([]*indexer.Value, bool) {
@@ -251,8 +235,7 @@ func (s *memoryStore) internValue(value *indexer.Value, saveNew bool) *indexer.V
 		// The provided value has matching ProviderID and ContextID but
 		// different Metadata.  Treat this as an update.
 		if !bytes.Equal(v.MetadataBytes, value.MetadataBytes) {
-			v.MetadataBytes = make([]byte, len(value.MetadataBytes))
-			copy(v.MetadataBytes, value.MetadataBytes)
+			v.MetadataBytes = bytes.Clone(value.MetadataBytes)
 		}
 		return v
 	}
@@ -337,7 +320,7 @@ func (s *memoryStore) removeProviderValues(providerID peer.ID) {
 func (s *memoryStore) removeProviderInterns(providerID peer.ID) {
 	// Delete all items with key prefixed by provider ID.
 	var deletes []string
-	for k := range s.interns.IterAt(string(providerID)) {
+	for k := range s.interns.IterPrefix(string(providerID)) {
 		deletes = append(deletes, k)
 	}
 	for _, k := range deletes {

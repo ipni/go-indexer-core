@@ -2,18 +2,19 @@ package indexer_test
 
 import (
 	"bytes"
-	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core"
 	"github.com/ipni/go-indexer-core/bench"
 	"github.com/multiformats/go-varint"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValueCodec_MarshalUnmarshal(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	wantValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
 	wantValueKeys := generateRandomValueKeys(43)
 
@@ -166,44 +167,38 @@ func TestBinaryValueCodec_MarshalUnmarshalEmptyValues(t *testing.T) {
 }
 
 func TestValueCodec_BinaryWithJsonUnmarshalFallsBackOnJson(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
-	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
-	wantValueKeys := generateRandomValueKeys(43)
-
 	subject := indexer.BinaryWithJsonFallbackCodec{}
+	jsonCodec := indexer.JsonValueCodec{}
 
-	for _, wantGenValue := range wantGenValues {
-		wantValue := wantGenValue.Value
-		gotJson, err := indexer.JsonValueCodec{}.MarshalValue(wantValue)
-		if err != nil {
-			t.Fatal(err)
-		}
-		gotValue, err := subject.UnmarshalValue(gotJson)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(wantValue, gotValue) {
-			t.Fatal()
-		}
+	// The binary decoder reads the first byte as a payload length. JSON
+	// starts with '{' or '['. These encodings are shorter than that length,
+	// so the binary decode fails and the JSON fallback is what runs.
+	wantValue := indexer.Value{
+		ProviderID:    random.Peers(1)[0],
+		ContextID:     []byte{1},
+		MetadataBytes: []byte{2},
 	}
+	valueJSON, err := jsonCodec.MarshalValue(wantValue)
+	require.NoError(t, err)
+	require.NotEmpty(t, valueJSON)
+	require.Less(t, len(valueJSON), int(valueJSON[0])+1)
+	gotValue, err := subject.UnmarshalValue(valueJSON)
+	require.NoError(t, err)
+	require.Equal(t, wantValue, gotValue)
 
-	gotJson, err := indexer.JsonValueCodec{}.MarshalValueKeys(wantValueKeys)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotValueKeys, err := subject.UnmarshalValueKeys(gotJson)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(wantValueKeys, gotValueKeys) {
-		t.Fatal()
-	}
+	wantKeys := [][]byte{{1}, {2, 3}, {4}}
+	keysJSON, err := jsonCodec.MarshalValueKeys(wantKeys)
+	require.NoError(t, err)
+	require.NotEmpty(t, keysJSON)
+	require.Less(t, len(keysJSON), int(keysJSON[0])+1)
+	gotKeys, err := subject.UnmarshalValueKeys(keysJSON)
+	require.NoError(t, err)
+	require.Equal(t, wantKeys, gotKeys)
 }
 
 func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.New()
 	wantGenValues, _ := bench.GenerateRandomValues(t, rng, bench.GeneratorConfig{})
-	wantValueKeys := generateRandomValueKeys(43)
 
 	binCodec := indexer.BinaryValueCodec{}
 	subject := indexer.BinaryWithJsonFallbackCodec{}
@@ -223,6 +218,7 @@ func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
 		}
 	}
 
+	wantValueKeys := generateRandomValueKeys(43)
 	wantBinVK, err := binCodec.MarshalValueKeys(wantValueKeys)
 	if err != nil {
 		t.Fatal(err)
@@ -238,9 +234,10 @@ func TestValueCodec_BinaryWithJsonAlwaysMarshalsAsBinary(t *testing.T) {
 
 func generateRandomValueKeys(count int) [][]byte {
 	var vks [][]byte
-	rng := rand.New(rand.NewSource(1413))
-	for i := 0; i < count; i++ {
-		vk := make([]byte, rng.Intn(127)+1)
+	rng := random.New()
+	for range count {
+		vk := make([]byte, rng.IntN(127)+1)
+		_, _ = rng.Read(vk)
 		vks = append(vks, vk)
 	}
 	return vks

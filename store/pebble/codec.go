@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	// marshalledValueKeyLength length is the default key length plus the length of the prefix i.e. 1, plus
-	// the length of its varint length which is also 1.
-	marshalledValueKeyLength = defaultKeyerLength + 1 + 1
+	// marshalledValueKeyLength is one packed value key inside a multihash
+	// record: a 1-byte varint length, the value-key prefix, the provider hash,
+	// and the context hash.
+	marshalledValueKeyLength = 1 + 1 + providerHashLen + providerHashLen
 )
 
 // codec offers marshalling compatible with indexer.BinaryValueCodec format but optimised for use
@@ -73,28 +74,28 @@ func (c *codec) marshalValueKeys(vk [][]byte) ([]byte, io.Closer, error) {
 func (c *codec) unmarshalValueKeys(b []byte) (*keyList, error) {
 	l := len(b)
 	if l == 0 {
-		return nil, nil
+		return c.p.leaseKeyList(), nil
 	}
 	vkl := l / marshalledValueKeyLength
 	if vkl < 1 {
 		return nil, fmt.Errorf("marshalled value-key length %d is shorter than expected minimum %d", l, marshalledValueKeyLength)
 	}
+	if l%marshalledValueKeyLength != 0 {
+		return nil, indexer.ErrCodecOverflow
+	}
 	vks := c.p.leaseKeyList()
 	vks.maybeGrow(vkl)
-	for i := 0; i < vkl; i++ {
+	for i := range vkl {
 		vk := c.p.leaseKey()
 		offset := marshalledValueKeyLength * i
 		vk.append(b[offset+1 : offset+marshalledValueKeyLength]...)
 		prefix := vk.prefix()
-		if prefix != valueKeyPrefix {
+		if prefix != valueKeyPrefix && prefix != mergeDeleteValueKeyPrefix {
 			log.Debugf("unexpected key prefix for key: %v", vk)
 			_ = vk.Close()
 			continue
 		}
 		vks.append(vk)
-	}
-	if l%marshalledValueKeyLength != 0 {
-		return vks, indexer.ErrCodecOverflow
 	}
 	return vks, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ipni/go-indexer-core"
 	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_blake3Keyer(t *testing.T) {
@@ -91,10 +92,52 @@ func Test_blake3Keyer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if dvk.prefix() != mergeDeleteKeyPrefix {
+		if dvk.prefix() != mergeDeleteValueKeyPrefix {
 			t.Fatal()
 		}
-		if !bytes.Equal(vk.buf, dvk.buf[1:]) {
+		if len(dvk.buf) != len(vk.buf) {
+			t.Fatal()
+		}
+		if !bytes.Equal(vk.buf[1:], dvk.buf[1:]) {
+			t.Fatal()
+		}
+	})
+
+	t.Run("contextMapKey", func(t *testing.T) {
+		mk, err := subject.contextMapKey(v.ProviderID, v.ContextID)
+		require.NoError(t, err)
+		require.Equal(t, contextMapKeyPrefix, mk.prefix())
+		// The map key holds the same provider and context hashes as the legacy value key.
+		require.Equal(t, vk.buf[1:], mk.buf[1:])
+		require.Equal(t, vk.buf, mk.replacePrefix(valueKeyPrefix).buf)
+
+		start, end, err := subject.contextMapsByProviderKeyRange(v.ProviderID)
+		require.NoError(t, err)
+		require.True(t, bytes.HasPrefix(mk.buf, start.buf))
+		require.Equal(t, start.next().buf, end.buf)
+
+		long, err := subject.contextMapKey(v.ProviderID, bytes.Repeat([]byte{0x01}, 64))
+		require.NoError(t, err)
+		require.Len(t, long.buf, len(mk.buf))
+	})
+
+	t.Run("valueKeyWithToken", func(t *testing.T) {
+		token := bytes.Repeat([]byte{0xab}, contextTokenLength)
+		tvk, err := subject.valueKeyWithToken(v.ProviderID, token, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tvk.prefix() != valueKeyPrefix {
+			t.Fatal()
+		}
+		if len(tvk.buf) != 1+contextTokenLength+contextTokenLength {
+			t.Fatalf("unexpected value key length: %d", len(tvk.buf))
+		}
+		if !bytes.HasSuffix(tvk.buf, token) {
+			t.Fatal()
+		}
+		// Same provider prefix as the legacy hash-based value key.
+		if !bytes.Equal(tvk.buf[:1+contextTokenLength], vk.buf[:1+contextTokenLength]) {
 			t.Fatal()
 		}
 	})

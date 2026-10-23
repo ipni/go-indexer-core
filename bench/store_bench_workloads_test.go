@@ -1,9 +1,10 @@
 package bench_test
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-indexer-core/bench"
 )
 
@@ -14,10 +15,10 @@ type workload struct {
 
 var w0, w1, w2, w3 *workload
 
-func rng() *rand.Rand {
+func rng() *random.Random {
 	// Use fixed rng to assure deterministic workload generation.
 	const seed = 1413
-	return rand.New(rand.NewSource(seed))
+	return random.NewSeeded(random.Uint64ToSeed(seed))
 }
 
 // workload0 generates 1000 values with total size of 32.522 MiB for 1 provider with 1000
@@ -65,8 +66,8 @@ func workload2(b testing.TB) *workload {
 		r := rng()
 		values, size := bench.GenerateRandomValues(b, r, bench.GeneratorConfig{
 			NumProviders:         10,
-			NumValuesPerProvider: rand.NewZipf(r, 1.001, 10_000, 50_000).Uint64,
-			NumEntriesPerValue:   rand.NewZipf(r, 1.001, 10_000, 10_000).Uint64,
+			NumValuesPerProvider: rand.NewZipf(r.Rand, 1.001, 10_000, 50_000).Uint64,
+			NumEntriesPerValue:   rand.NewZipf(r.Rand, 1.001, 10_000, 10_000).Uint64,
 			ShuffleValues:        true,
 		})
 		b.Logf("Workload 2 generated %d values with total size of %.3f MiB.\n", len(values), toMiB(size))
@@ -86,8 +87,8 @@ func workload3(b testing.TB) *workload {
 		r := rng()
 		values, size := bench.GenerateRandomValues(b, r, bench.GeneratorConfig{
 			NumProviders:         10,
-			NumValuesPerProvider: rand.NewZipf(r, 1.001, 10_000, 50_000).Uint64,
-			NumEntriesPerValue:   rand.NewZipf(r, 1.001, 10_000, 10_000).Uint64,
+			NumValuesPerProvider: rand.NewZipf(r.Rand, 1.001, 10_000, 50_000).Uint64,
+			NumEntriesPerValue:   rand.NewZipf(r.Rand, 1.001, 10_000, 10_000).Uint64,
 			DuplicateEntries:     func() bool { return r.Float32() >= 0.3 },
 			ShuffleValues:        true,
 		})

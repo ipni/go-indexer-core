@@ -14,9 +14,15 @@ const (
 	fileName = "vstore.info"
 	version  = 1
 
-	BinaryCodec     = "binary"
+	BinaryCodec = "binary"
+	// BinaryJsonCodec selects BinaryWithJsonFallbackCodec.
+	//
+	// Deprecated: no store reads or writes values with this codec. It will be removed.
 	BinaryJsonCodec = "binaryjson"
-	JsonCodec       = "json"
+	// JsonCodec selects JsonValueCodec.
+	//
+	// Deprecated: no store reads or writes values with this codec. It will be removed.
+	JsonCodec = "json"
 )
 
 // VStoreInfo contains information about the valuestore.
@@ -69,8 +75,10 @@ func (v VStoreInfo) MakeCodec() (indexer.ValueCodec, error) {
 	case BinaryCodec:
 		return indexer.BinaryValueCodec{}, nil
 	case BinaryJsonCodec:
+		//lint:ignore SA1019 constructs BinaryWithJsonFallbackCodec until it is removed
 		return indexer.BinaryWithJsonFallbackCodec{}, nil
 	case JsonCodec:
+		//lint:ignore SA1019 constructs JsonValueCodec until it is removed
 		return indexer.JsonValueCodec{}, nil
 	}
 	return nil, fmt.Errorf("unsupported codec: %s", v.Codec)
