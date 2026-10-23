@@ -38,6 +38,10 @@ type multihashScanRange struct {
 	// only. The estimate then reads progress inside the range from the
 	// cursor's digest.
 	Uniform bool `json:",omitempty"`
+	// Tail is true for the last range of a capped probe. It covers every key
+	// from its start to the end of the multihash space, and its Weight is a
+	// guess rather than a count.
+	Tail bool `json:",omitempty"`
 }
 
 // sampleMultihashRanges walks the multihash key space once and returns the
@@ -75,6 +79,7 @@ func (r *meteringRunner) sampleMultihashRanges(ctx context.Context) ([]multihash
 				Start:  header,
 				End:    multihashScanUpper,
 				Weight: rangeTailWeight,
+				Tail:   true,
 			})
 			break
 		}
@@ -251,4 +256,32 @@ func incrementBytes(b []byte) []byte {
 		}
 	}
 	return multihashScanUpper
+}
+
+// rangeSummary describes a scan's range table for the scan gauges. The capped
+// last range is reported only as capped: its weight is a guess, not a count.
+type rangeSummary struct {
+	uniformRanges    int64
+	nonUniformRanges int64
+	uniformWeight    float64
+	nonUniformWeight float64
+	capped           bool
+}
+
+// summarizeRanges counts the ranges and their weights by kind.
+func summarizeRanges(ranges []multihashScanRange) rangeSummary {
+	var s rangeSummary
+	for _, rng := range ranges {
+		switch {
+		case rng.Tail:
+			s.capped = true
+		case rng.Uniform:
+			s.uniformRanges++
+			s.uniformWeight += rng.Weight
+		default:
+			s.nonUniformRanges++
+			s.nonUniformWeight += rng.Weight
+		}
+	}
+	return s
 }

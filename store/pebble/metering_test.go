@@ -1374,10 +1374,12 @@ func TestSampleMultihashRangesTail(t *testing.T) {
 	require.Len(t, ranges, rangeSpanCap)
 	for _, rng := range ranges[:rangeSpanCap-1] {
 		require.EqualValues(t, 1, rng.Weight)
+		require.False(t, rng.Tail)
 	}
 	tail := ranges[rangeSpanCap-1]
 	require.EqualValues(t, rangeTailWeight, tail.Weight)
 	require.Equal(t, multihashScanUpper, tail.End)
+	require.True(t, tail.Tail)
 }
 
 func TestSampleMultihashRangesSampleSizeEdges(t *testing.T) {
@@ -1519,6 +1521,7 @@ func TestSampleMultihashRangesUniformTail(t *testing.T) {
 	require.Equal(t, shaHeader, tail.Start)
 	require.Equal(t, multihashScanUpper, tail.End)
 	require.False(t, tail.Uniform)
+	require.True(t, tail.Tail)
 
 	// Moving from late in sha2-256 to blake2b inside the tail never lowers
 	// the estimate.
@@ -1612,4 +1615,106 @@ func TestSampleMultihashRangesShortKeys(t *testing.T) {
 	require.EqualValues(t, 0, scanProgressFraction(progress))
 	progress.Cursor = truncated
 	require.InDelta(t, (1+sampleWeightAtSteps)/(2+sampleWeightAtSteps), scanProgressFraction(progress), 1e-9)
+}
+
+func TestSummarizeRanges(t *testing.T) {
+	ranges := []multihashScanRange{
+		{Start: []byte{1, 0}, End: []byte{1, 1}, Weight: 300},
+		{Start: []byte{1, 0x12, 32}, End: []byte{1, 0x12, 33}, Weight: 2e9, Uniform: true},
+		{Start: []byte{1, 0x32}, End: []byte{1, 0x33}, Weight: 1024},
+		{Start: []byte{1, 0xa0, 0xe4, 2, 32}, End: []byte{1, 0xa0, 0xe4, 2, 33}, Weight: 1e8, Uniform: true},
+	}
+	require.Equal(t, rangeSummary{
+		uniformRanges:    2,
+		nonUniformRanges: 2,
+		uniformWeight:    2e9 + 1e8,
+		nonUniformWeight: 300 + 1024,
+	}, summarizeRanges(ranges))
+
+	// The capped last range only sets capped.
+	ranges = append(ranges, multihashScanRange{Start: []byte{1, 0xb0}, End: multihashScanUpper, Weight: rangeTailWeight, Tail: true})
+	s := summarizeRanges(ranges)
+	require.True(t, s.capped)
+	require.EqualValues(t, 2, s.nonUniformRanges)
+	require.EqualValues(t, 300+1024, s.nonUniformWeight)
+}
+
+func TestScanRangeGauges(t *testing.T) {
+	registerMeteringViews(t)
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+
+	// One uniform range, one non-uniform range, and enough unknown codes to
+	// reach the cap.
+	putShaAtSteps(t, store, 2000)
+	require.NoError(t, store.db.Set([]byte{byte(multihashKeyPrefix), byte(multihash.IDENTITY), 1, 0}, []byte{0}, nil))
+	for i := range rangeSpanCap {
+		key := append([]byte{byte(multihashKeyPrefix)}, varint.ToUvarint(uint64(0x300000+i))...)
+		require.NoError(t, store.db.Set(append(key, 1, 0), []byte{0}, nil))
+	}
+
+	ranges, err := store.metering.sampleMultihashRanges(t.Context())
+	require.NoError(t, err)
+	recordScanRanges(ranges)
+
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_uniform_ranges"))
+	require.InDelta(t, sampleWeightAtSteps, meteringLastValue(t, "core/metering/scan_uniform_weight"), 1e-6)
+	// Identity plus the unknown codes that fit before the last slot.
+	require.EqualValues(t, rangeSpanCap-2, meteringLastValue(t, "core/metering/scan_non_uniform_ranges"))
+	require.EqualValues(t, rangeSpanCap-2, meteringLastValue(t, "core/metering/scan_non_uniform_weight"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_ranges_capped"))
+
+	clearInProgressScanMetrics()
+	for _, name := range []string{
+		"core/metering/scan_uniform_ranges",
+		"core/metering/scan_non_uniform_ranges",
+		"core/metering/scan_uniform_weight",
+		"core/metering/scan_non_uniform_weight",
+		"core/metering/scan_ranges_capped",
+	} {
+		require.Zero(t, meteringLastValue(t, name), name)
+	}
+}
+
+func TestScanRangeGaugesRestoredOnResume(t *testing.T) {
+	registerMeteringViews(t)
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	putShaAtSteps(t, store, 2000)
+	require.NoError(t, store.db.Set([]byte{byte(multihashKeyPrefix), byte(multihash.IDENTITY), 1, 0}, []byte{0}, pebble.Sync))
+
+	_, err := store.metering.createMultihashScanProgress(t.Context())
+	require.NoError(t, err)
+	progress, err := store.metering.loadMultihashScanProgress(store.db)
+	require.NoError(t, err)
+	clearInProgressScanMetrics()
+
+	// The resumed scan publishes the stored ranges, then stops at its first
+	// context check. Cancellation does not clear the in-progress gauges.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, store.metering.runMultihashScan(ctx, progress), context.Canceled)
+
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_uniform_ranges"))
+	require.InDelta(t, sampleWeightAtSteps, meteringLastValue(t, "core/metering/scan_uniform_weight"), 1e-6)
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_non_uniform_ranges"))
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_non_uniform_weight"))
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_ranges_capped"))
+}
+
+func TestScanRangeGaugesRecordedEveryBatch(t *testing.T) {
+	store := openStoppedMetered(t, t.TempDir(), MeteringConfig{BatchSize: 100, TimeFill: 1})
+	putShaAtSteps(t, store, 2000)
+	progress, err := store.metering.createMultihashScanProgress(t.Context())
+	require.NoError(t, err)
+
+	// Views registered after the scan started still get the range gauges
+	// from the next batch.
+	registerMeteringViews(t)
+	counters := &multihashScanCounters{providers: make(map[string]*indexer.ProviderStats)}
+	done, err := store.metering.runMultihashScanBatch(t.Context(), progress, counters, make(map[string]peer.ID))
+	require.NoError(t, err)
+	require.False(t, done)
+
+	require.EqualValues(t, 1, meteringLastValue(t, "core/metering/scan_uniform_ranges"))
+	require.InDelta(t, sampleWeightAtSteps, meteringLastValue(t, "core/metering/scan_uniform_weight"), 1e-6)
+	require.Zero(t, meteringLastValue(t, "core/metering/scan_ranges_capped"))
 }
