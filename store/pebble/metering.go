@@ -326,15 +326,6 @@ func (r *meteringRunner) runMultihashScanBatch(
 
 	lower, upper := multihashScanBounds(progress.Cursor)
 
-	iter, err := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: lower,
-		UpperBound: upper,
-	})
-	if err != nil {
-		return false, err
-	}
-	defer iter.Close()
-
 	// An uncommitted batch holds only its own byte buffer. Merge copies each
 	// key as it is called, so the iterator buffer can be reused on Next.
 	b := r.db.NewBatch()
@@ -348,21 +339,25 @@ func (r *meteringRunner) runMultihashScanBatch(
 	keysRead := 0
 	var bytesRead uint64
 	var lastKey []byte
-	valid := iter.First()
-	for valid && keysRead < r.cfg.BatchSize {
-		if err := context.Cause(ctx); err != nil {
-			return false, err
+	exhausted := true
+	for kv, err := range pebbleKVs(ctx, r.db, &pebble.IterOptions{
+		LowerBound: lower,
+		UpperBound: upper,
+	}) {
+		// Whatever follows a full batch, a key or an error, is left to the
+		// next batch.
+		if keysRead == r.cfg.BatchSize {
+			exhausted = false
+			break
 		}
-
-		key := iter.Key()
-		value, err := iter.ValueAndErr()
 		if err != nil {
 			return false, err
 		}
-		bytesRead += uint64(len(key) + len(value))
+
+		bytesRead += uint64(len(kv.key) + len(kv.value))
 		if err := r.countMultihashScanRecord(
 			counters,
-			key, value,
+			kv.key, kv.value,
 			modifiedProviderContext,
 			providerIDByHash,
 			b,
@@ -370,12 +365,10 @@ func (r *meteringRunner) runMultihashScanBatch(
 		); err != nil {
 			return false, err
 		}
-		lastKey = append(lastKey[:0], key...)
+		lastKey = append(lastKey[:0], kv.key...)
 
 		keysRead++
-		valid = iter.Next()
 	}
-	exhausted := !valid
 
 	progress.KeysRead += uint64(keysRead)
 	progress.BytesRead += bytesRead
@@ -803,27 +796,18 @@ func (r *meteringRunner) loadProviderStats(
 
 	prefix := meteringProviderPrefix(scanID)
 	upper := meteringProviderPrefixEnd(scanID)
-	iter, err := rd.NewIter(&pebble.IterOptions{
+	var out []indexer.ProviderStats
+	for kv, err := range pebbleKVs(context.Background(), rd, &pebble.IterOptions{
 		LowerBound: prefix,
 		UpperBound: upper,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer iter.Close()
-
-	var out []indexer.ProviderStats
-	for valid := iter.First(); valid; valid = iter.Next() {
-		key := iter.Key()
-		providerHash := providerHashFromStatsKey(key)
-		if providerHash == nil {
-			continue
-		}
-		val, err := iter.ValueAndErr()
+	}) {
 		if err != nil {
 			return nil, err
 		}
-		ps, err := decodeProviderStats(val)
+		if providerHashFromStatsKey(kv.key) == nil {
+			continue
+		}
+		ps, err := decodeProviderStats(kv.value)
 		if err != nil {
 			return nil, err
 		}
@@ -869,26 +853,18 @@ func (r *meteringRunner) loadMultihashScanCounters(
 		providers: make(map[string]*indexer.ProviderStats),
 	}
 	prefix := meteringProviderPrefix(scanID)
-	iter, err := rd.NewIter(&pebble.IterOptions{
+	for kv, err := range pebbleKVs(context.Background(), rd, &pebble.IterOptions{
 		LowerBound: prefix,
 		UpperBound: meteringProviderPrefixEnd(scanID),
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer iter.Close()
-
-	for valid := iter.First(); valid; valid = iter.Next() {
-		key := iter.Key()
-		providerHash := providerHashFromStatsKey(key)
-		if providerHash == nil {
-			continue
-		}
-		val, err := iter.ValueAndErr()
+	}) {
 		if err != nil {
 			return nil, err
 		}
-		ps, err := decodeProviderStats(val)
+		providerHash := providerHashFromStatsKey(kv.key)
+		if providerHash == nil {
+			continue
+		}
+		ps, err := decodeProviderStats(kv.value)
 		if err != nil {
 			return nil, err
 		}
@@ -1130,29 +1106,22 @@ func (r *meteringRunner) readProviderID(providerHash []byte) peer.ID {
 	start := make([]byte, 1+len(providerHash))
 	start[0] = byte(valueKeyPrefix)
 	copy(start[1:], providerHash)
-	iter, err := r.db.NewIter(&pebble.IterOptions{
+	for kv, err := range pebbleKVs(context.Background(), r.db, &pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: nextProviderValueKey(providerHash),
-	})
-	if err != nil {
-		log.Errorw("metering: provider lookup failed", "err", err)
-		return ""
+	}) {
+		if err != nil {
+			log.Errorw("metering: provider lookup failed", "err", err)
+			return ""
+		}
+		v, err := r.vcodec.unmarshalValue(slices.Clone(kv.value))
+		if err != nil {
+			log.Errorw("metering: provider lookup failed", "err", err)
+			return ""
+		}
+		return peer.ID(slices.Clone([]byte(v.ProviderID)))
 	}
-	defer iter.Close()
-	if !iter.First() {
-		return ""
-	}
-	raw, err := iter.ValueAndErr()
-	if err != nil {
-		log.Errorw("metering: provider lookup failed", "err", err)
-		return ""
-	}
-	v, err := r.vcodec.unmarshalValue(slices.Clone(raw))
-	if err != nil {
-		log.Errorw("metering: provider lookup failed", "err", err)
-		return ""
-	}
-	return peer.ID(slices.Clone([]byte(v.ProviderID)))
+	return ""
 }
 
 // providerIDForValueKey returns the provider ID stored in the value record for

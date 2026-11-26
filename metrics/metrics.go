@@ -12,6 +12,13 @@ import (
 var (
 	Method, _   = tag.NewKey("method")
 	Provider, _ = tag.NewKey("provider")
+
+	// ImportKind is the kind of an import part. A request for a kind that
+	// is not served has no kind.
+	ImportKind, _ = tag.NewKey("kind")
+	// ImportResult is how an import part request ended: ok, refused, failed
+	// or aborted (see ImportRequests)
+	ImportResult, _ = tag.NewKey("result")
 )
 
 // Measures
@@ -78,6 +85,22 @@ var (
 	MeteringCleanupValueBytes  = stats.Int64("core/metering/cleanup_value_bytes", "Packed value bytes of slots merge-deleted by metering cleanup in this process. A logical size, not disk space reclaimed; compaction frees space later", stats.UnitBytes)
 
 	MeteringProviderMultihashes = stats.Int64("core/metering/provider_multihashes", "Distinct multihashes per provider from the latest metering scan", stats.UnitDimensionless)
+
+	// Import counters count what this process has done since it started.
+	// The requests in flight are the requests started less those ended. The
+	// sender's measures (importhttp.NewSender) and the client's
+	// (importhttp.NewClient) pair up.
+	ImportSenderRequestsStarted = stats.Int64("core/import/sender_requests_started", "Import part requests that this process started to serve, by kind. Less core/import/sender_requests_ended, the requests it serves now. A counter that starts at zero on every start", stats.UnitDimensionless)
+	ImportSenderRequestsEnded   = stats.Int64("core/import/sender_requests_ended", "Import part requests that this process ended serving, by kind and result: ok when the part was sent, whole or up to its resume point; refused when the answer was 4xx; failed when the part could not be opened or ended with a source error; aborted when the reader went away part way through. A counter that starts at zero on every start", stats.UnitDimensionless)
+	ImportSentBytes             = stats.Int64("core/import/sent_bytes", "Body bytes of import parts sent by this process, by kind, before compression, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitBytes)
+	ImportSentWireBytes         = stats.Int64("core/import/sent_wire_bytes", "Body bytes of import parts sent by this process, by kind, as written to the response, after compression, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitBytes)
+	ImportSentEntries           = stats.Int64("core/import/sent_entries", "Entries of import parts sent by this process, by kind, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitDimensionless)
+
+	ImportClientRequestsStarted = stats.Int64("core/import/client_requests_started", "Import part requests that this process started to send, by kind. Less core/import/client_requests_ended, the requests it sends now, from the request until the caller stops reading the part. A counter that starts at zero on every start", stats.UnitDimensionless)
+	ImportClientRequestsEnded   = stats.Int64("core/import/client_requests_ended", "Import part requests sent by this process that ended, by kind and result: ok when the part was read, whole or up to its resume point; refused when the sender answered 4xx; failed when there was no answer, the answer was 5xx or could not be read, or the body was cut off or ended with a source error; aborted when the caller stopped reading or its context was cancelled. A counter that starts at zero on every start", stats.UnitDimensionless)
+	ImportReceivedBytes         = stats.Int64("core/import/received_bytes", "Body bytes of import parts received by this process, by kind, after decompression, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitBytes)
+	ImportReceivedWireBytes     = stats.Int64("core/import/received_wire_bytes", "Body bytes of import parts received by this process, by kind, as read from the response, before decompression, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitBytes)
+	ImportReceivedEntries       = stats.Int64("core/import/received_entries", "Entries of import parts received by this process, by kind, recorded when each part's body ends. A counter that starts at zero on every start", stats.UnitDimensionless)
 )
 
 // Views
@@ -313,6 +336,59 @@ var (
 	}
 )
 
+var (
+	importSenderRequestsStartedView = &view.View{
+		Measure:     ImportSenderRequestsStarted,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importSenderRequestsEndedView = &view.View{
+		Measure:     ImportSenderRequestsEnded,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind, ImportResult},
+	}
+	importSentBytesView = &view.View{
+		Measure:     ImportSentBytes,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importSentWireBytesView = &view.View{
+		Measure:     ImportSentWireBytes,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importSentEntriesView = &view.View{
+		Measure:     ImportSentEntries,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importClientRequestsStartedView = &view.View{
+		Measure:     ImportClientRequestsStarted,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importClientRequestsEndedView = &view.View{
+		Measure:     ImportClientRequestsEnded,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind, ImportResult},
+	}
+	importReceivedBytesView = &view.View{
+		Measure:     ImportReceivedBytes,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importReceivedWireBytesView = &view.View{
+		Measure:     ImportReceivedWireBytes,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+	importReceivedEntriesView = &view.View{
+		Measure:     ImportReceivedEntries,
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{ImportKind},
+	}
+)
+
 // DefaultViews with all views in it.
 var DefaultViews = []*view.View{
 	cacheHitsView,
@@ -379,6 +455,21 @@ var MeteringViews = []*view.View{
 // when the provider set is unbounded.
 var MeteringProviderViews = []*view.View{
 	meteringProviderMultihashesView,
+}
+
+// ImportViews are OpenCensus views of the import's sender and client
+// (importhttp)
+var ImportViews = []*view.View{
+	importSenderRequestsStartedView,
+	importSenderRequestsEndedView,
+	importSentBytesView,
+	importSentWireBytesView,
+	importSentEntriesView,
+	importClientRequestsStartedView,
+	importClientRequestsEndedView,
+	importReceivedBytesView,
+	importReceivedWireBytesView,
+	importReceivedEntriesView,
 }
 
 func MsecSince(startTime time.Time) float64 {
